@@ -1,0 +1,354 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Random Forest | 4MLSim</title>
+  <meta name="theme-color" content="#1B2340">
+  <link rel="manifest" href="../manifest.json">
+  <link rel="icon" type="image/svg+xml" href="../assets/img/icon.svg">
+  <link rel="apple-touch-icon" href="../assets/img/apple-touch-icon.png">
+  <link rel="stylesheet" href="../assets/vendor/temml.css">
+  <link rel="stylesheet" href="../assets/css/4mlsim.css">
+  <script src="../assets/vendor/temml.min.js"></script>
+  <script src="../assets/js/core.js"></script>
+  <script src="../assets/js/stats.js"></script>
+  <script src="../assets/js/plot.js"></script>
+  <script src="../assets/js/modules.js"></script>
+  <script src="../assets/js/core-ml.js"></script>
+  <script src="../assets/js/classify-ui.js"></script>
+  <script src="../assets/js/trees-ui.js"></script>
+</head>
+<body>
+<div class="page">
+  <header id="mlsHeader" data-variant="compact"></header>
+  <div class="mod-top" id="mlsTop"><div id="mlsModBar"></div><div id="mlsTabs"></div></div>
+
+  <div class="intro-box" id="mlsIntro">
+    <h3>What this module shows</h3>
+    <div class="intro-cols">
+      <div>
+        <p>One decision tree is simple, but unstable and often inaccurate. A <b>random forest</b> grows many trees, each on a different <b>bootstrap sample</b> of the training set (a random selection with replacement) and with a <b>random input</b> tried at each split.</p>
+        <p>For a new observation every tree votes; the majority decides, "democratically". In regression the forest averages the trees' forecasts. Many noisy trees together give one stable model.</p>
+      </div>
+      <div>
+        <p><b>How to use it</b></p>
+        <ol>
+          <li>Compare one tree (left chart) with the whole forest (main chart).</li>
+          <li>Move "Look at tree" to see other trees and their bootstrap samples.</li>
+          <li>Click on the main chart to place a new observation and see the votes.</li>
+          <li>Follow the error as trees are added, and the importance of the inputs.</li>
+        </ol>
+      </div>
+    </div>
+  </div>
+
+  <!-- ===================== SIMULATION ===================== -->
+  <section data-panel="sim">
+    <div class="mod-grid">
+      <aside class="side" aria-label="Controls">
+        <div class="card">
+          <div class="card-head"><h3>1. Task and data<button type="button" class="help" data-help="task">?</button></h3></div>
+          <div class="seg full" role="group" aria-label="Task"><button type="button" data-task="class">Classification</button><button type="button" data-task="reg">Regression</button></div>
+          <select id="ds" aria-label="Data set" style="margin-top:10px"></select>
+          <div class="field-row"><label for="n">Observations<button type="button" class="help" data-help="n">?</button></label><output id="nVal"></output></div>
+          <input type="range" id="n" min="40" max="400" step="20" value="200">
+          <div class="field-row"><label for="seed">Random seed<button type="button" class="help" data-help="seed">?</button></label></div>
+          <div class="inline-inputs"><input type="number" id="seed" min="1" max="99999" step="1" value="5" aria-label="Random seed"><button type="button" class="btn-ghost btn-icon" id="newSeed" title="New random data" style="flex:0 0 auto">&#127922;</button></div>
+        </div>
+        <div class="card">
+          <div class="card-head"><h3>2. The forest<button type="button" class="help" data-help="forest">?</button></h3></div>
+          <div class="field-row"><label for="trees">Number of trees<button type="button" class="help" data-help="trees">?</button></label><output id="treesVal"></output></div>
+          <input type="range" id="trees" min="1" max="200" step="1" value="100">
+          <div class="field-row"><label for="depth">Maximum depth of each tree<button type="button" class="help" data-help="depth">?</button></label><output id="depthVal"></output></div>
+          <input type="range" id="depth" min="1" max="15" step="1" value="8">
+          <div id="mtryRow">
+            <div class="field-row"><label>Inputs tried at each split<button type="button" class="help" data-help="mtry">?</button></label></div>
+            <div class="seg full" role="group" aria-label="Inputs per split"><button type="button" data-mtry="1">1, at random (forest)</button><button type="button" data-mtry="2">Both (bagging)</button></div>
+          </div>
+        </div>
+        <div class="card">
+          <div class="card-head"><h3>3. Look at one tree<button type="button" class="help" data-help="look">?</button></h3></div>
+          <div class="field-row"><label for="look">Tree number</label><output id="lookVal"></output></div>
+          <input type="range" id="look" min="1" max="100" step="1" value="1">
+          <p class="note" id="lookNote"></p>
+        </div>
+      </aside>
+
+      <main class="main">
+        <div class="story" id="story"></div>
+        <div class="stat-grid" id="stats" style="margin-top:12px"></div>
+        <div id="statusLine" class="status-line" style="margin:10px 0"></div>
+        <div class="fig-grid">
+          <div id="figMap" class="fig-wide"></div>
+          <div id="figOne"></div>
+          <div class="card" id="voteCard"></div>
+          <div id="figErr"></div>
+          <div id="figImp"></div>
+        </div>
+      </main>
+    </div>
+  </section>
+
+  <!-- ===================== LESSON ===================== -->
+  <section data-panel="lesson" class="card lesson" hidden>
+    <div id="mlsMathCtl"></div>
+    <p class="lvl-only-intuition note" style="margin-bottom:8px">Showing the intuition only. Choose <b>Formulas</b> or <b>Deep dive</b> above to add the mathematics.</p>
+
+    <h4>Why many trees?</h4>
+    <p>Decision trees are simple to build, use and interpret, but in practice they are <b>inaccurate</b> and <b>unstable</b>: a small change in the training data can give a very different tree. A random forest grows many different trees and lets them vote. Their individual mistakes partly cancel out.</p>
+
+    <h4>Bootstrap samples</h4>
+    <p>Suppose the training set has n observations. A <b>bootstrap sample</b> is a new sample of size n, drawn at random <b>with replacement</b>: some observations are drawn two or three times, others not at all. On average about 63% of the observations appear in a bootstrap sample; the other 37% are <b>out of bag</b> for that tree. Each tree is grown on its own bootstrap sample, so the trees differ.</p>
+    <div class="math-block lvl-math"><div class="mb-title">Share of observations left out of a bootstrap sample</div>
+      <div class="tex-block">P(\text{observation } i \text{ not drawn}) = \Bigl(1 - \frac{1}{n}\Bigr)^{n} \;\longrightarrow\; e^{-1} \approx 0.37</div>
+    </div>
+
+    <h4>A random input at each split</h4>
+    <p>To make the trees even more different, each split may only choose among a <b>random subset of the inputs</b> (here 1 of the 2). With all inputs at every split the method is called <b>bagging</b> (bootstrap aggregating): the trees then often ask the same strong question first and stay similar.</p>
+
+    <h4>Voting and averaging</h4>
+    <p>For any new data, we run it through every tree and record each tree's decision, e.g. "failed" or "healthy"; random forests decide democratically, by voting. The share of the votes is the forest's probability. In regression the forecast is the average of the trees' forecasts (the electricity demand example of the lecture).</p>
+
+    <h4>Free checks: out-of-bag error and importance</h4>
+    <ul>
+      <li><b>Out-of-bag (OOB) error</b>: each training observation is predicted only by the trees that did not see it (about a third of the trees). This gives an honest estimate of the error without a separate validation set.</li>
+      <li><b>Importance</b>: how much each input reduced the impurity over all splits of all trees (normalized to add up to 100%).</li>
+    </ul>
+
+    <div class="math-block deep lvl-deep"><div class="mb-title">Deep dive</div>
+      <p><b>Why decorrelation matters.</b> The average of B trees, each with variance σ² and pairwise correlation ρ, has variance ρσ² + (1 − ρ)σ²/B. More trees remove the second term, but not the first: that is why the forest also makes the trees less correlated, with random inputs at each split.</p>
+      <p><b>Votes or averaged probabilities.</b> Here each tree votes for the majority class of its leaf, as in the lecture. scikit-learn averages the class shares of the leaves instead; the two rarely disagree.</p>
+      <p><b>No overfitting from more trees.</b> Adding trees does not make the forest overfit; the error levels off. Deep individual trees can still make the forest follow noise; limit the depth or the leaf size, chosen by cross-validation or the OOB error.</p>
+      <p class="note">References: Breiman (1996), "Bagging predictors", <i>Machine Learning</i> 24; Breiman (2001), "Random forests", <i>Machine Learning</i> 45; Hastie, Tibshirani and Friedman (2009), <i>The Elements of Statistical Learning</i>, ch. 15.</p>
+    </div>
+  </section>
+
+  <!-- ===================== CHALLENGES ===================== -->
+  <section data-panel="challenges" class="card" hidden>
+    <div class="card-head"><h3>Challenges</h3><span class="card-sub">Answer the "predict first" questions before testing them in the Simulation tab.</span></div>
+    <div id="challenges"></div>
+  </section>
+
+  <!-- ===================== REAL DATA ===================== -->
+  <section data-panel="real" class="card lesson" hidden>
+    <h4>From the simulation to real data</h4>
+    <ul>
+      <li>Random forests are a strong default for tabular data: credit risk, bank failures, demand forecasting, fraud. They need little tuning and no scaling.</li>
+      <li>Use a few hundred trees; tune the depth (or minimum leaf size) and the number of inputs per split with the OOB error or cross-validation.</li>
+      <li>Impurity importance favours inputs with many distinct values; check it with permutation importance (see the Explainability module).</li>
+    </ul>
+    <div class="crosslink"><span>&#10140;</span><span><a id="fourCast" target="_blank" rel="noopener"><b>4Cast Lab</b></a> trains random forests on your own data and reports the variable importance.</span></div>
+  </section>
+
+  <footer id="mlsFooter"></footer>
+</div>
+
+<script>
+(function () {
+  'use strict';
+  const MLS = window.MLS, ML = MLS.ml, CL = MLS.cls, TR = MLS.trees;
+  const META = MLS.moduleMeta('random-forest');
+  const $ = id => document.getElementById(id);
+  const F = MLS.fmt, pct = CL.pct;
+  const LISTS = { class: ['banks', 'fruits', 'circles'], reg: ['kwh', 'power'] };
+
+  const S = { task: 'class', data: { class: 'banks', reg: 'kwh' }, n: {}, seed: 5, trees: 100, depth: 8, mtry: 1, look: 1, q: {} };
+  let D = null, R = null;
+  const dkey = () => S.data[S.task], nObs = () => S.n[dkey()] || TR.DATA[dkey()].n, isC = () => D.task === 'class';
+
+  function compute() {
+    D = TR.make(dkey(), S.seed, nObs());
+    const X = D.train.map(p => p.x), y = D.train.map(p => p.y), K = isC() ? D.K : 0;
+    const fo = ML.forest(X, y, { K, trees: S.trees, maxDepth: S.depth, maxFeatures: isC() ? S.mtry : 1, seed: S.seed });
+    R = { fo, X, y };
+    /* each tree: its vote (classification) or forecast (regression) */
+    const treeOut = (tr, x) => { const v = ML.cartLeaf(tr.root, x).value; return isC() ? TR.argmax(v) : v; };
+    R.treeOut = treeOut;
+    R.vote = (x, m) => { const ts = fo.trees.slice(0, m || fo.trees.length); if (!isC()) return ts.reduce((s, t) => s + treeOut(t, x), 0) / ts.length; const c = new Array(K).fill(0); ts.forEach(t => c[treeOut(t, x)]++); return c.map(v => v / ts.length); };
+    /* error as trees are added: test set and out-of-bag (training set) */
+    R.curve = [];
+    const accTe = D.test.map(() => (isC() ? new Array(K).fill(0) : [0, 0])), accOob = D.train.map(() => (isC() ? new Array(K).fill(0) : [0, 0]));
+    fo.trees.forEach((t, m) => {
+      D.test.forEach((p, i) => { const o = treeOut(t, p.x); if (isC()) accTe[i][o]++; else { accTe[i][0] += o; accTe[i][1]++; } });
+      t.oob.forEach(i => { const o = treeOut(t, X[i]); if (isC()) accOob[i][o]++; else { accOob[i][0] += o; accOob[i][1]++; } });
+      const sc = (acc, pts) => { if (isC()) { const ok = pts.map((p, i) => [p, acc[i]]).filter(([, a]) => a.some(v => v > 0)); return ok.length ? ok.filter(([p, a]) => TR.argmax(a) === p.y).length / ok.length : NaN; }
+        const ok = pts.map((p, i) => [p, acc[i]]).filter(([, a]) => a[1] > 0); return ok.length ? Math.sqrt(ok.reduce((s, [p, a]) => s + (p.y - a[0] / a[1]) ** 2, 0) / ok.length) : NaN; };
+      R.curve.push({ m: m + 1, te: sc(accTe, D.test), oob: sc(accOob, D.train) });
+    });
+    const look = fo.trees[Math.min(S.look, fo.trees.length) - 1];
+    R.look = look; R.lookF = x => ML.cartLeaf(look.root, x).value;
+    R.cnt = new Array(X.length).fill(0); look.rows.forEach(i => R.cnt[i]++);
+    R.forestF = x => R.vote(x);
+    R.scoreForest = TR.score(D, D.test, R.forestF); R.scoreOne = TR.score(D, D.test, R.lookF);
+    R.oob = R.curve[R.curve.length - 1].oob;
+    R.oneScores = fo.trees.map(t => TR.score(D, D.test, x => ML.cartLeaf(t.root, x).value));
+  }
+  const query = () => S.q[dkey() + ':' + S.seed] || (() => { if (!isC()) return null; const a = D.train.filter(p => p.y === 0), b = D.train.filter(p => p.y === 1); return [(MLS.mean(a.map(p => p.x[0])) + MLS.mean(b.map(p => p.x[0]))) / 2, (MLS.mean(a.map(p => p.x[1])) + MLS.mean(b.map(p => p.x[1]))) / 2]; })();
+
+  function updateText() {
+    const sn = TR.scoreName(D), unit = isC() ? '' : TR.unitY(D) + ', ';
+    $('story').innerHTML = '<h3>Data: ' + MLS.esc(D.label) + '</h3><p>' + ML.DATA[D.key].note + ' <b>' + D.train.length + ' ' + D.unit + ' in the training set, ' + D.test.length + ' in the test set.</b> The forest has <b>' + S.trees + ' trees</b>, each grown on its own bootstrap sample of the training set.</p>';
+    const card = MLS.statCard;
+    $('stats').innerHTML =
+      card(sn + ', test set: tree ' + S.look, TR.fmtScore(D, R.scoreOne), unit + 'one tree alone', '', 'st_one') +
+      card(sn + ', test set: forest', TR.fmtScore(D, R.scoreForest), unit + S.trees + ' trees ' + (isC() ? 'voting' : 'averaged'), '', 'st_forest') +
+      card(sn + ', out of bag', TR.fmtScore(D, R.oob), unit + 'training set, trees that did not see each ' + D.unit.replace(/s$/, ''), '', 'st_oob') +
+      card('Trees: best to worst, test set', TR.fmtScore(D, isC() ? Math.max(...R.oneScores) : Math.min(...R.oneScores)) + ' to ' + TR.fmtScore(D, isC() ? Math.min(...R.oneScores) : Math.max(...R.oneScores)), 'single trees vary; the forest is stable', '', 'st_range');
+    const better = isC() ? R.scoreForest - MLS.mean(R.oneScores) : MLS.mean(R.oneScores) - R.scoreForest;
+    $('statusLine').textContent = 'The average single tree scores ' + TR.fmtScore(D, MLS.mean(R.oneScores)) + ' on the test set; the forest ' + TR.fmtScore(D, R.scoreForest) + '. ' + (better > 0 ? 'Voting many different trees beats a typical tree.' : 'Here the trees are already good; the forest is at least as stable.') + ' Out-of-bag estimate: ' + TR.fmtScore(D, R.oob) + '.';
+    $('statusLine').className = 'status-line ok';
+    const inBag = R.cnt.filter(c => c > 0).length;
+    $('lookNote').innerHTML = 'Tree ' + S.look + ' saw <b>' + inBag + '</b> different training ' + D.unit + ' (' + pct(inBag / D.train.length) + '), some several times; <b>' + (D.train.length - inBag) + '</b> were out of bag.';
+  }
+
+  const mapOpts = () => ({ aspect: 0.55, margin: { l: 66, b: 50 }, x: { label: () => D.names[0] }, y: { label: () => D.names[1] } });
+  const figMap = MLS.figure($('figMap'), { title: 'The forest: all trees together', help: 'figmap', file: 'random-forest-map',
+    plot: Object.assign(mapOpts(), { onClick: (x, y) => { if (isC()) { S.q[dkey() + ':' + S.seed] = [+x.toFixed(3), +y.toFixed(3)]; refresh(false); } } }),
+    data: () => ({ cols: isC() ? [D.names[0], D.names[1], 'Actual', 'Forest vote', 'Set'] : [D.names[0], D.names[1], 'Forest forecast', 'Set'], rows: D.pts.map(p => (isC() ? [p.x[0], p.x[1], D.classes[p.y], D.classes[TR.argmax(R.forestF(p.x))], p.te ? 'test' : 'training'] : [p.x[0], p.y, R.forestF(p.x), p.te ? 'test' : 'training'])) }) });
+  function drawMap() {
+    const q = query(), ink = MLS.color('chart-ink');
+    TR.drawData(figMap.plot, D, R.forestF, { res: 70, lineName: 'Forest forecast',
+      after: P => { if (q) { const v = R.vote(q); P.points([{ x: q[0], y: q[1] }], { color: CL.color(TR.argmax(v)), shape: 'star', r: 10, ringColor: ink, tip: () => '<b>New observation</b><br>Votes: ' + D.classes.map((c, k) => MLS.esc(c) + ' ' + Math.round(v[k] * S.trees)).join(', ') }); } } });
+    figMap.legend(TR.legendData(D, isC() ? [{ label: 'New observation (click to move)', color: MLS.color('chart-muted'), shape: 'star' }] : [{ label: 'Forest forecast: average of ' + S.trees + ' trees', color: MLS.color('series-2'), line: true }]));
+    figMap.caption(isC() ? 'Background: the class that wins the vote of the ' + S.trees + ' trees (paler = a closer vote). Compare it with one tree on the left: the forest boundary is smoother and more stable. Click to move the star.' : 'The forest forecast is the average of ' + S.trees + ' step functions, so it is much smoother than one tree.');
+  }
+  const figOne = MLS.figure($('figOne'), { title: 'One tree and its bootstrap sample', help: 'figone', file: 'random-forest-one-tree', plot: Object.assign(mapOpts(), { aspect: 0.82 }) });
+  function drawOne() {
+    const idx = new Map(D.train.map((p, i) => [p, i])), cnt = p => (idx.has(p) ? R.cnt[idx.get(p)] : 0);
+    TR.drawData(figOne.plot, D, R.lookF, { res: 60, lineName: 'Tree ' + S.look,
+      r: p => (cnt(p) ? 3.2 + 1.6 * cnt(p) : 3.6), opacity: p => (cnt(p) ? 0.95 : 0.25),
+      tipExtra: p => (idx.has(p) ? '<br>Drawn into this tree\'s sample: <b>' + cnt(p) + '</b> time' + (cnt(p) === 1 ? '' : 's') + (cnt(p) ? '' : ' (out of bag)') : '') });
+    $('figOne').querySelector('.figure-title').firstChild.textContent = 'Tree ' + S.look + ' and its bootstrap sample';
+    figOne.legend(TR.legendData(D).concat([{ label: 'bigger = drawn more times; faint = out of bag', color: MLS.color('chart-muted') }]));
+    figOne.caption('Tree ' + S.look + ' alone: it was grown on its bootstrap sample (bigger points were drawn more than once; faint points not at all). Its boundary is jagged and depends on which observations it happened to get.');
+  }
+  function drawVote() {
+    const host = $('voteCard'), q = query(); host.hidden = !isC(); if (!isC()) return;
+    const outs = R.fo.trees.map(t => R.treeOut(t, q)), c = D.classes.map((_, k) => outs.filter(v => v === k).length), win = TR.argmax(c);
+    host.innerHTML = '<div class="card-head"><h3>The vote for the star' + MLS.helpBtn('votes') + '</h3></div>' +
+      '<p style="margin:0 0 8px;font-size:14.5px">' + D.classes.map((cl, k) => '<b>' + MLS.esc(cl) + ' ' + c[k] + '</b>').join(', ') + ' of ' + S.trees + ' trees &rarr; <b>' + MLS.esc(D.classes[win]) + '</b> (' + pct(c[win] / S.trees) + ' of the votes).</p>' +
+      '<div style="display:flex;flex-wrap:wrap;gap:3px">' + outs.map((v, i) => '<span title="Tree ' + (i + 1) + ': ' + MLS.esc(D.classes[v]) + '" style="width:14px;height:14px;border-radius:3px;background:' + CL.color(v) + (i + 1 === S.look ? ';outline:2px solid ' + MLS.color('chart-ink') : '') + '"></span>').join('') + '</div>' +
+      '<p class="note">Each square is one tree\'s vote (outlined: tree ' + S.look + '). Click on the main chart to move the star.</p>';
+  }
+  const figErr = MLS.figure($('figErr'), { title: 'The error as trees are added', help: 'figerr', file: 'random-forest-error',
+    plot: { aspect: 0.8, margin: { l: 62, b: 50 }, x: { label: 'Number of trees' }, y: { label: () => TR.scoreName(D), fmt: v => (isC() ? (100 * v).toFixed(0) + '%' : F(v, 1)) } },
+    data: () => ({ cols: ['Trees', 'Test set', 'Out of bag'], rows: R.curve.map(c => [c.m, c.te, c.oob]) }) });
+  function drawErr() {
+    const P = figErr.plot, c2 = MLS.color('series-2'), c7 = MLS.color('series-7'), vals = R.curve.flatMap(c => [c.te, c.oob]).filter(Number.isFinite), one = MLS.mean(R.oneScores);
+    P.setX(0.5, Math.max(2, S.trees) + 0.5); P.setY(Math.min(...vals, one) * 0.95, Math.max(...vals, one) * 1.03);
+    P.draw(P => {
+      P.hline(one, { color: MLS.color('chart-muted'), dash: '5 4', width: 1.2 }); P.text(S.trees, one, 'average single tree', { anchor: 'end', dy: -5, size: 11.5, color: MLS.color('chart-muted') });
+      P.line(R.curve.map(c => [c.m, c.te]), { color: c2, width: 2.2 }); P.line(R.curve.filter(c => Number.isFinite(c.oob)).map(c => [c.m, c.oob]), { color: c7, width: 2, dash: '6 3' });
+      P.crosshair([{ name: 'Test set', color: c2, pts: R.curve.map(c => [c.m, c.te]) }, { name: 'Out of bag', color: c7, pts: R.curve.filter(c => Number.isFinite(c.oob)).map(c => [c.m, c.oob]) }], v => Math.round(v) + ' trees', v => TR.fmtScore(D, v));
+    });
+    figErr.legend([{ label: 'Test set', color: c2, line: true }, { label: 'Out of bag (training set)', color: c7, line: true, dash: '6 3' }, { label: 'Average single tree, test set', color: MLS.color('chart-muted'), line: true, dash: '5 4' }]);
+    figErr.caption('With few trees the result jumps around; after a few dozen trees it levels off. More trees never make the forest worse, they only cost time.');
+  }
+  const figImp = MLS.figure($('figImp'), { title: 'Importance of the inputs', help: 'figimp', file: 'random-forest-importance',
+    plot: { aspect: 0.8, margin: { l: 62, b: 50 }, x: { ticks: false }, y: { label: 'Share of the impurity reduction', fmt: v => (100 * v).toFixed(0) + '%' } },
+    data: () => ({ cols: ['Input', 'Importance'], rows: D.names.slice(0, 2).map((nm, j) => [nm, R.fo.importance[j]]) }) });
+  function drawImp() {
+    const host = $('figImp'); host.hidden = !isC(); if (!isC()) return;
+    const P = figImp.plot, imp = R.fo.importance;
+    P.setX(0, 2); P.setY(0, Math.max(...imp) * 1.25);
+    P.draw(P => imp.forEach((v, j) => { const el = P.rect(j + 0.2, 0, j + 0.8, v, { fill: MLS.color(j ? 'series-7' : 'series-1') }); el.setAttribute('data-tip', P.tips.length); P.tips.push(() => D.names[j] + ': ' + pct(v)); P.text(j + 0.5, v, pct(v), { anchor: 'middle', dy: -6, size: 12.5, weight: 800 }); P.text(j + 0.5, 0, D.names[j], { anchor: 'middle', dy: 16, size: 12 }); }));
+    figImp.legend([]);
+    figImp.caption('How much each input reduced the impurity over all splits of all trees, as a share of the total.');
+  }
+
+  function syncUI() {
+    MLS.$$('[data-task]').forEach(b => b.setAttribute('aria-pressed', String(b.dataset.task === S.task)));
+    $('ds').innerHTML = LISTS[S.task].map(k => '<option value="' + k + '"' + (k === dkey() ? ' selected' : '') + '>' + TR.DATA[k].label + '</option>').join('');
+    $('n').value = nObs(); $('nVal').textContent = nObs(); $('seed').value = S.seed;
+    $('trees').value = S.trees; $('treesVal').textContent = S.trees; $('depth').value = S.depth; $('depthVal').textContent = S.depth;
+    $('mtryRow').hidden = S.task === 'reg'; MLS.$$('[data-mtry]').forEach(b => b.setAttribute('aria-pressed', String(+b.dataset.mtry === S.mtry)));
+    $('look').max = S.trees; if (S.look > S.trees) S.look = S.trees; $('look').value = S.look; $('lookVal').textContent = S.look;
+  }
+  function refresh(re) { if (re !== false) compute(); syncUI(); updateText(); drawMap(); drawOne(); drawVote(); drawErr(); drawImp(); figMap.refreshTable(); if (ch) ch.check(); MLS.state.save(); }
+  MLS.$$('[data-task]').forEach(b => (b.onclick = () => { S.task = b.dataset.task; refresh(); }));
+  $('ds').onchange = e => { S.data[S.task] = e.target.value; refresh(); };
+  $('n').addEventListener('input', e => ($('nVal').textContent = e.target.value));
+  $('n').onchange = e => { S.n[dkey()] = +e.target.value; refresh(); };
+  $('seed').onchange = e => { S.seed = Math.max(1, Math.round(+e.target.value) || 1); refresh(); };
+  $('newSeed').onclick = () => { S.seed = MLS.newSeed(); refresh(); };
+  $('trees').addEventListener('input', e => ($('treesVal').textContent = e.target.value));
+  $('trees').onchange = e => { S.trees = +e.target.value; refresh(); };
+  $('depth').addEventListener('input', e => ($('depthVal').textContent = e.target.value));
+  $('depth').onchange = e => { S.depth = +e.target.value; refresh(); };
+  MLS.$$('[data-mtry]').forEach(b => (b.onclick = () => { S.mtry = +b.dataset.mtry; refresh(); }));
+  $('look').addEventListener('input', e => ($('lookVal').textContent = e.target.value));
+  $('look').onchange = e => { S.look = +e.target.value; refresh(); };
+
+  MLS.registerHelp({
+    task: { title: 'Task and data', html: '<b>Classification</b>: bank failures, fruits or circles (2 inputs). <b>Regression</b>: electricity use from the temperature, or the electricity price from the gas price (1 input). Simulated data; 80% training set, 20% test set.' },
+    n: { title: 'Observations', html: '80% form the training set from which every bootstrap sample is drawn.' },
+    forest: { title: 'The forest', html: 'How many trees, how deep each tree may grow, and how many inputs each split may choose from.' },
+    trees: { title: 'Number of trees', html: 'Each tree is grown on its own bootstrap sample. More trees: more stable votes; the error levels off and does not rise.' },
+    depth: { title: 'Maximum depth', html: 'How many questions each tree may ask on the way to a leaf. Forests usually use deep trees: each one overfits, but the vote averages the noise out.' },
+    mtry: { title: 'Inputs tried at each split', html: '<b>1, at random</b>: each split may only use one randomly chosen input (the random forest; with 2 inputs this is the usual rule √2 ≈ 1). <b>Both</b>: every split can use both inputs (bagging); the trees become more alike.' },
+    look: { title: 'Look at one tree', html: 'Choose a tree to show on the left chart, with its bootstrap sample.' },
+    st_one: { title: 'One tree', html: 'The test result of the tree chosen in section 3, on its own.' },
+    st_forest: { title: 'The forest', html: 'The test result of all trees together: majority vote (classification) or average (regression).' },
+    st_oob: { title: 'Out of bag', html: 'Each training observation is predicted only by the trees whose bootstrap sample did not contain it (about 37% of the trees). An honest estimate without a separate validation set.' },
+    st_range: { title: 'Single trees', html: 'The best and the worst test result among the individual trees. The spread shows how unstable single trees are.' },
+    figmap: { title: 'The forest', html: 'The data and the forest\'s prediction: the winning class of the vote (background) or the average forecast (line). Click to place a new observation and see the vote.' },
+    figone: { title: 'One tree', html: 'The tree chosen in section 3, with its bootstrap sample: point size shows how many times an observation was drawn; faint points were not drawn (out of bag).' },
+    votes: { title: 'The vote', html: 'How each tree classifies the star: every square is one tree. The class with most votes wins; the share of the votes is the forest\'s probability.' },
+    figerr: { title: 'Error by number of trees', html: 'The forest\'s test result and out-of-bag result using the first 1, 2, 3, ... trees. The dashed line is the average single tree on the test set.' },
+    figimp: { title: 'Importance', html: 'Impurity importance: the total weighted decrease in impurity from the splits on each input, over all trees, as a share of the total (as scikit-learn feature_importances_).' }
+  });
+
+  function setup(o) { Object.assign(S, o); MLS.pickTab('sim'); refresh(); window.scrollTo({ top: 0, behavior: 'smooth' }); }
+  const ch = MLS.challenges($('challenges'), META.id, [
+    { type: 'predict', q: 'A bootstrap sample of 160 training banks, drawn with replacement. About how many different banks will it contain?',
+      options: ['All 160', 'About 100 (roughly 63%); the rest are out of bag', 'About 80 (half)'], answer: 1,
+      explain: 'Each bank is missed with probability (1 − 1/160)^160 ≈ 37%, so about 63% are drawn at least once. Some are drawn two or three times. Section 3 shows the count for each tree.',
+      tryIt: () => setup({ task: 'class', look: 1 }) },
+    { type: 'predict', q: 'Compared with a typical single tree, the forest\'s test accuracy will be...',
+      options: ['about the same or better, and much more stable', 'always 100%', 'worse, because each tree saw fewer banks'], answer: 0,
+      explain: 'Each tree makes its own mistakes; in a vote many of them cancel out. The tiles show the spread of single trees and the forest result.',
+      tryIt: () => setup({ task: 'class', trees: 100 }) },
+    { type: 'predict', q: 'You raise the number of trees from 100 to 200. The test error will...',
+      options: ['rise: more trees overfit', 'stay about the same: it has already levelled off', 'fall to zero'], answer: 1,
+      explain: 'Adding trees reduces the randomness of the vote but cannot remove the error the trees share. The curve flattens; it does not turn up.',
+      tryIt: () => setup({ trees: 200 }) },
+    { type: 'task', q: 'Bank failures: find a tree whose test accuracy alone is at least 5 points below the forest\'s.', hint: 'Move "Tree number" in section 3 and watch the first two tiles.',
+      check: () => R && isC() && R.scoreForest - R.scoreOne >= 0.05 },
+    { type: 'predict', q: 'Why is the out-of-bag error an honest estimate?',
+      options: ['Because it uses the test set', 'Because it uses more trees', 'Because each observation is predicted only by trees that never saw it'], answer: 2,
+      explain: 'For every training observation, about a third of the trees did not draw it. Their vote is like a prediction for new data, so no separate validation set is needed.',
+      tryIt: () => setup({ task: 'class' }) },
+    { type: 'task', q: 'Click on the main chart to place a bank where the vote is close: between 40% and 60% of the trees for each class.', hint: 'Try the border between the two colours.',
+      check: () => R && isC() && D.K === 2 && !!S.q[dkey() + ':' + S.seed] && (() => { const v = R.vote(query()); return v[1] >= 0.4 && v[1] <= 0.6; })() },
+    { type: 'predict', q: 'Regression on the temperature data: one tree gives a staircase. The forest forecast will be...',
+      options: ['the same staircase', 'a straight line', 'much smoother: the average of many different staircases'], answer: 2,
+      explain: 'Each tree jumps at different places, because each saw a different bootstrap sample. Averaging 100 staircases gives a nearly smooth curve.',
+      tryIt: () => setup({ task: 'reg' }) }
+  ]);
+
+  MLS.moduleBar({ id: META.id, title: META.title, section: META.sectionTitle, level: META.level },
+    { tabs: [{ id: 'sim', label: 'Simulation' }, { id: 'lesson', label: 'Lesson' }, { id: 'challenges', label: 'Challenges' }, { id: 'real', label: 'On real data' }] });
+  MLS.state.init({
+    id: META.id,
+    get: () => ({ task: S.task, data: S.data, n: S.n, seed: S.seed, trees: S.trees, depth: S.depth, mtry: S.mtry, look: S.look, q: S.q }),
+    set: o => {
+      if (LISTS[o.task]) S.task = o.task;
+      if (o.data) Object.keys(LISTS).forEach(t => { if (LISTS[t].includes(o.data[t])) S.data[t] = o.data[t]; });
+      if (o.n) Object.keys(o.n).forEach(k => { if (TR.DATA[k] && Number.isFinite(o.n[k])) S.n[k] = Math.max(40, Math.min(400, o.n[k])); });
+      if (Number.isFinite(o.seed)) S.seed = o.seed;
+      if (Number.isFinite(o.trees)) S.trees = Math.max(1, Math.min(200, o.trees));
+      if (Number.isFinite(o.depth)) S.depth = Math.max(1, Math.min(15, o.depth));
+      if (o.mtry === 1 || o.mtry === 2) S.mtry = o.mtry;
+      if (Number.isFinite(o.look)) S.look = Math.max(1, o.look);
+      if (o.q && typeof o.q === 'object') S.q = o.q;
+    }
+  });
+  $('fourCast').href = MLS.APP.fourCastUrl;
+  window.__mls = { S, get R() { return R; }, get D() { return D; } };
+  document.addEventListener('mls:theme', () => refresh(false));
+  refresh();
+})();
+</script>
+</body>
+</html>

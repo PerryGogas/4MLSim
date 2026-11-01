@@ -1,0 +1,350 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Gaussian Mixtures & EM | 4MLSim</title>
+  <meta name="theme-color" content="#1B2340">
+  <link rel="manifest" href="../manifest.json">
+  <link rel="icon" type="image/svg+xml" href="../assets/img/icon.svg">
+  <link rel="apple-touch-icon" href="../assets/img/apple-touch-icon.png">
+  <link rel="stylesheet" href="../assets/vendor/temml.css">
+  <link rel="stylesheet" href="../assets/css/4mlsim.css">
+  <script src="../assets/vendor/temml.min.js"></script>
+  <script src="../assets/js/core.js"></script>
+  <script src="../assets/js/stats.js"></script>
+  <script src="../assets/js/plot.js"></script>
+  <script src="../assets/js/modules.js"></script>
+  <script src="../assets/js/core-ml.js"></script>
+  <script src="../assets/js/classify-ui.js"></script>
+  <script src="../assets/js/clust-ui.js"></script>
+</head>
+<body>
+<div class="page">
+  <header id="mlsHeader" data-variant="compact"></header>
+  <div class="mod-top" id="mlsTop"><div id="mlsModBar"></div><div id="mlsTabs"></div></div>
+
+  <div class="intro-box" id="mlsIntro">
+    <h3>What this module shows</h3>
+    <div class="intro-cols">
+      <div>
+        <p>Markets alternate between <b>calm</b> and <b>turbulent</b> periods, but no one labels the days. A <b>Gaussian mixture</b> assumes the data come from a few bell-shaped groups (components), each with its own center, spread and tilt, and finds them.</p>
+        <p>It is <b>soft</b> clustering: every observation gets a probability of belonging to each component. The parameters are found with the <b>EM algorithm</b>: an E-step (probabilities) and an M-step (update the components), repeated.</p>
+      </div>
+      <div>
+        <p><b>How to use it</b></p>
+        <ol>
+          <li>Press <b>Step</b> to see one E-step and one M-step at a time; watch the ellipses move.</li>
+          <li>Click a day to see its probabilities of each regime.</li>
+          <li>Choose the number of components with BIC, and compare with k-means on the stretched groups.</li>
+        </ol>
+      </div>
+    </div>
+  </div>
+
+  <!-- ===================== SIMULATION ===================== -->
+  <section data-panel="sim">
+    <div class="mod-grid">
+      <aside class="side" aria-label="Controls">
+        <div class="card">
+          <div class="card-head"><h3>1. Data<button type="button" class="help" data-help="data">?</button></h3></div>
+          <select id="ds" aria-label="Data set"><option value="regimes">Market regimes (stock and bond returns)</option><option value="elong">Generic: stretched groups</option><option value="customers">Supermarket customers (spending, visits)</option><option value="blobs3">Generic: three round groups</option></select>
+          <div class="field-row"><label for="n">Observations<button type="button" class="help" data-help="n">?</button></label><output id="nVal"></output></div>
+          <input type="range" id="n" min="60" max="400" step="10" value="250">
+          <div class="field-row"><label for="seed">Random seed<button type="button" class="help" data-help="seed">?</button></label></div>
+          <div class="inline-inputs"><input type="number" id="seed" min="1" max="99999" step="1" value="1" aria-label="Random seed"><button type="button" class="btn-ghost btn-icon" id="newSeed" title="New random data" style="flex:0 0 auto">&#127922;</button></div>
+        </div>
+        <div class="card">
+          <div class="card-head"><h3>2. The mixture<button type="button" class="help" data-help="gm">?</button></h3></div>
+          <div class="field-row"><label for="K">Number of components K<button type="button" class="help" data-help="K">?</button></label><output id="KVal"></output></div>
+          <input type="range" id="K" min="1" max="5" step="1" value="2">
+          <div class="field-row"><label>Start<button type="button" class="help" data-help="init">?</button></label></div>
+          <div class="seg full" role="group" aria-label="Start"><button type="button" data-init="kmeans">From k-means</button><button type="button" data-init="random">Random</button></div>
+          <div class="field-row"><label>Colour the points by<button type="button" class="help" data-help="view">?</button></label></div>
+          <div class="seg full" role="group" aria-label="Colour the points by"><button type="button" data-view="soft">Probabilities</button><button type="button" data-view="hard">Most likely</button></div>
+        </div>
+        <div class="card">
+          <div class="card-head"><h3>3. EM step by step<button type="button" class="help" data-help="run">?</button></h3></div>
+          <div id="stepper"></div>
+          <p class="note" id="stepNote"></p>
+          <div id="pseudo"></div>
+        </div>
+      </aside>
+
+      <main class="main">
+        <div class="story" id="story"></div>
+        <div class="stat-grid" id="stats" style="margin-top:12px"></div>
+        <div id="statusLine" class="status-line" style="margin:10px 0"></div>
+        <div class="fig-grid">
+          <div id="figMap" class="fig-wide"></div>
+          <div class="card fig-wide" id="compCard"></div>
+          <div id="figLL"></div>
+          <div id="figBIC"></div>
+          <div id="figKM" class="fig-wide"></div>
+        </div>
+      </main>
+    </div>
+  </section>
+
+  <!-- ===================== LESSON ===================== -->
+  <section data-panel="lesson" class="card lesson" hidden>
+    <div id="mlsMathCtl"></div>
+    <p class="lvl-only-intuition note" style="margin-bottom:8px">Showing the intuition only. Choose <b>Formulas</b> or <b>Deep dive</b> above to add the mathematics.</p>
+
+    <h4>A mixture of bell curves</h4>
+    <p>A Gaussian mixture says: each observation was produced by one of K components, chosen with probabilities w<sub>1</sub>, ..., w<sub>K</sub> (the weights); component k is a two-dimensional bell curve with its own <b>mean</b> (center) and <b>covariance</b> (spread and tilt, drawn as an ellipse). Which component produced which observation is unknown: that is what we want to find.</p>
+    <p>Example: daily stock and bond returns. On calm days both move little; on turbulent days stocks swing widely and bonds tend to rise when stocks fall (flight to safety). A mixture with K = 2 recovers the two regimes, their shares, volatilities and correlations, without any labels.</p>
+
+    <h4>The EM algorithm</h4>
+    <ol>
+      <li><b>Start</b> with some components (here from k-means, as scikit-learn does, or at random).</li>
+      <li><b>E-step</b> (expectation): for every observation, compute the probability that each component produced it, with Bayes' rule: weight × density, divided by the sum over components. These are the <b>responsibilities</b>.</li>
+      <li><b>M-step</b> (maximization): update each component using all observations, weighted by their responsibilities: new weight = average responsibility, new mean = weighted mean, new covariance = weighted covariance.</li>
+      <li>Repeat until the log-likelihood stops rising.</li>
+    </ol>
+    <p>Each round raises the log-likelihood (or keeps it), so EM always converges, but possibly to a local maximum that depends on the start.</p>
+
+    <h4>Mixtures versus k-means</h4>
+    <ul>
+      <li>K-means gives hard assignments and round clusters of similar size. A mixture gives probabilities and ellipses that can stretch and tilt, with different sizes.</li>
+      <li>K-means is the special case of a mixture with equal, round, shrinking components.</li>
+    </ul>
+
+    <h4>How many components? BIC</h4>
+    <p>More components always raise the likelihood. The <b>Bayesian information criterion</b> charges a penalty for every parameter: choose the K with the <b>lowest</b> BIC.</p>
+
+    <div class="math-block lvl-math"><div class="mb-title">The model and EM</div>
+      <div class="tex-block">p(x) = \sum_{k=1}^{K} w_k\, \mathcal{N}(x \mid \mu_k, \Sigma_k), \qquad \text{E-step: } r_{ik} = \frac{w_k\, \mathcal{N}(x_i \mid \mu_k, \Sigma_k)}{\sum_{j} w_j\, \mathcal{N}(x_i \mid \mu_j, \Sigma_j)}</div>
+      <div class="tex-block">\text{M-step: } N_k = \sum_i r_{ik}, \quad w_k = \frac{N_k}{n}, \quad \mu_k = \frac{1}{N_k} \sum_i r_{ik} x_i, \quad \Sigma_k = \frac{1}{N_k} \sum_i r_{ik} (x_i - \mu_k)(x_i - \mu_k)^\top</div>
+      <div class="tex-block">\log L = \sum_i \log p(x_i), \qquad \text{BIC} = -2 \log L + q \log n, \quad q = 6K - 1 \text{ (2 inputs, full covariances)}</div>
+    </div>
+    <div class="math-block deep lvl-deep"><div class="mb-title">Deep dive</div>
+      <p><b>Why EM works.</b> For any responsibilities, the log-likelihood is at least a lower bound built from them; the E-step makes the bound touch the log-likelihood, the M-step maximizes the bound. Hence the log-likelihood never falls.</p>
+      <p><b>Degenerate solutions.</b> A component can shrink onto a single point and the likelihood goes to infinity. Software adds a tiny constant to the covariance diagonals (scikit-learn: reg_covar = 1e-6, also used here).</p>
+      <p><b>Regime switching.</b> In economics the hidden regime usually persists from one period to the next. Hamilton's Markov-switching model adds transition probabilities between regimes and is estimated with the same E and M logic over time.</p>
+      <p class="note">References: Dempster, Laird and Rubin (1977), "Maximum likelihood from incomplete data via the EM algorithm", <i>JRSS B</i>; Hamilton (1989), "A new approach to the economic analysis of nonstationary time series and the business cycle", <i>Econometrica</i>; McLachlan and Peel (2000), <i>Finite Mixture Models</i>.</p>
+    </div>
+  </section>
+
+  <!-- ===================== CHALLENGES ===================== -->
+  <section data-panel="challenges" class="card" hidden>
+    <div class="card-head"><h3>Challenges</h3><span class="card-sub">Answer the "predict first" questions before testing them in the Simulation tab.</span></div>
+    <div id="challenges"></div>
+  </section>
+
+  <!-- ===================== REAL DATA ===================== -->
+  <section data-panel="real" class="card lesson" hidden>
+    <h4>From the simulation to real data</h4>
+    <ul>
+      <li>Market regimes (calm and turbulent volatility), customer segments of different sizes and shapes, density estimation and anomaly scores (a low density = an unusual observation).</li>
+      <li>Standardize the inputs when they have very different units; try several starts; choose K by BIC. In Python: <code>sklearn.mixture.GaussianMixture(n_components=K, covariance_type="full")</code>; <code>predict_proba</code> gives the responsibilities.</li>
+    </ul>
+    <div class="crosslink"><span>&#10140;</span><span><a id="fourCast" target="_blank" rel="noopener"><b>4Cast Lab</b></a> works with your own data for forecasting and classification.</span></div>
+  </section>
+
+  <footer id="mlsFooter"></footer>
+</div>
+
+<script>
+(function () {
+  'use strict';
+  const MLS = window.MLS, ML = MLS.ml, CL = MLS.cls;
+  const META = MLS.moduleMeta('gmm-em');
+  const $ = id => document.getElementById(id);
+  const F = MLS.fmt, pct = CL.pct;
+
+  const U = MLS.clust;
+  const DEFN = { regimes: 250, elong: 240, customers: 150, blobs3: 150 };
+  const S = { ds: 'regimes', n: {}, seed: 1, K: 2, init: 'kmeans', view: 'soft', step: -1, sel: null };
+  let D = null, R = null;
+  const nObs = () => S.n[S.ds] || DEFN[S.ds];
+  const oneHot = (L, K) => L.map(l => { const r = new Array(K).fill(0); r[l] = 1; return r; });
+  function startState(X, K, init, seed) {
+    if (init === 'kmeans') return ML.gmmM(X, oneHot(ML.kmeansBest(X, K, seed, 5).labels, K));
+    const r = ML.rng(seed * 13 + 5), idx = r.shuffle(X.map((_, i) => i)).slice(0, K), all = ML.gmmM(X, X.map(() => [1]));
+    return { w: new Array(K).fill(1 / K), mu: idx.map(i => X[i].slice()), S: idx.map(() => all.S[0].map(q => q.slice())) };
+  }
+  function runEM(X, st, keep) {
+    const hist = keep ? [{ phase: 'start', st, iter: 0 }] : null; let ll = -Infinity, it = 0, e;
+    for (it = 1; it <= 500; it++) {
+      e = ML.gmmE(X, st);
+      if (keep) hist.push({ phase: 'E', st, R: e.R, ll: e.ll, iter: it });
+      const conv = Math.abs(e.ll - ll) < 1e-7; ll = e.ll; if (conv) { if (keep) hist[hist.length - 1].done = true; break; }
+      st = ML.gmmM(X, e.R); if (keep) hist.push({ phase: 'M', st, R: e.R, ll: e.ll, iter: it });
+    }
+    return { st, ll, hist, iter: it, R: e.R };
+  }
+  function makeData() { D = U.make(S.ds, S.seed, nObs()); }
+  function compute() {
+    const X = D.X, run = runEM(X, startState(X, S.K, S.init, S.seed), true);
+    R = { hist: run.hist, final: run };
+    R.bic = []; for (let q = 1; q <= 5; q++) { const r = q === S.K && S.init === 'kmeans' ? run : runEM(X, startState(X, q, 'kmeans', S.seed), false); R.bic.push({ K: q, bic: ML.gmmBIC(r.ll, X.length, q), ll: r.ll }); }
+    R.bestK = R.bic.reduce((b, r) => (r.bic < b.bic ? r : b)).K;
+    R.kmLL = S.init === 'kmeans' ? run.ll : runEM(X, startState(X, S.K, 'kmeans', S.seed), false).ll;
+    R.km = ML.kmeansBest(D.Z, S.K, S.seed, 5);
+  }
+  const atEnd = () => S.step < 0 || S.step >= R.hist.length - 1;
+  const cur = () => R.hist[atEnd() ? R.hist.length - 1 : S.step];
+  const pseudo = MLS.pseudo($('pseudo'), ['start with K components (weights, means, covariances)', '**repeat**', '  E-step: probability of each component for every observation', '  M-step: weighted weights, means and covariances', '**until** the log-likelihood stops rising']);
+  const corr = Sg => Sg[0][1] / Math.sqrt(Sg[0][0] * Sg[1][1]);
+
+  function updateText() {
+    const h = cur(), card = MLS.statCard, n = D.pts.length, st = h.st;
+    let selTxt = '';
+    if (S.sel !== null && S.sel < n && h.R) selTxt = ' <b>Observation ' + (S.sel + 1) + '</b> (' + D.pts[S.sel].x.map(v => F(v, 2)).join(', ') + '): ' + h.R[S.sel].map((p, k) => 'component ' + (k + 1) + ' <b>' + pct(p) + '</b>').join(', ') + '.';
+    $('story').innerHTML = '<h3>Data: ' + D.label + '</h3><p>' + D.note + ' <b>' + n + ' observations.</b> K = ' + S.K + ' components, start ' + (S.init === 'kmeans' ? 'from k-means' : 'at random') + '.' + selTxt + '</p>';
+    const ll = h.ll === undefined ? NaN : h.ll;
+    $('stats').innerHTML =
+      card('EM iteration', h.iter + (atEnd() ? ' (converged)' : ''), h.phase === 'start' ? 'starting components' : h.phase + '-step', '', 'st_iter') +
+      card('Log-likelihood per observation', Number.isFinite(ll) ? F(ll, 4) : 'n/a', 'higher is better', '', 'st_ll') +
+      card('BIC', F(ML.gmmBIC(R.final.ll, n, S.K), 1), 'lowest at K = ' + R.bestK, '', 'st_bic') +
+      card('Weights', st.w.map(v => pct(v)).join(', '), 'share of each component', '', 'st_w');
+    pseudo.hl(h.phase === 'start' ? 1 : h.phase === 'E' ? (h.done ? [3, 5] : 3) : 4);
+    $('stepNote').innerHTML = h.phase === 'start' ? 'The starting components. Press <b>Step</b> for the first E-step.' : h.phase === 'E' ? (h.done ? 'Iteration ' + h.iter + ': the log-likelihood no longer rises. <b>Converged.</b>' : 'Iteration ' + h.iter + ', E-step: new probabilities for every observation (colours).') : 'Iteration ' + h.iter + ', M-step: the components move to fit the observations they are responsible for (ellipses).';
+    let msg, cls = 'status-line';
+    if (!atEnd()) msg = 'Press Step, Play or End to continue to convergence.';
+    else if (S.init === 'random' && R.final.ll < R.kmLL - 0.005) { msg = 'This random start converged to a poorer solution: log-likelihood ' + F(R.final.ll, 4) + ' versus ' + F(R.kmLL, 4) + ' from the k-means start. EM finds a local maximum.'; cls += ' bad'; }
+    else if (S.ds === 'regimes' && S.K === 2) { const st2 = R.final.st, t = st2.S[0][0][0] > st2.S[1][0][0] ? 0 : 1, c = 1 - t; msg = 'Turbulent regime: ' + pct(st2.w[t]) + ' of the days, stock volatility ' + F(Math.sqrt(st2.S[t][0][0]), 2) + '% a day, stock-bond correlation ' + F(corr(st2.S[t]), 2) + '. Calm regime: volatility ' + F(Math.sqrt(st2.S[c][0][0]), 2) + '%, correlation ' + F(corr(st2.S[c]), 2) + '.'; cls += ' ok'; }
+    else { msg = 'Converged after ' + R.final.iter + ' iterations. BIC is lowest at K = ' + R.bestK + (R.bestK === S.K ? ': the current K.' : '; the current K is ' + S.K + '.'); cls += ' ok'; }
+    $('statusLine').textContent = msg; $('statusLine').className = cls;
+  }
+  const figMap = MLS.figure($('figMap'), { title: 'The components and the probabilities', help: 'figmap', file: 'gmm',
+    plot: { aspect: 0.55, margin: { l: 66, b: 50 }, x: { label: () => D.names[0] }, y: { label: () => D.names[1] }, onClick: (x, y, e, p) => clickAt(p) },
+    data: () => { const h = R.final; return { cols: D.names.concat(Array.from({ length: S.K }, (_, k) => 'P(component ' + (k + 1) + ')')), rows: D.pts.map((p, i) => p.x.concat(h.R[i].map(v => +v.toFixed(4)))) }; } });
+  function clickAt(p) { const P = figMap.plot; let best = null; D.pts.forEach((q, i) => { const d = Math.hypot(P.sx(q.x[0]) - p.px, P.sy(q.x[1]) - p.py); if (d < 12 && (!best || d < best[0])) best = [d, i]; }); S.sel = best ? best[1] : null; render(); }
+  function mix(r) { const c = r.reduce((a, p, k) => { const q = MLS.hexToRgb(U.color(k)); return [a[0] + p * q[0], a[1] + p * q[1], a[2] + p * q[2]]; }, [0, 0, 0]); return 'rgb(' + c.map(Math.round).join(',') + ')'; }
+  function drawMap() {
+    const P = figMap.plot, h = cur(), st = h.st, ink = MLS.color('chart-ink');
+    P.setX(D.dom.x[0], D.dom.x[1]); P.setY(D.dom.y[0], D.dom.y[1]);
+    P.draw(P => {
+      const col = i => { if (!h.R) return MLS.color('chart-muted'); const r = h.R[i]; if (S.view === 'soft') return mix(r); let b = 0; r.forEach((v, k) => { if (v > r[b]) b = k; }); return U.color(b); };
+      P.points(D.pts, { x: p => p.x[0], y: p => p.x[1], color: (p, i) => col(i), r: 4.3, opacity: 0.92, highlight: (p, i) => i === S.sel,
+        tip: (p, i) => '<b>Observation ' + (i + 1) + '</b><br>' + D.names[0] + ': ' + F(p.x[0], 2) + '<br>' + D.names[1] + ': ' + F(p.x[1], 2) + (h.R ? '<br>' + h.R[i].map((v, k) => 'P(component ' + (k + 1) + ') = ' + pct(v)).join('<br>') : '') + '<br><i>Click to show in the story</i>' });
+      st.mu.forEach((m, k) => { [1, 2].forEach(c => P.line(ML.ellipse(m, st.S[k], c, 80), { color: U.color(k), width: c === 1 ? 2.6 : 1.6, dash: c === 2 ? '6 4' : null })); });
+      P.points(st.mu.map((m, k) => ({ x: m[0], y: m[1], k })), { color: d => U.color(d.k), shape: 'cross', r: 11, ringColor: ink, tip: d => '<b>Component ' + (d.k + 1) + '</b><br>weight ' + pct(st.w[d.k]) + '<br>mean (' + F(d.x, 2) + ', ' + F(d.y, 2) + ')' });
+    });
+    figMap.legend(Array.from({ length: S.K }, (_, k) => ({ label: 'Component ' + (k + 1) + ' (' + pct(st.w[k]) + ')', color: U.color(k) })).concat([{ label: '1 and 2 standard deviations', color: ink, line: true }, { label: 'Mean', color: ink, shape: 'cross' }]));
+    figMap.caption(S.view === 'soft' ? 'Each point is coloured by mixing the component colours in proportion to its probabilities: points between components get mixed colours. Click a point for its probabilities.' : 'Each point in the colour of its most likely component.');
+  }
+  function drawComp() {
+    const st = R.final.st, nm = D.names.map(s => s.replace(/ \(.*\)/, ''));
+    $('compCard').innerHTML = '<div class="card-head"><h3>The components after EM' + MLS.helpBtn('comp') + '</h3></div><div style="overflow-x:auto"><table class="tbl"><thead><tr><th>Component</th><th>Weight</th><th>Mean, ' + nm[0] + '</th><th>Mean, ' + nm[1] + '</th><th>Std. dev., ' + nm[0] + '</th><th>Std. dev., ' + nm[1] + '</th><th>Correlation</th></tr></thead><tbody>' +
+      st.w.map((w, k) => '<tr><td><span style="color:' + U.color(k) + '">&#9679;</span> ' + (k + 1) + '</td><td>' + pct(w) + '</td><td>' + F(st.mu[k][0], 3) + '</td><td>' + F(st.mu[k][1], 3) + '</td><td>' + F(Math.sqrt(st.S[k][0][0]), 3) + '</td><td>' + F(Math.sqrt(st.S[k][1][1]), 3) + '</td><td>' + F(corr(st.S[k]), 2) + '</td></tr>').join('') + '</tbody></table></div>';
+  }
+  const figLL = MLS.figure($('figLL'), { title: 'Log-likelihood by iteration', help: 'figll', file: 'gmm-loglik', plot: { aspect: 0.65, margin: { l: 70, b: 48 }, x: { label: 'EM iteration' }, y: { label: 'Log-likelihood per observation' } } });
+  function drawLL() {
+    const P = figLL.plot, hs = R.hist.filter(h => h.phase === 'E'), c1 = MLS.color('series-1'), now = cur().iter, v = hs.map(h => h.ll);
+    P.setX(0.5, Math.max(2, hs.length + 0.5)); P.setY(...MLS.niceDomain(Math.min(...v), Math.max(...v), 0.1));
+    P.draw(P => {
+      P.line(hs.map(h => [h.iter, h.ll]), { color: c1, width: 2 });
+      P.points(hs.map(h => ({ x: h.iter, y: h.ll })), { color: d => (d.x <= now ? c1 : MLS.color('chart-muted')), r: d => (d.x === now ? 6 : 3), tip: d => 'Iteration ' + d.x + '<br>' + F(d.y, 5) });
+    });
+    figLL.caption('After every E-step. EM never lowers the log-likelihood; it stops when the rise is below 0.0000001.');
+  }
+  const figBIC = MLS.figure($('figBIC'), { title: 'BIC by number of components', help: 'figbic', file: 'gmm-bic', plot: { aspect: 0.65, margin: { l: 70, b: 48 }, x: { label: 'Number of components K' }, y: { label: 'BIC (lower is better)' } } });
+  function drawBIC() {
+    const P = figBIC.plot, c3 = MLS.color('series-3'), c2 = MLS.color('series-2'), v = R.bic.map(r => r.bic), lo = Math.min(...v), hi = Math.max(...v);
+    P.setX(0.5, 5.5); P.setY(lo - (hi - lo) * 0.15, hi + (hi - lo) * 0.1);
+    P.draw(P => {
+      R.bic.forEach(r => P.rect(r.K - 0.32, lo - (hi - lo) * 0.15, r.K + 0.32, r.bic, { fill: MLS.rgba(r.K === R.bestK ? c3 : MLS.color('chart-muted'), r.K === S.K ? 0.95 : 0.55), stroke: r.K === S.K ? c2 : 'none', width: 2 }));
+      R.bic.forEach(r => P.text(r.K, r.bic, F(r.bic, 0), { anchor: 'middle', dy: -6, size: 11 }));
+    });
+    figBIC.caption('Each K fitted from a k-means start. Green: the lowest BIC (K = ' + R.bestK + '). Outlined: the current K.');
+  }
+  const figKM = MLS.figure($('figKM'), { title: 'For comparison: k-means with the same K', help: 'figkm', file: 'gmm-vs-kmeans', plot: { aspect: 0.45, margin: { l: 66, b: 48 }, x: { label: () => D.names[0] }, y: { label: () => D.names[1] } } });
+  function drawKM() {
+    const P = figKM.plot, km = R.km, K = km.centers.length;
+    P.setX(D.dom.x[0], D.dom.x[1]); P.setY(D.dom.y[0], D.dom.y[1]);
+    P.draw(P => {
+      U.regions(P, D.dom, x => { const z = D.sc.t(x); let b = 0, bd = Infinity; km.centers.forEach((c, k) => { const d = ML.dist2(z, c); if (d < bd) { bd = d; b = k; } }); return b; }, K);
+      P.points(D.pts, { x: p => p.x[0], y: p => p.x[1], color: (p, i) => U.color(km.labels[i]), r: 3.4 });
+    });
+    figKM.caption('K-means (standardized inputs, best of 5 starts): hard assignments and straight borders. Compare how it splits stretched or overlapping groups.');
+  }
+  function syncUI() {
+    $('ds').value = S.ds; $('n').value = nObs(); $('nVal').textContent = nObs(); $('seed').value = S.seed; $('K').value = S.K; $('KVal').textContent = S.K;
+    MLS.$$('[data-init]').forEach(b => b.setAttribute('aria-pressed', String(b.dataset.init === S.init)));
+    MLS.$$('[data-view]').forEach(b => b.setAttribute('aria-pressed', String(b.dataset.view === S.view)));
+  }
+  function render() { syncUI(); updateText(); drawMap(); drawComp(); drawLL(); drawBIC(); drawKM(); figMap.refreshTable(); if (ch) ch.check(); MLS.state.save(); }
+  function refresh() { compute(); render(); }
+  const full = () => { S.sel = null; makeData(); refresh(); };
+  MLS.stepper($('stepper'), { speed: 4, runMax: 2000,
+    step: () => { if (atEnd()) return false; S.step++; return true; },
+    reset: () => { S.step = 0; }, after: () => render() });
+  $('ds').onchange = e => { S.ds = e.target.value; S.step = -1; full(); };
+  $('n').addEventListener('input', e => ($('nVal').textContent = e.target.value));
+  $('n').onchange = e => { S.n[S.ds] = +e.target.value; S.step = -1; full(); };
+  $('seed').onchange = e => { S.seed = Math.max(1, Math.round(+e.target.value) || 1); S.step = -1; full(); };
+  $('newSeed').onclick = () => { S.seed = MLS.newSeed(); S.step = -1; full(); };
+  $('K').addEventListener('input', e => ($('KVal').textContent = e.target.value));
+  $('K').onchange = e => { S.K = +e.target.value; S.step = 0; refresh(); };
+  MLS.$$('[data-init]').forEach(b => (b.onclick = () => { S.init = b.dataset.init; S.step = 0; refresh(); }));
+  MLS.$$('[data-view]').forEach(b => (b.onclick = () => { S.view = b.dataset.view; render(); }));
+
+  MLS.registerHelp({
+    data: { title: 'Data', html: '<b>Market regimes</b>: daily stock and bond index returns (%), calm and turbulent days mixed, without labels. <b>Stretched groups</b>, <b>three round groups</b> and <b>supermarket customers</b> for comparison. Simulated.' },
+    n: { title: 'Observations', html: 'How many observations are simulated.' },
+    seed: { title: 'Random seed', html: 'Fixes the random numbers: the same seed gives the same data and the same random start.' },
+    gm: { title: 'Gaussian mixture', html: 'K bell-shaped components, each with a weight, a mean and a covariance (an ellipse). Fitted by EM.' },
+    K: { title: 'Number of components', html: 'How many bell curves the mixture has. Use the BIC chart to choose it.' },
+    init: { title: 'Start', html: '<b>From k-means</b>: the components start from the k-means clusters (the scikit-learn default). <b>Random</b>: K random observations as means, the overall spread for every component; can end in a poorer local maximum.' },
+    view: { title: 'Colouring', html: '<b>Probabilities</b>: colours mixed by the responsibilities, so uncertain points get in-between colours. <b>Most likely</b>: the colour of the most probable component.' },
+    run: { title: 'EM step by step', html: '<b>Step</b>: one E-step or one M-step. <b>End</b>: run to convergence. <b>Reset</b>: back to the starting components.' },
+    st_iter: { title: 'EM iteration', html: 'One iteration = one E-step and one M-step.' },
+    st_ll: { title: 'Log-likelihood', html: 'The average log of the mixture density at the observations: how well the mixture explains the data. EM raises it at every step.' },
+    st_bic: { title: 'BIC', html: 'Bayesian information criterion of the converged mixture: −2 log-likelihood + (number of parameters) × log n. Lower is better.' },
+    st_w: { title: 'Weights', html: 'The share of the observations each component accounts for.' },
+    comp: { title: 'The components', html: 'For each component: its weight, its mean, the standard deviation of each input and the correlation between them. For the market data: the regime\'s share of days, average returns, volatilities and stock-bond correlation.' },
+    figmap: { title: 'The components', html: 'Ellipses at 1 (solid) and 2 (dashed) standard deviations around each mean. Points coloured by their probabilities. Click a point.' },
+    figll: { title: 'Log-likelihood by iteration', html: 'The log-likelihood after each E-step. It rises quickly, then flattens.' },
+    figbic: { title: 'BIC', html: 'The BIC of mixtures with K = 1 to 5. The lowest bar is the K this criterion recommends.' },
+    figkm: { title: 'K-means for comparison', html: 'K-means with the same number of clusters, for comparison: hard assignments and straight borders.' }
+  });
+
+  function setup(o) { Object.assign(S, { step: -1 }, o); MLS.pickTab('sim'); full(); window.scrollTo({ top: 0, behavior: 'smooth' }); }
+  const ch = MLS.challenges($('challenges'), META.id, [
+    { type: 'predict', q: 'In the E-step, every observation gets...',
+      options: ['one component for certain', 'a probability of belonging to each component', 'a new value of its inputs'], answer: 1,
+      explain: 'The E-step computes, with Bayes\' rule, how likely it is that each component produced the observation. These responsibilities sum to 1.',
+      tryIt: () => setup({ ds: 'regimes', K: 2, step: 1 }) },
+    { type: 'predict', q: 'Market regimes with K = 2. Compared with the calm regime, the turbulent regime has...',
+      options: ['larger stock swings, and bonds that tend to rise when stocks fall', 'smaller swings in both', 'the same shape, only shifted'], answer: 0,
+      explain: 'The turbulent component has a much wider ellipse along the stock axis and a negative tilt: a negative stock-bond correlation (flight to safety). See the components table.',
+      tryIt: () => setup({ ds: 'regimes', K: 2 }) },
+    { type: 'task', q: 'Stretched groups: set K to the number of components with the lowest BIC.', hint: 'Choose the stretched groups and read the BIC chart.',
+      check: () => R && S.ds === 'elong' && S.K === R.bestK },
+    { type: 'predict', q: 'Stretched groups with K = 3. Which method follows the long, tilted groups?',
+      options: ['K-means, because it uses means', 'Neither of them', 'The Gaussian mixture, because its ellipses can stretch and tilt'], answer: 2,
+      explain: 'Each mixture component has its own covariance, so it can be long and tilted. K-means only places borders halfway between centers.',
+      tryIt: () => setup({ ds: 'elong', K: 3 }) },
+    { type: 'task', q: 'Random start: find a seed where EM converges to a lower log-likelihood than the start from k-means.', hint: 'Supermarket customers with K = 3 and "Random"; try seeds 1 to 10.',
+      check: () => R && S.init === 'random' && R.final.ll < R.kmLL - 0.005 },
+    { type: 'predict', q: 'During EM, the log-likelihood...',
+      options: ['can rise or fall from one iteration to the next', 'falls until it converges', 'never falls'], answer: 2,
+      explain: 'Each E-step and M-step raises the log-likelihood or keeps it, so the chart only goes up. It can still end at a local maximum.',
+      tryIt: () => setup({ ds: 'customers', K: 3, init: 'random', step: 0 }) }
+  ]);
+  const STATE = {
+    get: () => ({ ds: S.ds, n: S.n, seed: S.seed, K: S.K, init: S.init, view: S.view }),
+    set: o => {
+      if (DEFN[o.ds]) S.ds = o.ds;
+      if (o.n) Object.keys(o.n).forEach(q => { if (DEFN[q] && Number.isFinite(o.n[q])) S.n[q] = Math.max(60, Math.min(400, o.n[q])); });
+      if (Number.isFinite(o.seed)) S.seed = o.seed;
+      if (Number.isFinite(o.K)) S.K = Math.max(1, Math.min(5, o.K));
+      if (['kmeans', 'random'].includes(o.init)) S.init = o.init;
+      if (['soft', 'hard'].includes(o.view)) S.view = o.view;
+    }
+  };
+  const start = full;
+  MLS.moduleBar({ id: META.id, title: META.title, section: META.sectionTitle, level: META.level },
+    { tabs: [{ id: 'sim', label: 'Simulation' }, { id: 'lesson', label: 'Lesson' }, { id: 'challenges', label: 'Challenges' }, { id: 'real', label: 'On real data' }] });
+  MLS.state.init({ id: META.id, get: STATE.get, set: STATE.set });
+  const fc = $('fourCast'); if (fc) fc.href = MLS.APP.fourCastUrl;
+  window.__mls = { S, get R() { return R; }, get D() { return D; } };
+  document.addEventListener('mls:theme', () => refresh());
+  start();
+})();
+</script>
+</body>
+</html>

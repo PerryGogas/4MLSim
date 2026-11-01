@@ -1,0 +1,540 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Feature Scaling | 4MLSim</title>
+  <meta name="theme-color" content="#1B2340">
+  <link rel="manifest" href="../manifest.json">
+  <link rel="icon" type="image/svg+xml" href="../assets/img/icon.svg">
+  <link rel="apple-touch-icon" href="../assets/img/apple-touch-icon.png">
+  <link rel="stylesheet" href="../assets/vendor/temml.css">
+  <link rel="stylesheet" href="../assets/css/4mlsim.css">
+  <script src="../assets/vendor/temml.min.js"></script>
+  <script src="../assets/js/core.js"></script>
+  <script src="../assets/js/stats.js"></script>
+  <script src="../assets/js/plot.js"></script>
+  <script src="../assets/js/modules.js"></script>
+</head>
+<body>
+<div class="page">
+  <header id="mlsHeader" data-variant="compact"></header>
+  <div class="mod-top" id="mlsTop"><div id="mlsModBar"></div><div id="mlsTabs"></div></div>
+
+  <div class="intro-box" id="mlsIntro">
+    <h3>What this module shows</h3>
+    <div class="intro-cols">
+      <div>
+        <p>A bank describes each customer by <b>age</b> (22 to 70 years) and <b>annual income</b> (about 12,000 to 120,000 euros). To a computer these are just numbers. A difference of 1,000 euros of income counts a thousand times more than a difference of 1 year of age, only because income is measured in euros.</p>
+        <p>Algorithms that use <b>distances</b> (k-nearest neighbours, clustering, SVM) or <b>gradient descent</b> (neural networks, logistic regression) are then dominated by the variable with the largest numbers. <b>Scaling</b> puts the variables on comparable scales.</p>
+      </div>
+      <div>
+        <p><b>How to use it</b></p>
+        <ol>
+          <li><b>Nearest neighbours</b>: see which customers count as "closest" to a chosen customer, with and without scaling. Click the left chart to pick another customer.</li>
+          <li><b>Gradient descent</b>: see how many steps training needs with raw and with scaled variables.</li>
+          <li>Switch between the scaling methods, and add a few millionaires to see which method copes with outliers.</li>
+        </ol>
+      </div>
+    </div>
+  </div>
+
+  <!-- ===================== SIMULATION ===================== -->
+  <section data-panel="sim">
+    <div class="mod-grid">
+      <aside class="side" aria-label="Controls">
+        <div class="card">
+          <div class="card-head"><h3>1. What to look at<button type="button" class="help" data-help="view">?</button></h3></div>
+          <div class="seg" role="group" aria-label="View" style="display:flex">
+            <button type="button" data-view="knn" style="flex:1">Nearest neighbours</button>
+            <button type="button" data-view="gd" style="flex:1">Gradient descent</button>
+          </div>
+          <p class="note" id="viewNote"></p>
+        </div>
+
+        <div class="card">
+          <div class="card-head"><h3>2. Data<button type="button" class="help" data-help="data">?</button></h3></div>
+          <div class="field-row"><label for="n">Number of customers<button type="button" class="help" data-help="n">?</button></label><output id="nVal"></output></div>
+          <input type="range" id="n" min="40" max="400" step="10" value="150">
+          <label class="check"><input type="checkbox" id="outliers"> Add three millionaires (outliers)<button type="button" class="help" data-help="outliers">?</button></label>
+          <div class="field-row"><label for="seed">Random seed<button type="button" class="help" data-help="seed">?</button></label></div>
+          <div class="inline-inputs"><input type="number" id="seed" min="1" max="99999" step="1" value="2026" aria-label="Random seed"><button type="button" class="btn-ghost btn-icon" id="newSeed" title="New random sample" style="flex:0 0 auto">&#127922;</button></div>
+        </div>
+
+        <div class="card">
+          <div class="card-head"><h3>3. Scaling method<button type="button" class="help" data-help="method">?</button></h3></div>
+          <div class="seg prob-seg" role="group" aria-label="Scaling method">
+            <button type="button" data-sc="none">None (raw units)</button>
+            <button type="button" data-sc="minmax">Min-max to [0, 1]</button>
+            <button type="button" data-sc="standard">Standardize (z-score)</button>
+            <button type="button" data-sc="robust">Robust (median, IQR)</button>
+          </div>
+          <div class="note" id="scFormula" style="margin-top:8px"></div>
+          <div id="knnCtl">
+            <div class="field-row"><label for="k">Neighbours k<button type="button" class="help" data-help="k">?</button></label><output id="kVal"></output></div>
+            <input type="range" id="k" min="1" max="25" step="2" value="7">
+          </div>
+        </div>
+      </aside>
+
+      <main class="main">
+        <div class="stat-grid" id="stats"></div>
+        <div id="statusLine" class="status-line"></div>
+        <div class="fig-grid" id="knnFigs">
+          <div id="figRaw"></div>
+          <div id="figScaled"></div>
+          <div id="figShare"></div>
+          <div id="figStrip"></div>
+        </div>
+        <div class="fig-grid" id="gdFigs">
+          <div id="figGD" class="fig-wide"></div>
+          <div id="figKappa"></div>
+          <div id="figStrip2"></div>
+        </div>
+        <div class="res-card">
+          <h3>All four methods side by side<button type="button" class="help" data-help="compare">?</button></h3>
+          <div class="fig-table" style="max-height:none"><table class="tbl" id="cmpTable"></table></div>
+        </div>
+      </main>
+    </div>
+  </section>
+
+  <!-- ===================== LESSON ===================== -->
+  <section data-panel="lesson" class="card lesson" hidden>
+    <div id="mlsMathCtl"></div>
+    <p class="lvl-only-intuition note" style="margin-bottom:8px">Showing the intuition only. Choose <b>Formulas</b> or <b>Deep dive</b> above to add the mathematics.</p>
+
+    <h4>Units are arbitrary, numbers are not</h4>
+    <p>Income measured in euros or in thousands of euros is the same information, but the numbers differ by a factor of 1,000. Econometric results are not affected: an OLS coefficient simply rescales (a coefficient per euro becomes a coefficient per thousand euros) and t-statistics, p-values and predictions stay the same. Many machine learning methods are not like that: they compare the raw numbers across variables.</p>
+
+    <h4>Where scaling matters</h4>
+    <ul>
+      <li><b>Distances</b>: k-nearest neighbours, k-means and hierarchical clustering, DBSCAN, support vector machines with RBF kernels and PCA all compute distances or variances across variables. With raw units, the distance between two customers is essentially their income difference; age is ignored.</li>
+      <li><b>Gradient descent</b>: with variables on very different scales the loss surface is a long, narrow valley. A step size small enough for the steep direction is far too small for the flat one, so training crawls (see the Gradient Descent module).</li>
+      <li><b>Penalties</b>: ridge, lasso and elastic net penalize the size of the coefficients, and a coefficient's size depends on the units of its variable. Without scaling the penalty treats variables unequally (see the Regularization module).</li>
+      <li><b>Not needed</b>: decision trees, random forests and gradient boosting split one variable at a time at a threshold, so any monotonic rescaling gives the same tree. OLS itself also does not need it.</li>
+    </ul>
+
+    <h4>Four ways to scale</h4>
+    <div class="math-block lvl-math"><div class="mb-title">Scaling formulas (parameters from the training data)</div>
+      <div class="tex-block">\text{Min-max: } x' = \frac{x-\min(x)}{\max(x)-\min(x)} \qquad \text{Standardize: } x' = \frac{x-\bar x}{s_x} \qquad \text{Robust: } x' = \frac{x-\operatorname{median}(x)}{\operatorname{IQR}(x)}</div>
+    </div>
+    <ul>
+      <li><b>Min-max</b> maps the training data to [0, 1]. Easy to read, but a single extreme value (one millionaire) defines the maximum and squeezes everyone else into a tiny interval.</li>
+      <li><b>Standardization</b> (z-scores) gives mean 0 and standard deviation 1. The default choice; outliers still inflate the standard deviation somewhat.</li>
+      <li><b>Robust scaling</b> uses the median and the interquartile range, which ignore the extremes. Preferred when the data contain outliers, as income and wealth data usually do.</li>
+      <li>A <b>log transform</b> before scaling is often sensible for skewed money variables (income, sales, firm size).</li>
+    </ul>
+
+    <h4>Fit the scaler on the training data only</h4>
+    <p>The mean, standard deviation, minimum or median must be computed from the training data and then applied, unchanged, to the test data and to any new data. Computing them on all the data lets information from the test set leak into training (see the Data Leakage module). The same parameters must be stored and used when the model is deployed.</p>
+
+    <div class="math-block deep lvl-deep"><div class="mb-title">Deep dive</div>
+      <p><b>Distances.</b> The Euclidean distance <span class="tex">d(a,b)^2 = \sum_j (a_j-b_j)^2</span> weighs each variable by its squared units. Scaling variable j by <span class="tex">1/s_j</span> is the same as using a weighted distance with weights <span class="tex">1/s_j^2</span>; standardizing gives the "standardized Euclidean" distance. The Mahalanobis distance <span class="tex">(a-b)^\top\Sigma^{-1}(a-b)</span> goes further and also removes correlation between variables.</p>
+      <p><b>Gradient descent.</b> For least squares the Hessian is <span class="tex">X^\top X/n</span>; with the best fixed step the error shrinks by <span class="tex">(\kappa-1)/(\kappa+1)</span> per iteration, where <span class="tex">\kappa=\lambda_{\max}/\lambda_{\min}</span> is the condition number. Raw income in euros next to age in years gives κ in the billions; standardizing brings it close to 1 + |correlation| over 1 − |correlation|. The number of iterations needed grows roughly in proportion to κ.</p>
+      <p><b>Equivariance.</b> OLS predictions are invariant to rescaling the regressors; ridge and lasso predictions are not, which is why the penalty is defined on standardized variables. Trees are invariant to any strictly increasing transformation of a variable.</p>
+      <p class="note">References: James, Witten, Hastie and Tibshirani (2021), <i>An Introduction to Statistical Learning</i>, §4.7 and §12.4; Hastie, Tibshirani and Friedman (2009), §3.4; LeCun, Bottou, Orr and Müller (1998), "Efficient BackProp", in <i>Neural Networks: Tricks of the Trade</i>; scikit-learn user guide, "Preprocessing data".</p>
+    </div>
+  </section>
+
+  <!-- ===================== CHALLENGES ===================== -->
+  <section data-panel="challenges" class="card" hidden>
+    <div class="card-head"><h3>Challenges</h3><span class="card-sub">Answer the "predict first" questions before testing them in the Simulation tab.</span></div>
+    <div id="challenges"></div>
+  </section>
+
+  <!-- ===================== REAL DATA ===================== -->
+  <section data-panel="real" class="card lesson" hidden>
+    <h4>From the simulation to real data</h4>
+    <ul>
+      <li>Credit scoring, customer segmentation and fraud detection mix money amounts, ages, counts and ratios: scale them before using k-nearest neighbours, clustering, SVMs or neural networks.</li>
+      <li>Income, wealth, sales and firm size are heavily skewed: consider a log transform and robust scaling.</li>
+      <li>Dummy variables (0/1) are usually left as they are, or scaled together with the rest; be consistent.</li>
+      <li>In scikit-learn, put the scaler and the model in one Pipeline so that cross-validation refits the scaler inside each fold automatically.</li>
+    </ul>
+    <div class="crosslink"><span>&#10140;</span><span><a id="fourCast" target="_blank" rel="noopener"><b>4Cast Lab</b></a> scales the variables of your own data inside each training window before estimating its machine learning models.</span></div>
+  </section>
+
+  <footer id="mlsFooter"></footer>
+</div>
+
+<script>
+(function () {
+  'use strict';
+  const MLS = window.MLS;
+  const META = MLS.moduleMeta('feature-scaling');
+  const $ = id => document.getElementById(id);
+  const F = MLS.fmt, G = (v, s) => MLS.fmtSig(v, s || 3);
+  const METHODS = ['none', 'minmax', 'standard', 'robust'];
+  const MNAME = { none: 'None (raw units)', minmax: 'Min-max', standard: 'Standardize', robust: 'Robust' };
+  const TEST = 0.3;
+
+  const S = { view: 'knn', n: 150, outliers: false, seed: 2026, sc: 'none', k: 7, q: null };
+  let D = null, K = null, GD = null;
+
+  /* ------------------------------------------------------------------
+     data: customers with age, income, a purchase decision and monthly spending
+     ------------------------------------------------------------------ */
+  const sig = z => 1 / (1 + Math.exp(-z));
+  function buildData() {
+    const r = MLS.rng(S.seed), X = [], y = [], spend = [];
+    for (let i = 0; i < S.n; i++) {
+      const age = Math.round(r.uniform(22, 70));
+      const inc = Math.round(Math.min(125000, Math.max(12000, Math.exp(Math.log(26000) + 0.012 * (age - 22) + r.normal(0, 0.38)))) / 100) * 100;
+      const p = sig(-4.2 + 0.11 * (age - 22) + 0.000018 * (inc - 30000));
+      X.push([age, inc]); y.push(r.random() < p ? 1 : 0);
+      spend.push(Math.round(300 + 8 * age + 0.015 * inc + r.normal(0, 120)));
+    }
+    if (S.outliers) [[48, 1250000], [55, 2100000], [41, 900000]].forEach(([a, inc]) => { X.push([a, inc]); y.push(1); spend.push(Math.round(300 + 8 * a + 0.015 * inc)); });
+    const n = X.length, idx = Array.from({ length: n }, (_, i) => i); MLS.rng(S.seed * 31 + 7).shuffle(idx);
+    const nTe = Math.round(n * TEST), isTest = new Array(n).fill(false); idx.slice(0, nTe).forEach(i => (isTest[i] = true));
+    if (S.outliers) for (let i = n - 3; i < n; i++) isTest[i] = false;          /* millionaires are in the training data */
+    const tr = [], te = []; isTest.forEach((t, i) => (t ? te : tr).push(i));
+    D = { X, y, spend, n, tr, te, isTest };
+    if (S.q === null || S.q >= n) S.q = te[0];
+  }
+
+  /* scaler fitted on the training rows */
+  function quantile(a, p) { const s = a.slice().sort((u, v) => u - v), h = (s.length - 1) * p, lo = Math.floor(h); return s[lo] + (s[Math.min(lo + 1, s.length - 1)] - s[lo]) * (h - lo); }
+  function scaler(m) {
+    const cols = [0, 1].map(j => D.tr.map(i => D.X[i][j]));
+    const par = cols.map(c => {
+      if (m === 'none') return { c: 0, s: 1 };
+      if (m === 'minmax') { const lo = Math.min(...c), hi = Math.max(...c); return { c: lo, s: hi - lo || 1 }; }
+      if (m === 'standard') { const mu = MLS.mean(c), sd = Math.sqrt(MLS.mean(c.map(v => (v - mu) ** 2))); return { c: mu, s: sd || 1 }; }
+      const med = quantile(c, 0.5), iqr = quantile(c, 0.75) - quantile(c, 0.25); return { c: med, s: iqr || 1 };
+    });
+    return { m, par, f: row => row.map((v, j) => (v - par[j].c) / par[j].s), inv: (z, j) => z * par[j].s + par[j].c };
+  }
+
+  /* ------------------------------------------------------------------
+     k-nearest neighbours under a scaler
+     ------------------------------------------------------------------ */
+  function knnFor(m) {
+    const sc = scaler(m), Z = D.X.map(sc.f);
+    const neigh = (zq, excl) => D.tr.filter(i => i !== excl).map(i => ({ i, d: Math.hypot(Z[i][0] - zq[0], Z[i][1] - zq[1]) })).sort((a, b) => a.d - b.d).slice(0, S.k);
+    let ok = 0;
+    D.te.forEach(i => { const nb = neigh(Z[i]); const v = nb.reduce((s, o) => s + D.y[o.i], 0); ok += (v * 2 > nb.length ? 1 : v * 2 < nb.length ? 0 : D.y[nb[0].i]) === D.y[i] ? 1 : 0; });
+    /* share of the squared distance due to income, over all pairs of training customers (a sample of pairs if many) */
+    /* for a typical pair: the median, over pairs of training customers, of the share of the squared distance that comes from income */
+    const shares = [], T = D.tr;
+    for (let a = 0; a < T.length; a++) for (let b = a + 1; b < T.length; b += T.length > 200 ? 3 : 1) { const da = Z[T[a]][0] - Z[T[b]][0], di = Z[T[a]][1] - Z[T[b]][1], t = da * da + di * di; if (t > 0) shares.push(di * di / t); }
+    const zq = Z[S.q], nb = neigh(zq, S.q);
+    return { sc, Z, acc: ok / D.te.length, incShare: quantile(shares, 0.5), nb, zq };
+  }
+  /* ------------------------------------------------------------------
+     gradient descent on spending = b0 + b1·age + b2·income under a scaler
+     ------------------------------------------------------------------ */
+  function eigSym3(A) {
+    const a = A.map(r => r.slice());
+    for (let sweep = 0; sweep < 60; sweep++) {
+      let off = 0; for (let i = 0; i < 3; i++) for (let j = i + 1; j < 3; j++) off += a[i][j] * a[i][j];
+      if (off < 1e-30 * (a[0][0] * a[0][0] + a[1][1] * a[1][1] + a[2][2] * a[2][2])) break;
+      for (let p = 0; p < 3; p++) for (let q = p + 1; q < 3; q++) {
+        if (Math.abs(a[p][q]) < 1e-300) continue;
+        const th = (a[q][q] - a[p][p]) / (2 * a[p][q]), t = Math.sign(th || 1) / (Math.abs(th) + Math.sqrt(th * th + 1)), c = 1 / Math.sqrt(t * t + 1), s = t * c;
+        for (let k = 0; k < 3; k++) { const kp = a[k][p], kq = a[k][q]; a[k][p] = c * kp - s * kq; a[k][q] = s * kp + c * kq; }
+        for (let k = 0; k < 3; k++) { const pk = a[p][k], qk = a[q][k]; a[p][k] = c * pk - s * qk; a[q][k] = s * pk + c * qk; }
+      }
+    }
+    return [a[0][0], a[1][1], a[2][2]].sort((u, v) => v - u);
+  }
+  function gdFor(m, T) {
+    const sc = scaler(m), rows = D.tr.map(i => [1].concat(sc.f(D.X[i]))), y = D.tr.map(i => D.spend[i]), n = rows.length;
+    const H = [0, 1, 2].map(i => [0, 1, 2].map(j => rows.reduce((s, r) => s + r[i] * r[j], 0) / n));
+    const ev = eigSym3(H), lmax = ev[0], lmin = Math.max(ev[2], lmax * 1e-18), kappa = lmax / lmin;
+    const eta = 2 / (lmax + lmin);
+    const bStar = MLS.lstsq(rows, y).b;   /* exact least-squares solution (QR, stable even for raw units) */
+    const L = b => rows.reduce((s, r, t) => s + (y[t] - r[0] * b[0] - r[1] * b[1] - r[2] * b[2]) ** 2, 0) / (2 * n);
+    const Ls = L(bStar), L0 = L([0, 0, 0]);
+    let b = [0, 0, 0]; const gap = [1];
+    for (let it = 1; it <= T; it++) {
+      const res = rows.map((r, t) => r[0] * b[0] + r[1] * b[1] + r[2] * b[2] - y[t]);
+      const g = [0, 1, 2].map(j => rows.reduce((s, r, t) => s + r[j] * res[t], 0) / n);
+      b = b.map((v, j) => v - eta * g[j]);
+      gap.push(Math.max((L(b) - Ls) / (L0 - Ls), 1e-16));
+    }
+    const rho = (kappa - 1) / (kappa + 1), need = rho <= 0 ? 1 : Math.ceil(Math.log(1e-6) / Math.log(rho));
+    return { kappa, eta, gap, need };
+  }
+
+  /* ------------------------------------------------------------------
+     compute, stats, status
+     ------------------------------------------------------------------ */
+  function compute() {
+    K = {}; METHODS.forEach(m => (K[m] = knnFor(m)));
+    GD = {}; METHODS.forEach(m => (GD[m] = gdFor(m, 120)));
+  }
+  const card = MLS.statCard;
+  const bigInt = v => (v >= 1e12 ? F(v / 1e12, 1) + ' trillion' : v >= 1e9 ? F(v / 1e9, 1) + ' billion' : v >= 1e6 ? F(v / 1e6, 1) + ' million' : MLS.fmtInt(v));
+  function updateStats() {
+    const c = K[S.sc], g = GD[S.sc], shared = c.nb.filter(o => K.standard.nb.some(p => p.i === o.i)).length;
+    let msg, cls = 'status-line';
+    if (S.view === 'knn') {
+      $('stats').innerHTML =
+        card('Test accuracy', F(100 * c.acc, 1) + '%', 'k-NN with k = ' + S.k + ', ' + MNAME[S.sc].toLowerCase(), c.acc >= K.standard.acc - 0.02 ? 'good' : 'bad', 'st_acc') +
+        card('Raw units', F(100 * K.none.acc, 1) + '%', 'test accuracy without scaling', '', 'st_accraw') +
+        card('Standardized', F(100 * K.standard.acc, 1) + '%', 'test accuracy with z-scores', '', 'st_accstd') +
+        card('Income share of distance', F(100 * c.incShare, c.incShare > 0.999 ? 3 : 1) + '%', 'age: ' + F(100 * (1 - c.incShare), c.incShare > 0.999 ? 3 : 1) + '%', c.incShare > 0.9 ? 'bad' : '', 'st_share') +
+        card('Same neighbours as z-score', shared + ' of ' + S.k, 'for the selected customer', '', 'st_shared');
+      if (c.incShare > 0.99) { msg = '⚠ Without scaling, income decides ' + F(100 * c.incShare, 2) + '% of every distance: the "nearest" customers are simply those with similar income, whatever their age. Age, the main driver of the purchase, is ignored.'; cls += ' bad'; }
+      else if (S.sc === 'minmax' && S.outliers) { msg = '⚠ Min-max scaling with millionaires: the maximum income is set by an outlier, so all other incomes are squeezed near 0 and income hardly counts in the distances. Robust scaling copes better.'; cls += ' bad'; }
+      else { msg = '✓ Age and income now count on comparable scales (age ' + F(100 * (1 - c.incShare), 0) + '% of the distance, income ' + F(100 * c.incShare, 0) + '%). The neighbours are customers who are similar in both.'; cls += ' ok'; }
+    } else {
+      $('stats').innerHTML =
+        card('Condition number', G(g.kappa, 3), MNAME[S.sc].toLowerCase(), g.kappa > 1e3 ? 'bad' : 'good', 'st_kappa') +
+        card('With raw units', G(GD.none.kappa, 3), 'condition number λ<sub>max</sub> / λ<sub>min</sub>', '', 'st_kappa') +
+        card('Iterations for 10⁻⁶', bigInt(g.need), 'with the best fixed learning rate', g.need > 1e4 ? 'bad' : 'good', 'st_need') +
+        card('Raw units need', bigInt(GD.none.need), 'iterations', '', 'st_need') +
+        card('Error left after 120 steps', G(g.gap[g.gap.length - 1], 2), 'share of the initial loss gap', '', 'st_left');
+      if (g.kappa > 1e3) { msg = '⚠ With ' + (S.sc === 'none' ? 'raw units' : 'this scaling') + ' the loss surface is a valley ' + G(Math.sqrt(g.kappa), 2) + ' times longer than it is wide (κ = ' + G(g.kappa, 2) + '). Gradient descent would need about ' + bigInt(g.need) + ' iterations.'; cls += ' bad'; }
+      else { msg = '✓ Scaled variables: κ = ' + G(g.kappa, 3) + ', so gradient descent reaches the minimum in about ' + bigInt(g.need) + ' iterations instead of ' + bigInt(GD.none.need) + '.'; cls += ' ok'; }
+    }
+    $('statusLine').textContent = msg; $('statusLine').className = cls;
+    $('cmpTable').innerHTML = '<thead><tr><th>Method</th><th>k-NN test accuracy</th><th>Income share of distance (typical pair)</th><th>Condition number κ</th><th>GD iterations for 10⁻⁶</th></tr></thead><tbody>' +
+      METHODS.map(m => '<tr' + (m === S.sc ? ' class="hl"' : '') + '><td class="var">' + MNAME[m] + '</td><td>' + F(100 * K[m].acc, 1) + '%</td><td>' + F(100 * K[m].incShare, K[m].incShare > 0.999 ? 3 : 1) + '%</td><td>' + G(GD[m].kappa, 3) + '</td><td>' + bigInt(GD[m].need) + '</td></tr>').join('') + '</tbody>';
+  }
+
+  /* ------------------------------------------------------------------
+     figures
+     ------------------------------------------------------------------ */
+  const col = () => ({ c0: MLS.color('series-1'), c1: MLS.color('series-2'), q: MLS.color('series-3'), ink: MLS.color('chart-ink'), mu: MLS.color('chart-muted') });
+  const kfmt = v => (Math.abs(v) >= 1000 ? MLS.fmtInt(Math.round(v / 1000)) + 'k' : undefined);
+  const figRaw = MLS.figure($('figRaw'), {
+    title: 'Customers in original units', help: 'figraw', file: 'scaling-original-units',
+    plot: { aspect: 0.8, margin: { l: 62 }, x: { label: 'Age (years)' }, y: { label: 'Annual income (€)', fmt: kfmt },
+      onClick: (x, y) => { const P = figRaw.plot; let best = D.te[0], bd = 1e9; D.X.forEach((r, i) => { const d = Math.hypot(P.sx(r[0]) - P.sx(x), P.sy(r[1]) - P.sy(y)); if (d < bd) { bd = d; best = i; } }); S.q = best; light(); } },
+    data: () => ({ cols: ['Age', 'Income', 'Bought', 'Sample', 'Neighbour of selected'], rows: D.X.map((r, i) => [r[0], r[1], D.y[i], D.isTest[i] ? 'test' : 'train', K[S.sc].nb.some(o => o.i === i) ? 'yes' : '']) })
+  });
+  const figScaled = MLS.figure($('figScaled'), {
+    title: 'The same customers as the algorithm sees them', help: 'figscaled', file: 'scaling-scaled-space',
+    plot: { aspect: 0.8, square: true, margin: { l: 62 }, x: { label: () => 'Age, ' + scLabel() }, y: { label: () => 'Income, ' + scLabel(), fmt: v => (S.sc === 'none' ? kfmt(v) : undefined) } },
+    data: () => ({ cols: ['Age (scaled)', 'Income (scaled)'], rows: K[S.sc].Z.map(z => [z[0], z[1]]) })
+  });
+  const figShare = MLS.figure($('figShare'), {
+    title: 'What the distance is made of', help: 'figshare', file: 'scaling-distance-share',
+    plot: { aspect: 0.72, margin: { l: 110 }, x: { label: 'Share of the squared distance (%)' }, y: { ticks: false } },
+    data: () => ({ cols: ['Method', 'Age share %', 'Income share %'], rows: METHODS.map(m => [MNAME[m], 100 * (1 - K[m].incShare), 100 * K[m].incShare]) })
+  });
+  const figStrip = MLS.figure($('figStrip'), {
+    title: 'Values after scaling', help: 'figstrip', file: 'scaling-values',
+    plot: { aspect: 0.72, margin: { l: 62 }, x: { label: () => 'Value after scaling (' + MNAME[S.sc].toLowerCase() + ')', fmt: v => (S.sc === 'none' ? kfmt(v) : undefined) }, y: { ticks: false } },
+    data: () => ({ cols: ['Age scaled', 'Income scaled'], rows: K[S.sc].Z.map(z => [z[0], z[1]]) })
+  });
+  const figGD = MLS.figure($('figGD'), {
+    title: 'Gradient descent: raw versus scaled variables', help: 'figgd', file: 'scaling-gradient-descent',
+    plot: { aspect: 0.4, margin: { l: 66 }, x: { label: 'Iteration' }, y: { label: 'Loss gap left (log scale)', fmt: v => (Math.abs(v - Math.round(v)) < 1e-9 ? '10' + String(Math.round(v)).replace('-', '⁻').replace(/\d/g, d => '⁰¹²³⁴⁵⁶⁷⁸⁹'[d]) : '') } },
+    data: () => ({ cols: ['Iteration'].concat(METHODS.map(m => MNAME[m])), rows: GD.none.gap.map((_, t) => [t].concat(METHODS.map(m => GD[m].gap[t]))) })
+  });
+  const figKappa = MLS.figure($('figKappa'), {
+    title: 'Condition number κ by method', help: 'figkappa', file: 'scaling-condition-number',
+    plot: { aspect: 0.72, margin: { l: 110 }, x: { label: 'κ (log scale)', fmt: v => (Math.abs(v - Math.round(v)) < 1e-9 ? '10' + String(Math.round(v)).replace('-', '⁻').replace(/\d/g, d => '⁰¹²³⁴⁵⁶⁷⁸⁹'[d]) : '') }, y: { ticks: false } },
+    data: () => ({ cols: ['Method', 'Condition number', 'Iterations for 1e-6'], rows: METHODS.map(m => [MNAME[m], GD[m].kappa, GD[m].need]) })
+  });
+  const figStrip2 = MLS.figure($('figStrip2'), {
+    title: 'Values after scaling', help: 'figstrip', file: 'scaling-values-gd',
+    plot: { aspect: 0.72, margin: { l: 62 }, x: { label: () => 'Value after scaling (' + MNAME[S.sc].toLowerCase() + ')', fmt: v => (S.sc === 'none' ? kfmt(v) : undefined) }, y: { ticks: false } }
+  });
+  const scLabel = () => ({ none: 'raw units (same scale on both axes)', minmax: 'min-max scaled', standard: 'z-score', robust: 'robust scaled' })[S.sc];
+
+  function ellipse(cx, cy, ax, ay) { const p = []; for (let k = 0; k <= 120; k++) { const t = 2 * Math.PI * k / 120; p.push([cx + ax * Math.cos(t), cy + ay * Math.sin(t)]); } return p; }
+  function drawRaw() {
+    const P = figRaw.plot, c = col(), kk = K[S.sc], q = D.X[S.q];
+    const xs = D.X.map(r => r[0]), ys = D.X.map(r => r[1]);
+    const yhi = S.outliers ? 140000 : Math.max(...ys) * 1.06;
+    P.setX(20, 72); P.setY(0, yhi);
+    const r = kk.nb.length ? kk.nb[kk.nb.length - 1].d : 0, sp = kk.sc.par;
+    P.draw(P => {
+      P.line(ellipse(q[0], q[1], r * sp[0].s, r * sp[1].s), { color: c.q, width: 2, dash: '6 4' });
+      kk.nb.forEach(o => P.segment(q[0], q[1], D.X[o.i][0], D.X[o.i][1], { color: c.q, width: 1.2, opacity: 0.8 }));
+      const tip = d => '<b>Customer ' + (d.i + 1) + '</b> (' + (D.isTest[d.i] ? 'test' : 'training') + ')<br>Age: ' + D.X[d.i][0] + '<br>Income: ' + MLS.fmtInt(D.X[d.i][1]) + ' €<br>Pension product: ' + (D.y[d.i] ? 'bought' : 'not bought');
+      P.points(D.X.map((v, i) => ({ x: v[0], y: Math.min(v[1], yhi * 0.985), i })).filter(d => !D.y[d.i]), { color: c.c0, r: 4, tip, opacity: 0.85, highlight: d => kk.nb.some(o => o.i === d.i) });
+      P.points(D.X.map((v, i) => ({ x: v[0], y: Math.min(v[1], yhi * 0.985), i })).filter(d => D.y[d.i]), { color: c.c1, shape: 'square', r: 4, tip, opacity: 0.85, highlight: d => kk.nb.some(o => o.i === d.i) });
+      P.points([{ x: q[0], y: q[1] }], { color: c.q, shape: 'star', r: 9 });
+    });
+    figRaw.legend([{ label: 'Did not buy', color: c.c0 }, { label: 'Bought the pension product', color: c.c1, shape: 'square' }, { label: 'Selected customer', color: c.q, shape: 'star' }, { label: S.k + ' nearest neighbours (ringed)', color: c.q, line: true, width: 1.2 }]);
+    figRaw.caption('The dashed curve is the "circle" of the ' + S.k + ' nearest neighbours drawn in original units. ' + (S.sc === 'none' ? 'Without scaling it is a flat band: only income differences matter.' : 'After scaling it covers a similar range of ages and incomes.') + ' Click a customer to select it.' + (S.outliers ? ' Millionaires are drawn at the top edge.' : ''));
+  }
+  function drawScaled() {
+    const P = figScaled.plot, c = col(), kk = K[S.sc], Z = kk.Z, zq = kk.zq;
+    const zx = Z.map(z => z[0]), zy = Z.map(z => z[1]);
+    const lo = Math.min(...zx, ...zy), hi = Math.max(...zx, ...zy), cxm = (Math.min(...zx) + Math.max(...zx)) / 2, cym = (Math.min(...zy) + Math.max(...zy)) / 2, half = (hi - lo) / 2 * 1.05 + 1e-9;
+    const wx = Math.max(...zx) - Math.min(...zx), wy = Math.max(...zy) - Math.min(...zy), h2 = Math.max(wx, wy) / 2 * 1.08 + 1e-9;
+    P.setX(cxm - h2, cxm + h2); P.setY(cym - h2, cym + h2);
+    const r = kk.nb.length ? kk.nb[kk.nb.length - 1].d : 0;
+    P.draw(P => {
+      P.line(ellipse(zq[0], zq[1], r, r), { color: c.q, width: 2, dash: '6 4' });
+      P.points(Z.map((z, i) => ({ x: z[0], y: z[1], i })).filter(d => !D.y[d.i]), { color: c.c0, r: 3.6, opacity: 0.85, highlight: d => kk.nb.some(o => o.i === d.i) });
+      P.points(Z.map((z, i) => ({ x: z[0], y: z[1], i })).filter(d => D.y[d.i]), { color: c.c1, shape: 'square', r: 3.6, opacity: 0.85, highlight: d => kk.nb.some(o => o.i === d.i) });
+      P.points([{ x: zq[0], y: zq[1] }], { color: c.q, shape: 'star', r: 8 });
+    });
+    figScaled.legend([{ label: 'Did not buy', color: c.c0 }, { label: 'Bought', color: c.c1, shape: 'square' }, { label: 'Distance circle', color: c.q, line: true, dash: '6 4' }]);
+    figScaled.caption('Both axes use the same scale, as the distance formula does. ' + (S.sc === 'none' ? 'In raw units income spans about 100,000 and age about 50, so all customers sit on an almost vertical line: age differences are invisible.' : 'The cloud is spread in both directions, so both variables shape the neighbourhood.'));
+  }
+  function drawShare() {
+    const P = figShare.plot, c = col();
+    P.setX(0, 100); P.setY(-0.6, METHODS.length - 0.4);
+    P.draw(P => {
+      METHODS.forEach((m, j) => {
+        const y = METHODS.length - 1 - j, a = 100 * (1 - K[m].incShare);
+        P.rect(0, y - 0.32, a, y + 0.32, { fill: c.c0, opacity: m === S.sc ? 1 : 0.55 });
+        P.rect(a, y - 0.32, 100, y + 0.32, { fill: c.c1, opacity: m === S.sc ? 1 : 0.55 });
+        P.text(0, y, MNAME[m], { anchor: 'end', dx: -8, dy: 4, size: 12, weight: m === S.sc ? 800 : 500, halo: false });
+        P.text(Math.max(a, 2), y, F(a, a < 1 ? 2 : 0) + '% age', { anchor: 'start', dx: 4, dy: 4, size: 11.5, color: c.ink });
+      });
+    });
+    figShare.legend([{ label: 'Age', color: c.c0, box: true }, { label: 'Income', color: c.c1, box: true }]);
+    figShare.caption('For a typical pair of training customers (the median over all pairs). Fair scaling gives both variables a real say.');
+  }
+  function drawStrip(fig) {
+    const P = fig.plot, c = col(), Z = K[S.sc].Z;
+    const all = Z.flat(), lo = Math.min(...all), hi = Math.max(...all), xd = MLS.niceDomain(lo, hi, 0.04);
+    P.setX(xd[0], xd[1]); P.setY(0, 2);
+    const g = MLS.rng(5);
+    P.draw(P => {
+      P.text(xd[0], 1.55, 'Age', { dx: 4, size: 12, weight: 700, halo: false }); P.text(xd[0], 0.55, 'Income', { dx: 4, size: 12, weight: 700, halo: false });
+      P.points(Z.map(z => ({ x: z[0], y: 1.1 + 0.35 * g.random() })), { color: c.c0, r: 3, opacity: 0.7, ring: false });
+      P.points(Z.map(z => ({ x: z[1], y: 0.1 + 0.35 * g.random() })), { color: c.c1, r: 3, opacity: 0.7, ring: false });
+    });
+    fig.caption(S.sc === 'none' ? 'Raw units: income values are thousands of times larger, so age collapses into a dot at the left.' : S.sc === 'minmax' && S.outliers ? 'The millionaires set the maximum: everyone else\'s income is squeezed close to 0.' : 'Both variables now cover a similar range.');
+  }
+  function drawGD() {
+    const P = figGD.plot, c = col(), T = GD.none.gap.length - 1;
+    const cols = { none: c.c1, minmax: MLS.color('series-5'), standard: c.c0, robust: c.q };
+    P.setX(0, T); P.setY(-16.5, 0.5);
+    P.crosshair(METHODS.map(m => ({ name: MNAME[m], color: cols[m], pts: GD[m].gap.map((v, t) => [t, Math.log10(v)]) })), v => 'Iteration ' + Math.round(v), v => G(Math.pow(10, v), 2));
+    P.draw(P => {
+      P.hline(-6, { color: c.mu, dash: '3 4', width: 1.2 });
+      METHODS.forEach(m => P.line(GD[m].gap.map((v, t) => [t, Math.log10(v)]), { color: cols[m], width: m === S.sc ? 3.2 : 1.8, opacity: m === S.sc ? 1 : 0.7 }));
+    });
+    figGD.legend(METHODS.map(m => ({ label: MNAME[m] + ' (κ = ' + G(GD[m].kappa, 2) + ')', color: cols[m], line: true, width: m === S.sc ? 3.2 : 1.8 })).concat([{ label: 'Target 10⁻⁶', color: c.mu, line: true, dash: '3 4' }]));
+    figGD.caption('Linear regression of monthly spending on age and income, trained by batch gradient descent with the best fixed learning rate for each scaling. The line shows how much of the initial loss gap is left after each step. With raw units it barely moves.');
+  }
+  function drawKappa() {
+    const P = figKappa.plot, c = col(), v = METHODS.map(m => Math.log10(GD[m].kappa)), top = Math.ceil(Math.max(...v)) + 0.5;
+    P.setX(0, top); P.setY(-0.6, METHODS.length - 0.4);
+    P.draw(P => METHODS.forEach((m, j) => {
+      const y = METHODS.length - 1 - j;
+      P.rect(0, y - 0.32, Math.max(v[j], 0.02), y + 0.32, { fill: GD[m].kappa > 1e3 ? c.c1 : c.c0, opacity: m === S.sc ? 1 : 0.55 });
+      P.text(0, y, MNAME[m], { anchor: 'end', dx: -8, dy: 4, size: 12, weight: m === S.sc ? 800 : 500, halo: false });
+      P.text(Math.max(v[j], 0.02), y, G(GD[m].kappa, 2), { dx: 5, dy: 4, size: 11.5 });
+    }));
+    figKappa.legend([{ label: 'κ above 1,000: slow', color: c.c1, box: true }, { label: 'Well conditioned', color: c.c0, box: true }]);
+    figKappa.caption('κ = largest / smallest eigenvalue of XᵀX/n (with the constant). Each power of ten roughly multiplies the iterations needed by ten.');
+  }
+
+  /* ------------------------------------------------------------------
+     controls
+     ------------------------------------------------------------------ */
+  function syncUI() {
+    MLS.$$('[data-view]').forEach(b => b.setAttribute('aria-pressed', String(b.dataset.view === S.view)));
+    MLS.$$('[data-sc]').forEach(b => b.setAttribute('aria-pressed', String(b.dataset.sc === S.sc)));
+    $('knnFigs').hidden = S.view !== 'knn'; $('gdFigs').hidden = S.view !== 'gd'; $('knnCtl').hidden = S.view !== 'knn';
+    $('n').value = S.n; $('nVal').textContent = S.n; $('outliers').checked = S.outliers; $('seed').value = S.seed; $('k').value = S.k; $('kVal').textContent = S.k;
+    const p = K[S.sc].sc.par;
+    $('scFormula').innerHTML = {
+      none: 'Variables used as they are: age in years, income in euros.',
+      minmax: 'x′ = (x − min) / (max − min). Age: min ' + F(p[0].c, 0) + ', range ' + F(p[0].s, 0) + '. Income: min ' + MLS.fmtInt(p[1].c) + ', range ' + MLS.fmtInt(p[1].s) + ' €.',
+      standard: 'x′ = (x − mean) / sd. Age: mean ' + F(p[0].c, 1) + ', sd ' + F(p[0].s, 1) + '. Income: mean ' + MLS.fmtInt(p[1].c) + ', sd ' + MLS.fmtInt(p[1].s) + ' €.',
+      robust: 'x′ = (x − median) / IQR. Age: median ' + F(p[0].c, 1) + ', IQR ' + F(p[0].s, 1) + '. Income: median ' + MLS.fmtInt(p[1].c) + ', IQR ' + MLS.fmtInt(p[1].s) + ' €.'
+    }[S.sc] + ' Computed on the ' + D.tr.length + ' training customers.';
+    $('viewNote').innerHTML = S.view === 'knn' ? 'Predict whether a customer buys a pension product from the ' + S.k + ' most similar customers (k-nearest neighbours). Buying depends mostly on age.' : 'Fit monthly spending = b₀ + b₁·age + b₂·income by gradient descent, and count the steps needed.';
+  }
+  function refresh(rebuild) {
+    if (rebuild !== false) buildData();
+    compute(); syncUI(); updateStats();
+    if (S.view === 'knn') { drawRaw(); drawScaled(); drawShare(); drawStrip(figStrip); }
+    else { drawGD(); drawKappa(); drawStrip(figStrip2); }
+    [figRaw, figScaled, figShare, figStrip, figGD, figKappa].forEach(f => f.refreshTable());
+    if (ch) ch.check();
+    MLS.state.save();
+  }
+  const light = () => refresh(false);
+  MLS.$$('[data-view]').forEach(b => b.onclick = () => { S.view = b.dataset.view; light(); });
+  MLS.$$('[data-sc]').forEach(b => b.onclick = () => { S.sc = b.dataset.sc; light(); });
+  $('n').oninput = e => { S.n = +e.target.value; S.q = null; refresh(); };
+  $('outliers').onchange = e => { S.outliers = e.target.checked; refresh(); };
+  $('seed').onchange = e => { S.seed = Math.max(1, Math.round(+e.target.value) || 1); S.q = null; refresh(); };
+  $('newSeed').onclick = () => { S.seed = MLS.newSeed(); S.q = null; refresh(); };
+  $('k').oninput = e => { S.k = +e.target.value; light(); };
+
+  /* ------------------------------------------------------------------
+     help
+     ------------------------------------------------------------------ */
+  MLS.registerHelp({
+    view: { title: 'What to look at', html: '<b>Nearest neighbours</b>: a classifier that predicts from the most similar customers, so it depends directly on distances. <b>Gradient descent</b>: the training method of neural networks and many other models, whose speed depends on the scales of the variables.' },
+    data: { title: 'The customers', html: 'Simulated bank customers. The probability of buying a pension product rises strongly with age and only slightly with income. Monthly spending rises with both. 30% of customers are held back as a test set.' },
+    n: { title: 'Number of customers', html: 'How many customers are simulated (before the optional outliers are added).' },
+    outliers: { title: 'Millionaires', html: 'Adds three customers with incomes between 0.9 and 2.1 million euros to the training data. Real income data contain such values. Watch what they do to min-max scaling, and how robust scaling resists them.' },
+    seed: { title: 'Random seed', html: 'Fixes the simulated customers and the train/test split.' },
+    method: { title: 'Scaling method', html: 'How each variable is transformed before the algorithm sees it. The parameters (min, max, mean, sd, median, IQR) are computed on the training customers only and then applied to everyone.' },
+    k: { title: 'Neighbours k', html: 'The number of most similar training customers whose decisions are counted. The prediction is the majority vote. Odd values avoid ties.' },
+    compare: { title: 'Comparison', html: 'The same data under every scaling method: classification accuracy of k-nearest neighbours on the test customers, the share of the distance that comes from income, the condition number of the regression problem and the iterations gradient descent would need.' },
+    st_acc: { title: 'Test accuracy', html: 'Share of test customers whose purchase decision k-nearest neighbours predicts correctly, with the current scaling.' },
+    st_accraw: { title: 'Accuracy with raw units', html: 'The same classifier with age in years and income in euros, unscaled.' },
+    st_accstd: { title: 'Accuracy with standardization', html: 'The same classifier after z-scoring both variables.' },
+    st_share: { title: 'Income share of distance', html: 'For a typical pair of customers (the median over all pairs), the share of their squared distance that comes from the income difference. With raw units it is almost 100%: age is ignored.' },
+    st_shared: { title: 'Same neighbours', html: 'How many of the selected customer\'s k nearest neighbours are also its neighbours under standardization. Different scalings can produce completely different neighbourhoods.' },
+    st_kappa: { title: 'Condition number', html: 'Ratio of the largest to the smallest eigenvalue of XᵀX/n. It measures how elongated the loss surface is. Near 1: a round bowl, fast descent. Billions: a narrow canyon, gradient descent crawls.' },
+    st_need: { title: 'Iterations needed', html: 'Iterations to shrink the loss gap to one millionth with the best fixed learning rate, from the theoretical rate (κ − 1)/(κ + 1) per step.' },
+    st_left: { title: 'Error left', html: 'The fraction of the initial loss gap that remains after 120 gradient descent steps. 1 means no progress at all.' },
+    figraw: { title: 'Customers in original units', html: 'Each point is a customer: blue circles did not buy, orange squares did. The star is the selected customer; ringed points and lines are its k nearest neighbours under the current scaling. The dashed curve shows the neighbourhood boundary in original units. Click a customer to select it.' },
+    figscaled: { title: 'Scaled space', html: 'The same customers after scaling, drawn with equal units on both axes, exactly as the Euclidean distance treats them. The dashed circle contains the k nearest neighbours.' },
+    figshare: { title: 'Distance composition', html: 'For each method, for a typical pair of customers (median over all pairs), how much of the squared distance comes from age (blue) and income (orange). The current method is highlighted.' },
+    figstrip: { title: 'Values after scaling', html: 'The values of each variable after the current scaling, on one common axis. Comparable spreads mean the variables carry comparable weight.' },
+    figgd: { title: 'Gradient descent progress', html: 'Remaining loss gap (log scale) by iteration for each scaling, each run with its best fixed learning rate. Scaled variables reach 10⁻⁶ in a few dozen steps; raw units stall.' },
+    figkappa: { title: 'Condition numbers', html: 'κ for each scaling on a log scale. Raw income in euros next to age in years makes κ astronomically large.' }
+  });
+
+  /* ------------------------------------------------------------------
+     challenges
+     ------------------------------------------------------------------ */
+  function setup(o) { Object.assign(S, o); MLS.pickTab('sim'); refresh(); window.scrollTo({ top: 0, behavior: 'smooth' }); }
+  const ch = MLS.challenges($('challenges'), META.id, [
+    { type: 'predict', q: 'No scaling. For a 35-year-old customer earning 40,000 €, the 7 "nearest" customers will be...',
+      options: ['customers of about the same age, whatever their income', 'customers with about the same income, whatever their age', 'a balanced mix of similar age and similar income', 'random customers'], answer: 1,
+      explain: 'An income gap of 2,000 € adds 2,000² to the squared distance; an age gap of 30 years adds only 900. Income differences swamp age differences, so the neighbourhood is a thin horizontal band of similar incomes spanning all ages.',
+      tryIt: () => setup({ view: 'knn', sc: 'none', outliers: false }) },
+    { type: 'predict', q: 'Buying a pension product depends mostly on age. Which scaling will give k-nearest neighbours the higher test accuracy?',
+      options: ['Raw units', 'Standardized'], answer: 1,
+      explain: 'With raw units the classifier effectively ignores age, the variable that matters, and votes among customers of similar income. After standardizing, age counts again and the neighbours are customers of similar age.',
+      tryIt: () => setup({ view: 'knn', sc: 'none' }) },
+    { type: 'predict', q: 'Add three millionaires. Which method squeezes the incomes of ordinary customers the most?',
+      options: ['Min-max scaling', 'Standardization', 'Robust scaling'], answer: 0,
+      explain: 'Min-max divides by the range, which the largest millionaire defines: ordinary incomes all end up between 0 and about 0.05. Standardization is affected too (the outliers inflate the standard deviation), and robust scaling, based on the median and the interquartile range, hardly at all.',
+      tryIt: () => setup({ view: 'knn', sc: 'minmax', outliers: true }) },
+    { type: 'predict', q: 'Do decision trees and random forests need scaled variables?',
+      options: ['Yes, as much as k-nearest neighbours', 'No: they split one variable at a time at a threshold, so rescaling a variable gives the same splits', 'Only for income'], answer: 1,
+      explain: 'A split "income below 45,000 €" is the same split as "income below 45 k€" or "z-score below 0.4". Trees are invariant to any increasing transformation of a variable. Scaling is harmless for them, but unnecessary.' },
+    { type: 'predict', q: 'Where should the mean and standard deviation for standardization be computed?',
+      options: ['On all the data, to use as much information as possible', 'On the training data only, then applied unchanged to the test data', 'Separately on the training and on the test data'], answer: 1,
+      explain: 'The test data must play the role of data that did not exist when the model was built. Using them to compute the scaling parameters leaks information. Scaling the test data with their own mean and sd is also wrong: a new single customer has no "own" mean. Fit on training, apply to everything else.' },
+    { type: 'task', q: 'Gradient descent: choose a scaling that brings the condition number below 10.', hint: 'Switch the view to Gradient descent and try the methods.',
+      check: () => S.view === 'gd' && GD && GD[S.sc].kappa < 10 },
+    { type: 'task', q: 'With the millionaires added, find the scaling that gives the highest k-NN test accuracy.', hint: 'Tick the outliers and compare the methods in the table.',
+      check: () => S.outliers && S.view === 'knn' && K && METHODS.every(m => K[S.sc].acc >= K[m].acc - 1e-9) }
+  ]);
+
+  /* ------------------------------------------------------------------
+     state
+     ------------------------------------------------------------------ */
+  MLS.moduleBar({ id: META.id, title: META.title, section: META.sectionTitle, level: META.level },
+    { tabs: [{ id: 'sim', label: 'Simulation' }, { id: 'lesson', label: 'Lesson' }, { id: 'challenges', label: 'Challenges' }, { id: 'real', label: 'On real data' }] });
+  MLS.state.init({
+    id: META.id,
+    get: () => ({ view: S.view, n: S.n, outliers: S.outliers, seed: S.seed, sc: S.sc, k: S.k, q: S.q }),
+    set: o => {
+      if (['knn', 'gd'].includes(o.view)) S.view = o.view;
+      if (METHODS.includes(o.sc)) S.sc = o.sc;
+      ['n', 'seed', 'k', 'q'].forEach(k => { if (Number.isFinite(o[k])) S[k] = o[k]; });
+      if (typeof o.outliers === 'boolean') S.outliers = o.outliers;
+    }
+  });
+  $('fourCast').href = MLS.APP.fourCastUrl;
+  window.__mls = { S, get D() { return D; }, get K() { return K; }, get GD() { return GD; } };
+  document.addEventListener('mls:theme', () => light());
+  refresh();
+})();
+</script>
+</body>
+</html>

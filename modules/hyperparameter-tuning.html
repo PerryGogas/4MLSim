@@ -1,0 +1,328 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Hyperparameter Tuning | 4MLSim</title>
+  <meta name="theme-color" content="#1B2340">
+  <link rel="manifest" href="../manifest.json">
+  <link rel="icon" type="image/svg+xml" href="../assets/img/icon.svg">
+  <link rel="apple-touch-icon" href="../assets/img/apple-touch-icon.png">
+  <link rel="stylesheet" href="../assets/vendor/temml.css">
+  <link rel="stylesheet" href="../assets/css/4mlsim.css">
+  <script src="../assets/vendor/temml.min.js"></script>
+  <script src="../assets/js/core.js"></script>
+  <script src="../assets/js/stats.js"></script>
+  <script src="../assets/js/plot.js"></script>
+  <script src="../assets/js/modules.js"></script>
+  <script src="../assets/js/core-ml.js"></script>
+  <script src="../assets/js/classify-ui.js"></script>
+</head>
+<body>
+<div class="page">
+  <header id="mlsHeader" data-variant="compact"></header>
+  <div class="mod-top" id="mlsTop"><div id="mlsModBar"></div><div id="mlsTabs"></div></div>
+
+  <div class="intro-box" id="mlsIntro">
+    <h3>What this module shows</h3>
+    <div class="intro-cols">
+      <div>
+        <p>Most models have settings that are not learned from the data: the <b>hyperparameters</b> (k in KNN, the depth of a tree, C and γ of an SVM). They are chosen by trying values and scoring each with <b>cross-validation on the training set</b>; the test set is used once, at the end.</p>
+        <p>Which values to try? <b>Grid search</b> tries every combination of a few values; <b>random search</b> draws the same number of combinations at random. Here both search the C and γ of an RBF support vector machine.</p>
+      </div>
+      <div>
+        <p><b>How to use it</b></p>
+        <ol>
+          <li>Watch the landscape of cross-validation accuracy fill in (in practice nobody sees it).</li>
+          <li>Press <b>Step</b>: both searches evaluate one combination at a time.</li>
+          <li>Compare the best settings found, how many different γ values each tried, and the test accuracy.</li>
+        </ol>
+      </div>
+    </div>
+  </div>
+
+  <!-- ===================== SIMULATION ===================== -->
+  <section data-panel="sim">
+    <div class="mod-grid">
+      <aside class="side" aria-label="Controls">
+        <div class="card">
+          <div class="card-head"><h3>1. Data<button type="button" class="help" data-help="data">?</button></h3></div>
+          <select id="ds" aria-label="Data set"><option value="moons">Generic: moons</option><option value="circles">Generic: circles</option><option value="banks">Bank failures (two ratios)</option></select>
+          <div class="field-row"><label for="n">Observations<button type="button" class="help" data-help="n">?</button></label><output id="nVal"></output></div>
+          <input type="range" id="n" min="80" max="300" step="10" value="150">
+          <div class="field-row"><label for="seed">Random seed<button type="button" class="help" data-help="seed">?</button></label></div>
+          <div class="inline-inputs"><input type="number" id="seed" min="1" max="99999" step="1" value="1" aria-label="Random seed"><button type="button" class="btn-ghost btn-icon" id="newSeed" title="New random data" style="flex:0 0 auto">&#127922;</button></div>
+        </div>
+        <div class="card">
+          <div class="card-head"><h3>2. The search<button type="button" class="help" data-help="search">?</button></h3></div>
+          <div class="field-row"><label for="B">Budget: combinations per method<button type="button" class="help" data-help="B">?</button></label><output id="BVal"></output></div>
+          <input type="range" id="B" min="0" max="4" step="1" value="1">
+          <div class="field-row"><label for="rseed">Seed of the random search<button type="button" class="help" data-help="rseed">?</button></label></div>
+          <input type="number" id="rseed" min="1" max="99999" step="1" value="1" aria-label="Seed of the random search">
+        </div>
+        <div class="card">
+          <div class="card-head"><h3>3. Run both searches<button type="button" class="help" data-help="run">?</button></h3></div>
+          <div id="stepper"></div>
+          <p class="note" id="stepNote"></p>
+        </div>
+      </aside>
+
+      <main class="main">
+        <div class="story" id="story"></div>
+        <div class="stat-grid" id="stats" style="margin-top:12px"></div>
+        <div id="statusLine" class="status-line" style="margin:10px 0"></div>
+        <div class="fig-grid">
+          <div id="figLand" class="fig-wide"></div>
+          <div id="figBest"></div>
+          <div id="figProj"></div>
+          <div class="card fig-wide" id="resCard"></div>
+        </div>
+      </main>
+    </div>
+  </section>
+
+  <!-- ===================== LESSON ===================== -->
+  <section data-panel="lesson" class="card lesson" hidden>
+    <div id="mlsMathCtl"></div>
+    <p class="lvl-only-intuition note" style="margin-bottom:8px">Showing the intuition only. Choose <b>Formulas</b> or <b>Deep dive</b> above to add the mathematics.</p>
+
+    <h4>Parameters and hyperparameters</h4>
+    <p><b>Parameters</b> are learned from the data when the model is fitted (the coefficients of a regression, the weights of a network, the support vectors of an SVM). <b>Hyperparameters</b> are chosen before fitting and control how the model learns: the price of errors C and the width γ of an RBF SVM, k in KNN, the depth and number of trees, the learning rate.</p>
+
+    <h4>The procedure</h4>
+    <ol>
+      <li>Split the data: training set (80%) and test set (20%).</li>
+      <li>For each candidate combination of hyperparameters, compute the <b>4-fold cross-validation</b> score on the training set.</li>
+      <li>Choose the combination with the best cross-validation score.</li>
+      <li>Refit the model with it on the whole training set, and evaluate it <b>once</b> on the test set.</li>
+    </ol>
+    <p>Choosing by the test score would make the test score optimistic: the test set would have been used for a decision (see Data Leakage and Data Snooping).</p>
+
+    <h4>Grid search versus random search</h4>
+    <ul>
+      <li><b>Grid search</b>: a few values for each hyperparameter (e.g. C in 0.01, 1, 100, 10000) and every combination. Easy to read, but with g values each, g² combinations try only g different values of each hyperparameter.</li>
+      <li><b>Random search</b>: draw combinations at random (on a log scale). With the same budget, every combination tries a <b>new value of every hyperparameter</b>. When some hyperparameters matter much more than others (common in practice), random search explores the important ones more finely.</li>
+      <li>Smarter searches (Bayesian optimization, successive halving) use the results so far to choose the next combination.</li>
+    </ul>
+
+    <h4>The landscape</h4>
+    <p>For the RBF SVM, small C or small γ give a too-simple boundary (underfitting); a very large γ, especially with a large C, gives a boundary that wraps around single points (overfitting). The best region lies in between. Here the whole landscape is computed for teaching: 169 combinations × 4 folds = 676 fits. In real work you see only the points your search tried.</p>
+
+    <div class="math-block lvl-math"><div class="mb-title">What is optimized</div>
+      <div class="tex-block">(\hat C, \hat\gamma) = \arg\max_{(C, \gamma) \in \mathcal{S}} \; \frac{1}{4} \sum_{k=1}^{4} \text{Accuracy}\bigl(\text{SVM}_{C,\gamma} \text{ fitted on folds} \ne k,\; \text{fold } k\bigr)</div>
+      <p class="note">𝒮 is the grid or the random sample. Both C and γ are searched on a log scale: log<sub>10</sub> C from −2 to 4, log<sub>10</sub> γ from −2 to 2. Inputs are standardized within each fit.</p>
+    </div>
+    <div class="math-block deep lvl-deep"><div class="mb-title">Deep dive</div>
+      <p><b>Why random search works.</b> If only a few hyperparameters matter, the projection of g² random points on an important axis gives g² distinct values, against g for a grid. The chance that at least one of n random points falls in the best 5% of the space is 1 − 0.95<sup>n</sup>: 60 points give 95%.</p>
+      <p><b>The winner's curse.</b> The best cross-validation score among many combinations is optimistic: some of its advantage is luck in the folds. That is why the final model is judged on the untouched test set, or with nested cross-validation.</p>
+      <p class="note">References: Bergstra and Bengio (2012), "Random search for hyper-parameter optimization", <i>JMLR</i>; Hsu, Chang and Lin (2003), "A practical guide to support vector classification"; Cawley and Talbot (2010), "On over-fitting in model selection", <i>JMLR</i>.</p>
+    </div>
+  </section>
+
+  <!-- ===================== CHALLENGES ===================== -->
+  <section data-panel="challenges" class="card" hidden>
+    <div class="card-head"><h3>Challenges</h3><span class="card-sub">Answer the "predict first" questions before testing them in the Simulation tab.</span></div>
+    <div id="challenges"></div>
+  </section>
+
+  <!-- ===================== REAL DATA ===================== -->
+  <section data-panel="real" class="card lesson" hidden>
+    <h4>From the simulation to real data</h4>
+    <ul>
+      <li>Search on log scales for C, γ, learning rates and penalties; use a coarse search first, then a finer one around the best region.</li>
+      <li>In Python: <code>GridSearchCV</code> and <code>RandomizedSearchCV</code> (with <code>loguniform</code> distributions) in scikit-learn; for time series use <code>TimeSeriesSplit</code> as the cross-validation.</li>
+    </ul>
+    <div class="crosslink"><span>&#10140;</span><span><a id="fourCast" target="_blank" rel="noopener"><b>4Cast Lab</b></a> tunes the hyperparameters of its models on your own data.</span></div>
+  </section>
+
+  <footer id="mlsFooter"></footer>
+</div>
+
+<script>
+(function () {
+  'use strict';
+  const MLS = window.MLS, ML = MLS.ml, CL = MLS.cls;
+  const META = MLS.moduleMeta('hyperparameter-tuning');
+  const $ = id => document.getElementById(id);
+  const F = MLS.fmt, pct = CL.pct;
+
+  const BS = [4, 9, 16, 25, 36], CR = [-2, 4], GR = [-2, 2], NL = 13;
+  const DEFN = { moons: 150, circles: 150, banks: 150 };
+  const S = { ds: 'moons', n: {}, seed: 1, bi: 1, rseed: 1, step: -1 };
+  let D = null, R = null, cache = new Map(), job = 0;
+  const nObs = () => S.n[S.ds] || DEFN[S.ds], B = () => BS[S.bi];
+  function makeData() {
+    const g = ML.DATA[S.ds].gen(ML.rng(S.seed), nObs()), te = ML.split(g.X.length, S.seed);
+    const pts = g.X.map((x, i) => ({ x, y: g.y[i], te: te[i] }));
+    D = { tr: pts.filter(p => !p.te), test: pts.filter(p => p.te) };
+    /* the training set in a shuffled order, so the 4 consecutive folds are random */
+    ML.rng(S.seed + 99).shuffle(D.tr);
+    cache = new Map();
+  }
+  function fitSVM(P, lc, lg) { const sc = ML.scaler(P.map(p => p.x)), Z = P.map(p => sc.t(p.x)), m = ML.svc(Z, P.map(p => (p.y ? 1 : -1)), 10 ** lc, ML.kernel({ kernel: 'rbf', gamma: 10 ** lg }, 2), 1e-3); return x => m.f(sc.t(x)) >= 0 ? 1 : 0; }
+  function cv(lc, lg) {
+    const key = lc.toFixed(4) + ',' + lg.toFixed(4); if (cache.has(key)) return cache.get(key);
+    const P = D.tr, n = P.length; let ok = 0;
+    for (let q = 0; q < 4; q++) { const lo = Math.round(q * n / 4), hi = Math.round((q + 1) * n / 4), f = fitSVM(P.filter((_, i) => i < lo || i >= hi), lc, lg); for (let i = lo; i < hi; i++) if (f(P[i].x) === P[i].y) ok++; }
+    cache.set(key, ok / n); return ok / n;
+  }
+  const lin = (a, b, k, m) => (m === 1 ? (a + b) / 2 : a + (b - a) * k / (m - 1));
+  function plan() {
+    const g = Math.round(Math.sqrt(B())), grid = [], rnd = [], r = ML.rng(S.rseed * 7919 + 13);
+    for (let a = 0; a < g; a++) for (let b = 0; b < g; b++) grid.push({ lc: lin(CR[0], CR[1], a, g), lg: lin(GR[0], GR[1], b, g) });
+    for (let k = 0; k < B(); k++) rnd.push({ lc: r.uniform(CR[0], CR[1]), lg: r.uniform(GR[0], GR[1]) });
+    R = { grid, rnd, land: Array.from({ length: NL }, () => new Array(NL).fill(null)), landDone: 0 };
+  }
+  const shown = () => (S.step < 0 ? B() : Math.min(S.step, B()));
+  function evalShown() {
+    const k = shown(); [R.grid, R.rnd].forEach(L => L.slice(0, k).forEach(p => { if (p.cv === undefined) p.cv = cv(p.lc, p.lg); }));
+    const best = L => L.slice(0, k).reduce((b, p) => (!b || p.cv > b.cv + 1e-12 ? p : b), null);
+    R.bg = best(R.grid); R.br = best(R.rnd);
+    [R.bg, R.br].forEach(b => { if (b && b.test === undefined) { const f = fitSVM(D.tr, b.lc, b.lg); b.test = D.test.filter(p => f(p.x) === p.y).length / D.test.length; } });
+  }
+  /* the landscape, computed a few cells at a time so the page stays responsive */
+  function landscape() {
+    const my = ++job; let idx = 0;
+    const tick = () => {
+      if (my !== job) return; const t0 = performance.now();
+      while (idx < NL * NL && performance.now() - t0 < 60) { const a = idx % NL, b = Math.floor(idx / NL); R.land[b][a] = cv(lin(CR[0], CR[1], a, NL), lin(GR[0], GR[1], b, NL)); idx++; }
+      R.landDone = idx; drawLand(); if (idx === NL * NL) { updateText(); if (ch) ch.check(); } else setTimeout(tick, 0);
+    };
+    setTimeout(tick, 0);
+  }
+  const fmtC = v => { const x = 10 ** v; return x >= 100 ? F(x, 0) : x >= 1 ? F(x, 2) : F(x, 3); };
+  const landMax = () => { let m = 0; R.land.forEach(r => r.forEach(v => { if (v !== null) m = Math.max(m, v); })); return m; };
+
+  function updateText() {
+    const card = MLS.statCard, k = shown();
+    $('story').innerHTML = '<h3>Data: ' + ML.DATA[S.ds].label + '</h3><p>' + ML.DATA[S.ds].note + ' <b>' + D.tr.length + ' observations in the training set, ' + D.test.length + ' in the test set.</b> Model: SVM with an RBF kernel. Each combination of C and γ is scored by 4-fold cross-validation accuracy on the training set.</p>';
+    $('stats').innerHTML =
+      card('Combinations evaluated', k + ' of ' + B(), 'per method (4 fits each)', '', 'st_b') +
+      card('Best CV accuracy: grid', R.bg ? pct(R.bg.cv) : 'n/a', R.bg ? 'C = ' + fmtC(R.bg.lc) + ', γ = ' + fmtC(R.bg.lg) : 'not started', '', 'st_grid') +
+      card('Best CV accuracy: random', R.br ? pct(R.br.cv) : 'n/a', R.br ? 'C = ' + fmtC(R.br.lc) + ', γ = ' + fmtC(R.br.lg) : 'not started', '', 'st_rand') +
+      card('Best in the whole landscape', R.landDone === NL * NL ? pct(landMax()) : 'computing ' + Math.round(100 * R.landDone / (NL * NL)) + '%', '13 × 13 combinations (for teaching)', '', 'st_land');
+    $('stepNote').innerHTML = k < B() ? 'Each <b>Step</b> evaluates one more combination with each method.' : 'Both searches are done: ' + B() + ' combinations each.';
+    let msg, cls = 'status-line';
+    if (!R.bg) msg = 'Press Step, Play or End to run the searches.';
+    else if (k < B()) msg = 'After ' + k + ' combinations: grid ' + pct(R.bg.cv) + ', random ' + pct(R.br.cv) + '.';
+    else { const w = R.br.cv > R.bg.cv + 1e-9 ? 'Random search' : R.bg.cv > R.br.cv + 1e-9 ? 'Grid search' : 'Neither'; msg = w + (w === 'Neither' ? ' wins: both reach ' + pct(R.bg.cv) : ' finds the better combination: ' + pct(Math.max(R.bg.cv, R.br.cv)) + ' against ' + pct(Math.min(R.bg.cv, R.br.cv))) + ' in cross-validation. The grid tried ' + Math.round(Math.sqrt(B())) + ' values of γ, the random search ' + B() + '. Test accuracy of the chosen models: grid ' + pct(R.bg.test) + ', random ' + pct(R.br.test) + '.'; cls += ' ok'; }
+    $('statusLine').textContent = msg; $('statusLine').className = cls;
+  }
+  const figLand = MLS.figure($('figLand'), { title: 'The landscape: cross-validation accuracy for every C and γ', help: 'figland', file: 'tuning-landscape',
+    plot: { aspect: 0.5, margin: { l: 66, b: 50 }, x: { label: 'Price of errors C (log scale)', fmt: v => (Number.isInteger(v) ? fmtC(v) : '') }, y: { label: 'RBF width γ (log scale)', fmt: v => (Number.isInteger(v) ? fmtC(v) : '') } } });
+  function drawLand() {
+    const P = figLand.plot, k = shown(), seq = MLS.seqScale(), c1 = MLS.color('series-1'), c2 = MLS.color('series-2'), ink = MLS.color('chart-ink');
+    let lo = 1, hi = 0; R.land.forEach(r => r.forEach(v => { if (v !== null) { lo = Math.min(lo, v); hi = Math.max(hi, v); } }));
+    const dx = (CR[1] - CR[0]) / (NL - 1) / 2, dy = (GR[1] - GR[0]) / (NL - 1) / 2;
+    P.setX(CR[0] - dx, CR[1] + dx); P.setY(GR[0] - dy, GR[1] + dy);
+    P.draw(P => {
+      if (R.landDone) P.image(MLS.gridImage(R.land, v => (v === null ? [0, 0, 0, 0] : seq((v - lo) / Math.max(1e-9, hi - lo)).concat([235]))), CR[0] - dx, CR[1] + dx, GR[0] - dy, GR[1] + dy, { smooth: false });
+      const tip = (nm, p) => '<b>' + nm + '</b><br>C = ' + fmtC(p.lc) + ', γ = ' + fmtC(p.lg) + '<br>CV accuracy ' + (p.cv === undefined ? 'n/a' : pct(p.cv));
+      P.points(R.grid.slice(0, k), { x: p => p.lc, y: p => p.lg, color: c1, shape: 'square', r: 7, ringColor: ink, tip: p => tip('Grid search', p), highlight: p => p === R.bg });
+      P.points(R.rnd.slice(0, k), { x: p => p.lc, y: p => p.lg, color: c2, r: 6, ringColor: ink, tip: p => tip('Random search', p), highlight: p => p === R.br });
+    });
+    figLand.legend([{ label: 'Grid search', color: c1, shape: 'square' }, { label: 'Random search', color: c2 }, { label: 'Circled: best of each', color: 'transparent', stroke: ink }, { label: 'Light: low accuracy, dark: high (' + (R.landDone ? pct(lo) + ' to ' + pct(hi) : 'computing') + ')', color: 'transparent' }]);
+    figLand.caption(R.landDone < NL * NL ? 'Computing the landscape: ' + R.landDone + ' of ' + NL * NL + ' combinations.' : 'Every cell is the 4-fold cross-validation accuracy of one combination. Left (small C) and bottom (small γ): too simple, underfitting. Top (very large γ): a boundary that wraps around single points, overfitting.');
+  }
+  const figBest = MLS.figure($('figBest'), { title: 'Best accuracy found so far', help: 'figbest', file: 'tuning-best-so-far', plot: { aspect: 0.7, margin: { l: 56, b: 48 }, x: { label: 'Combinations evaluated' }, y: { label: 'Best CV accuracy' } } });
+  function drawBest() {
+    const P = figBest.plot, k = shown(), c1 = MLS.color('series-1'), c2 = MLS.color('series-2');
+    const run = L => { let b = 0; return L.slice(0, k).map((p, i) => [i + 1, (b = Math.max(b, p.cv))]); }, a = run(R.grid), r = run(R.rnd), v = a.concat(r).map(q => q[1]);
+    P.setX(0, B() + 1); P.setY(v.length ? Math.max(0, Math.min(...v) - 0.05) : 0.4, 1);
+    P.draw(P => { if (a.length) { P.line(a, { color: c1, width: 2.2 }); P.line(r, { color: c2, width: 2.2 }); P.crosshair([{ name: 'Grid', color: c1, pts: a }, { name: 'Random', color: c2, pts: r }], x => Math.round(x) + ' combinations', y => pct(y)); } else P.note('Press Step'); });
+    figBest.legend([{ label: 'Grid search', color: c1, line: true }, { label: 'Random search', color: c2, line: true }]);
+    figBest.caption('The grid is evaluated row by row, so its best value can stay flat for a while. Each random combination is a fresh try.');
+  }
+  const figProj = MLS.figure($('figProj'), { title: 'The same results seen along γ only', help: 'figproj', file: 'tuning-projection', plot: { aspect: 0.7, margin: { l: 56, b: 48 }, x: { label: 'RBF width γ (log scale)', fmt: v => (Number.isInteger(v) ? fmtC(v) : '') }, y: { label: 'CV accuracy' } } });
+  function drawProj() {
+    const P = figProj.plot, k = shown(), c1 = MLS.color('series-1'), c2 = MLS.color('series-2'), all = R.grid.slice(0, k).concat(R.rnd.slice(0, k)).map(p => p.cv);
+    P.setX(GR[0] - 0.1, GR[1] + 0.1); P.setY(all.length ? Math.max(0, Math.min(...all) - 0.05) : 0.4, 1.02);
+    P.draw(P => {
+      P.points(R.grid.slice(0, k), { x: p => p.lg, y: p => p.cv, color: c1, shape: 'square', r: 6, tip: p => 'Grid: γ = ' + fmtC(p.lg) + ', C = ' + fmtC(p.lc) + '<br>' + pct(p.cv) });
+      P.points(R.rnd.slice(0, k), { x: p => p.lg, y: p => p.cv, color: c2, r: 5, tip: p => 'Random: γ = ' + fmtC(p.lg) + ', C = ' + fmtC(p.lc) + '<br>' + pct(p.cv) });
+    });
+    const dg = new Set(R.grid.slice(0, k).map(p => p.lg.toFixed(3))).size;
+    figProj.caption('The grid stacks its points on ' + dg + ' γ value' + (dg === 1 ? '' : 's') + '; the random search spreads them over ' + k + '. If γ matters most, the random search learns more about it with the same budget.');
+  }
+  function drawRes() {
+    const row = (nm, b, L) => '<tr><td>' + nm + '</td><td>' + (b ? fmtC(b.lc) : '') + '</td><td>' + (b ? fmtC(b.lg) : '') + '</td><td>' + (b ? pct(b.cv) : '') + '</td><td>' + (b ? pct(b.test) : '') + '</td><td>' + new Set(L.slice(0, shown()).map(p => p.lc.toFixed(3))).size + ' / ' + new Set(L.slice(0, shown()).map(p => p.lg.toFixed(3))).size + '</td></tr>';
+    $('resCard').innerHTML = '<div class="card-head"><h3>The chosen models' + MLS.helpBtn('res') + '</h3></div><div style="overflow-x:auto"><table class="tbl"><thead><tr><th>Method</th><th>Best C</th><th>Best γ</th><th>Accuracy, 4-fold CV (training set)</th><th>Accuracy, test set (used once)</th><th>Different C / γ values tried</th></tr></thead><tbody>' + row('Grid search', R.bg, R.grid) + row('Random search', R.br, R.rnd) + '</tbody></table></div><p class="note">The best combination of each method is refitted on the whole training set and evaluated once on the test set.</p>';
+  }
+  function syncUI() { $('ds').value = S.ds; $('n').value = nObs(); $('nVal').textContent = nObs(); $('seed').value = S.seed; $('B').value = S.bi; $('BVal').textContent = B() + (B() === 4 ? ' (2 × 2 grid)' : ' (' + Math.sqrt(B()) + ' × ' + Math.sqrt(B()) + ' grid)'); $('rseed').value = S.rseed; }
+  function render() { evalShown(); syncUI(); updateText(); drawLand(); drawBest(); drawProj(); drawRes(); if (ch) ch.check(); MLS.state.save(); }
+  function refresh() { plan(); render(); landscape(); }
+  const full = () => { makeData(); refresh(); };
+  MLS.stepper($('stepper'), { speed: 3, runMax: 40,
+    step: () => { if (S.step < 0 || S.step >= B()) return false; S.step++; return true; },
+    reset: () => { S.step = 0; }, after: () => render() });
+  $('ds').onchange = e => { S.ds = e.target.value; full(); };
+  $('n').addEventListener('input', e => ($('nVal').textContent = e.target.value));
+  $('n').onchange = e => { S.n[S.ds] = +e.target.value; full(); };
+  $('seed').onchange = e => { S.seed = Math.max(1, Math.round(+e.target.value) || 1); full(); };
+  $('newSeed').onclick = () => { S.seed = MLS.newSeed(); full(); };
+  $('B').addEventListener('input', e => ($('BVal').textContent = BS[+e.target.value])); $('B').onchange = e => { S.bi = +e.target.value; S.step = -1; plan(); render(); drawLand(); };
+  $('rseed').onchange = e => { S.rseed = Math.max(1, Math.round(+e.target.value) || 1); S.step = -1; plan(); render(); };
+
+  MLS.registerHelp({
+    data: { title: 'Data', html: '<b>Moons, circles</b>: curved classes. <b>Bank failures</b>: two ratios. Simulated; 80% training set, 20% test set.' },
+    n: { title: 'Observations', html: 'How many observations are simulated. More observations make every fit slower.' },
+    seed: { title: 'Random seed', html: 'Fixes the data and the folds.' },
+    search: { title: 'The search', html: 'Both methods get the same budget of combinations; each combination costs 4 fits (4-fold cross-validation).' },
+    B: { title: 'Budget', html: '4, 9, 16, 25 or 36 combinations per method: a 2 × 2 to 6 × 6 grid, or as many random draws.' },
+    rseed: { title: 'Seed of the random search', html: 'Which random combinations are drawn. Different seeds show how lucky or unlucky one random search can be.' },
+    run: { title: 'Run both searches', html: '<b>Step</b>: one more combination for each method. <b>End</b>: the whole budget. <b>Reset</b>: no combination evaluated.' },
+    st_b: { title: 'Combinations evaluated', html: 'How many combinations each method has scored so far.' },
+    st_grid: { title: 'Grid search', html: 'The best cross-validation accuracy among the grid combinations evaluated so far, and its C and γ.' },
+    st_rand: { title: 'Random search', html: 'The best cross-validation accuracy among the random combinations evaluated so far.' },
+    st_land: { title: 'The whole landscape', html: 'The best of all 169 combinations of the background landscape: what an exhaustive (and expensive) search would find.' },
+    figland: { title: 'Landscape', html: 'Cross-validation accuracy over C and γ (log scales), with the combinations each method evaluated.' },
+    figbest: { title: 'Best so far', html: 'The best cross-validation accuracy found after each evaluation.' },
+    figproj: { title: 'Projection on γ', html: 'The evaluated combinations by their γ only: the grid repeats a few γ values, the random search tries a new one every time.' },
+    res: { title: 'The chosen models', html: 'For each method: the best combination, its cross-validation accuracy, its test accuracy after refitting on the whole training set, and how many different values of C and γ were tried.' }
+  });
+
+  function setup(o) { Object.assign(S, o); MLS.pickTab('sim'); full(); window.scrollTo({ top: 0, behavior: 'smooth' }); }
+  const ch = MLS.challenges($('challenges'), META.id, [
+    { type: 'predict', q: 'A 3 × 3 grid search evaluates 9 combinations. How many different values of γ does it try?',
+      options: ['9', '3', '1'], answer: 1,
+      explain: 'Each γ value is repeated with each of the 3 values of C. A random search with 9 draws tries 9 different values of both.',
+      tryIt: () => setup({ bi: 1, step: -1 }) },
+    { type: 'predict', q: 'Only one hyperparameter really matters. With the same budget, random search...',
+      options: ['tries many more values of the important one, and often finds a better setting', 'is always worse than the grid', 'gives exactly the same result'], answer: 0,
+      explain: 'This is the argument of Bergstra and Bengio (2012): the grid wastes evaluations repeating the same values of the important hyperparameter.',
+      tryIt: () => setup({ bi: 2 }) },
+    { type: 'task', q: 'Budget 9: find a seed of the random search where random search beats grid search in cross-validation.', hint: 'Keep the budget at 9 and try several random-search seeds (1, 2, 3, ...).',
+      check: () => R && B() === 9 && shown() === 9 && R.br && R.br.cv > R.bg.cv + 1e-9 },
+    { type: 'predict', q: 'Why are C and γ chosen by cross-validation on the training set, not by the test accuracy?',
+      options: ['The test accuracy is always lower', 'Cross-validation is faster', 'The test set must stay unused to give an honest final estimate'], answer: 2,
+      explain: 'If the test set helps choose the model, its score is no longer an estimate for new data: it is optimistic.',
+      tryIt: () => setup({ bi: 2 }) },
+    { type: 'task', q: 'Find data and a seed where the best grid point (budget 9) is at least 5 points below the best of the whole landscape.', hint: 'Wait for the landscape to finish; try the circles or the banks and other data seeds.',
+      check: () => R && B() === 9 && shown() === 9 && R.landDone === NL * NL && R.bg.cv <= landMax() - 0.05 },
+    { type: 'predict', q: 'Moons: a very large γ (100). The cross-validation accuracy will be...',
+      options: ['low: the boundary wraps around single training points (overfitting)', '100%', 'the same as for medium values'], answer: 0,
+      explain: 'The top row of the landscape is light: each observation influences only its immediate surroundings, so the model fits every training fold closely and fails on the left-out fold.',
+      tryIt: () => setup({ ds: 'moons', bi: 3 }) }
+  ]);
+  const STATE = {
+    get: () => ({ ds: S.ds, n: S.n, seed: S.seed, bi: S.bi, rseed: S.rseed }),
+    set: o => {
+      if (DEFN[o.ds]) S.ds = o.ds;
+      if (o.n) Object.keys(o.n).forEach(q => { if (DEFN[q] && Number.isFinite(o.n[q])) S.n[q] = Math.max(80, Math.min(300, o.n[q])); });
+      if (Number.isFinite(o.seed)) S.seed = o.seed;
+      if (Number.isFinite(o.bi)) S.bi = Math.max(0, Math.min(4, o.bi));
+      if (Number.isFinite(o.rseed)) S.rseed = o.rseed;
+    }
+  };
+  const start = full;
+  MLS.moduleBar({ id: META.id, title: META.title, section: META.sectionTitle, level: META.level },
+    { tabs: [{ id: 'sim', label: 'Simulation' }, { id: 'lesson', label: 'Lesson' }, { id: 'challenges', label: 'Challenges' }, { id: 'real', label: 'On real data' }] });
+  MLS.state.init({ id: META.id, get: STATE.get, set: STATE.set });
+  const fc = $('fourCast'); if (fc) fc.href = MLS.APP.fourCastUrl;
+  window.__mls = { S, get R() { return R; }, get D() { return D; } };
+  document.addEventListener('mls:theme', () => refresh());
+  start();
+})();
+</script>
+</body>
+</html>

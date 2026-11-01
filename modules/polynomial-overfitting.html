@@ -1,0 +1,472 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Polynomial Overfitting | 4MLSim</title>
+  <meta name="theme-color" content="#1B2340">
+  <link rel="manifest" href="../manifest.json">
+  <link rel="icon" type="image/svg+xml" href="../assets/img/icon.svg">
+  <link rel="apple-touch-icon" href="../assets/img/apple-touch-icon.png">
+  <link rel="stylesheet" href="../assets/vendor/temml.css">
+  <link rel="stylesheet" href="../assets/css/4mlsim.css">
+  <script src="../assets/vendor/temml.min.js"></script>
+  <script src="../assets/js/core.js"></script>
+  <script src="../assets/js/stats.js"></script>
+  <script src="../assets/js/plot.js"></script>
+  <script src="../assets/js/modules.js"></script>
+</head>
+<body>
+<div class="page">
+  <header id="mlsHeader" data-variant="compact"></header>
+  <div class="mod-top" id="mlsTop"><div id="mlsModBar"></div><div id="mlsTabs"></div></div>
+
+  <div class="intro-box" id="mlsIntro">
+    <h3>What this module shows</h3>
+    <div class="intro-cols">
+      <div>
+        <p>A <b>polynomial</b> of degree <i>d</i> can bend <i>d</i> − 1 times. Degree 1 is a straight line; degree 2 adds one curve (a wage profile that rises and then flattens); higher degrees can follow almost any pattern.</p>
+        <p>More flexibility always fits the <b>training data</b> better. But past some point the curve starts to follow the random noise of this particular sample. It then predicts <b>new data</b> worse: this is <b>overfitting</b>. Too little flexibility is <b>underfitting</b>.</p>
+      </div>
+      <div>
+        <p><b>How to use it</b></p>
+        <ol>
+          <li>Move the <b>degree</b> slider, or press <b>Sweep degrees</b>.</li>
+          <li>Watch the training error (blue) always fall, while the test error (orange) falls and then rises.</li>
+          <li>Compare the degree chosen by the test set with the ones chosen by adjusted R², AIC and BIC.</li>
+          <li>Click any <b>?</b> for help, then try the <b>Challenges</b>.</li>
+        </ol>
+      </div>
+    </div>
+  </div>
+
+  <!-- ===================== SIMULATION ===================== -->
+  <section data-panel="sim">
+    <div class="mod-grid">
+      <aside class="side" aria-label="Controls">
+        <div class="card">
+          <div class="card-head"><h3>1. Data<button type="button" class="help" data-help="dataset">?</button></h3></div>
+          <label class="field" for="ds">Dataset</label>
+          <select id="ds">
+            <option value="wage">Labour: wages over the career</option>
+            <option value="sales">Marketing: sales and advertising</option>
+            <option value="cycle">Macro: the business cycle</option>
+            <option value="sine">Synthetic: sine wave</option>
+          </select>
+          <div class="field-row"><label for="n">Number of observations<button type="button" class="help" data-help="n">?</button></label><output id="nVal"></output></div>
+          <input type="range" id="n" min="10" max="300" step="5" value="50">
+          <div class="field-row"><label for="noise">Noise<button type="button" class="help" data-help="noise">?</button></label><output id="noiseVal"></output></div>
+          <input type="range" id="noise" min="0.2" max="3" step="0.1" value="1">
+          <div class="field-row"><label for="testShare">Test (hold-out) set share<button type="button" class="help" data-help="testshare">?</button></label><output id="testVal"></output></div>
+          <input type="range" id="testShare" min="0.2" max="0.5" step="0.05" value="0.4">
+          <div class="field-row"><label for="seed">Random seed<button type="button" class="help" data-help="seed">?</button></label></div>
+          <div class="inline-inputs"><input type="number" id="seed" min="1" max="99999" step="1" value="2026" aria-label="Random seed"><button type="button" class="btn-ghost btn-icon" id="newSeed" title="New random sample" style="flex:0 0 auto">&#127922;</button></div>
+          <p class="note" id="dataNote"></p>
+        </div>
+
+        <div class="card">
+          <div class="card-head"><h3>2. Model</h3></div>
+          <div class="field-row"><label for="deg">Polynomial degree d<button type="button" class="help" data-help="degree">?</button></label><output id="degVal"></output></div>
+          <input type="range" id="deg" min="0" max="15" step="1" value="1">
+          <p class="note" id="degNote"></p>
+          <div class="btn-row fill" style="margin-top:8px">
+            <button type="button" class="btn-secondary btn-small" id="sweep">&#9654; Sweep degrees</button>
+          </div>
+          <label class="check"><input type="checkbox" id="showTrue" checked> Show the true relationship<button type="button" class="help" data-help="truecurve">?</button></label>
+          <label class="check"><input type="checkbox" id="extrap"> Show beyond the data (extrapolation)<button type="button" class="help" data-help="extrap">?</button></label>
+        </div>
+      </aside>
+
+      <main class="main">
+        <div class="stat-grid" id="stats"></div>
+        <div id="statusLine" class="status-line"></div>
+        <div class="fig-grid">
+          <div id="figFit" class="fig-wide"></div>
+          <div id="figErr"></div>
+          <div id="figCoef"></div>
+        </div>
+        <div class="res-card">
+          <h3>Which degree would each method choose?<button type="button" class="help" data-help="criteria">?</button></h3>
+          <div class="res-sub">The machine learning answer uses the test set; the econometric criteria use only the training data and penalize extra coefficients.</div>
+          <div class="fig-table" style="max-height:none"><table class="tbl" id="critTable"></table></div>
+          <div class="verdict" id="critRead"></div>
+        </div>
+      </main>
+    </div>
+  </section>
+
+  <!-- ===================== LESSON ===================== -->
+  <section data-panel="lesson" class="card lesson" hidden>
+    <div id="mlsMathCtl"></div>
+    <p class="lvl-only-intuition note" style="margin-bottom:8px">Showing the intuition only. Choose <b>Formulas</b> or <b>Deep dive</b> above to add the mathematics.</p>
+
+    <h4>Flexibility: how many shapes can a model take?</h4>
+    <p>A polynomial regression is still a linear regression: the X variables are simply <i>x</i>, <i>x</i>², <i>x</i>³, and so on. Labour economists use exactly this when they put experience and experience squared in a wage equation. Each extra power adds one coefficient and lets the curve bend once more. With as many coefficients as observations the curve can pass through every single point.</p>
+    <div class="math-block lvl-math"><div class="mb-title">Polynomial regression of degree d</div>
+      <div class="tex-block">y_i = \beta_0 + \beta_1 x_i + \beta_2 x_i^2 + \dots + \beta_d x_i^d + \varepsilon_i, \qquad k = d+1 \text{ coefficients, estimated by OLS}</div>
+    </div>
+
+    <h4>Training error always falls; test error does not</h4>
+    <p>Adding a power can never make the fit to the training data worse: OLS can always set the new coefficient to zero. So the training error keeps falling as the degree rises. The test error measures something else: how close the curve is to <b>new</b> observations. At first it falls too, because the curve captures the real pattern. Then it rises, because the extra bends follow the noise of the training sample, which does not repeat. The result is the typical <b>U-shape</b> of the test error.</p>
+    <ul>
+      <li><b>Underfitting</b> (degree too low): the model misses the pattern. Training and test errors are both high and close to each other.</li>
+      <li><b>Overfitting</b> (degree too high): the training error is small, the test error is large, and the gap between them grows.</li>
+      <li>No model can beat the <b>noise</b>: even the true curve has a test RMSE close to the noise standard deviation σ.</li>
+    </ul>
+    <div class="math-block lvl-math"><div class="mb-title">Training and test error</div>
+      <div class="tex-block">\text{RMSE}_{\text{train}} = \sqrt{\tfrac{1}{n_{tr}}\textstyle\sum_{i\in tr}(y_i-\hat f(x_i))^2}, \qquad \text{RMSE}_{\text{test}} = \sqrt{\tfrac{1}{n_{te}}\textstyle\sum_{i\in te}(y_i-\hat f(x_i))^2}</div>
+    </div>
+
+    <h4>What helps against overfitting</h4>
+    <ul>
+      <li><b>More data</b>: with more observations the noise averages out and higher degrees become safe. Try 200 observations.</li>
+      <li><b>Less noise</b>: the noisier the data, the sooner extra flexibility hurts.</li>
+      <li><b>Choosing the degree honestly</b>: with a test set or cross-validation (machine learning), or with penalized criteria such as adjusted R², AIC and BIC (econometrics).</li>
+      <li><b>Penalizing large coefficients</b>: see the Regularization module. Look at the coefficient chart: overfitted polynomials have huge coefficients of alternating sign that cancel each other out.</li>
+    </ul>
+
+    <h4>Econometric criteria</h4>
+    <p>Econometrics chooses among nested models with criteria that reward fit but charge for each extra coefficient. <b>Adjusted R²</b> charges the least, <b>AIC</b> more (and its small-sample version <b>AICc</b> more still when k is large relative to n), and <b>BIC</b> usually the most (its charge grows with the sample size), so BIC tends to choose the smallest model. None of them needs a test set, which matters when data are scarce, but all of them rely on the model's assumptions.</p>
+    <div class="math-block lvl-math"><div class="mb-title">Adjusted R², AIC and BIC (Gaussian errors)</div>
+      <div class="tex-block">\bar R^2 = 1-\frac{\text{SSR}/(n-k)}{\text{SST}/(n-1)}, \quad \text{AIC} = n\ln\tfrac{\text{SSR}}{n} + 2k + c, \quad \text{BIC} = n\ln\tfrac{\text{SSR}}{n} + k\ln n + c</div>
+      <div class="tex-block">\text{AICc} = \text{AIC} + \frac{2k(k+1)}{n-k-1}</div>
+      <p class="note">c = n(ln 2π + 1) is the same for every degree, so it does not change the choice. AICc is the small-sample correction (Hurvich and Tsai, 1989), used in the table because n/k is small here.</p>
+    </div>
+
+    <h4>Extrapolation</h4>
+    <p>Polynomials are especially dangerous outside the range of the data: the highest power dominates and the curve shoots off. Tick <b>Show beyond the data</b> to see it. A wage equation with experience to the sixth power may fit 0 to 40 years well and predict absurd wages for 45 years.</p>
+
+    <div class="math-block deep lvl-deep"><div class="mb-title">Deep dive</div>
+      <p><b>Optimism of the training error.</b> For OLS with k coefficients and homoskedastic noise of variance σ², the expected training MSE is <span class="tex">\sigma^2 (n-k)/n</span>, while the expected MSE on new responses at the same x values is <span class="tex">\sigma^2 (n+k)/n</span>. The gap <span class="tex">2\sigma^2 k/n</span> is the optimism that AIC estimates; it grows with k and shrinks with n (Hastie, Tibshirani and Friedman, 2009, §7.4).</p>
+      <p><b>Numerical stability.</b> The columns x, x², x³, ... are almost collinear (the Vandermonde matrix is badly conditioned), so naive normal equations lose all precision at high degree. 4MLSim maps x to [−1, 1] and uses the orthogonal Legendre polynomials with a QR decomposition; the fitted curve is identical, only the computation is stable. The coefficient chart converts the result back to powers of the scaled x.</p>
+      <p><b>Criteria in small samples.</b> AIC and BIC are derived from large-sample approximations. When k is close to n, the log of the residual variance falls so fast that both can favour almost interpolating models; AICc corrects AIC for this (Hurvich and Tsai, 1989). In practice the candidate set is kept small relative to n; 4MLSim uses at least 5 observations per coefficient.</p>
+      <p><b>Runge's phenomenon.</b> High-degree polynomials fitted to points spread over an interval oscillate strongly near its ends, even when the true function is smooth. This is why splines (piecewise low-degree polynomials) are preferred in practice.</p>
+      <p class="note">References: Bishop (2006), <i>Pattern Recognition and Machine Learning</i>, §1.1; James, Witten, Hastie and Tibshirani (2021), <i>An Introduction to Statistical Learning</i>, 2nd ed., ch. 2 and 7; Hastie, Tibshirani and Friedman (2009), <i>The Elements of Statistical Learning</i>, ch. 7; Wooldridge, <i>Introductory Econometrics</i>, ch. 6 (quadratic terms and adjusted R²).</p>
+    </div>
+  </section>
+
+  <!-- ===================== CHALLENGES ===================== -->
+  <section data-panel="challenges" class="card" hidden>
+    <div class="card-head"><h3>Challenges</h3><span class="card-sub">Answer the "predict first" questions before testing them in the Simulation tab.</span></div>
+    <div id="challenges"></div>
+  </section>
+
+  <!-- ===================== REAL DATA ===================== -->
+  <section data-panel="real" class="card lesson" hidden>
+    <h4>From the simulation to real data</h4>
+    <ul>
+      <li>In wage equations, a quadratic in experience is the standard; higher powers (Murphy and Welch, 1990, used a quartic) should be justified by a clear gain in out-of-sample fit or by information criteria.</li>
+      <li>Never choose the degree, or any other setting, by looking at the test set repeatedly: then the test set is no longer new data. Use cross-validation on the training data, and keep the test set for the final check (see the Cross-Validation module).</li>
+      <li>For time series, the "test set" must be the most recent period: a polynomial trend that fits the past well can be badly wrong at the end of the sample.</li>
+    </ul>
+    <div class="crosslink"><span>&#10140;</span><span>On your own data, <a id="fourCast" target="_blank" rel="noopener"><b>4Cast Lab</b></a> compares models by their out-of-sample forecast errors with proper time-series splits.</span></div>
+  </section>
+
+  <footer id="mlsFooter"></footer>
+</div>
+
+<script>
+(function () {
+  'use strict';
+  const MLS = window.MLS;
+  const META = MLS.moduleMeta('polynomial-overfitting');
+  const $ = id => document.getElementById(id);
+  const F = MLS.fmt, G = (v, s) => MLS.fmtSig(v, s || 4);
+  const MAXDEG = 15;
+
+  /* ------------------------------------------------------------------
+     datasets: a true curve f(x) plus noise of standard deviation sd
+     ------------------------------------------------------------------ */
+  const DS = {
+    wage: {
+      xl: 'Experience (years)', yl: 'Hourly wage (€)', xr: [0, 40], sd: 1.8,
+      f: e => 9 + 0.9 * e - 0.016 * e * e,
+      story: 'Each point is a worker. Wages rise quickly early in the career and flatten later: the classic concave experience profile of labour economics. The true relationship is a quadratic.'
+    },
+    sales: {
+      xl: 'Advertising spend (k€ per month)', yl: 'Sales (k€ per month)', xr: [0, 100], sd: 9,
+      f: a => 60 + 45 * Math.log(1 + a / 10),
+      story: 'Each point is a month of a firm\'s sales. Advertising raises sales with diminishing returns: the first euros of advertising do much more than the last ones. The true relationship is logarithmic, so no polynomial is exactly right.'
+    },
+    cycle: {
+      xl: 'Quarter', yl: 'Output gap (% of potential GDP)', xr: [0, 48], sd: 0.55,
+      f: t => 1.6 * Math.sin(2 * Math.PI * t / 22) + 0.7 * Math.sin(2 * Math.PI * t / 9 + 1),
+      story: 'Each point is a quarter over twelve years. The output gap swings with a long business cycle and a shorter one on top. The pattern has several turns, so a low degree cannot follow it and a fairly high degree is needed.'
+    },
+    sine: {
+      xl: 'x', yl: 'y', xr: [0, 1], sd: 0.3,
+      f: x => Math.sin(2 * Math.PI * x),
+      story: 'The textbook example (Bishop, 2006): y = sin(2πx) plus noise. You know the true curve exactly, so you can see which degree comes closest to it.'
+    }
+  };
+
+  /* ------------------------------------------------------------------
+     state
+     ------------------------------------------------------------------ */
+  const S = { ds: 'wage', n: 50, noise: 1, testShare: 0.4, seed: 2026, deg: 1, showTrue: true, extrap: false };
+  let D = null, R = null, sweepTimer = null;
+
+  function buildData() {
+    const d = DS[S.ds], r = MLS.rng(S.seed), x = [], y = [];
+    for (let i = 0; i < S.n; i++) {
+      const xi = +r.uniform(d.xr[0], d.xr[1]).toFixed(S.ds === 'sine' ? 3 : 1);
+      x.push(xi); y.push(+(d.f(xi) + r.normal(0, d.sd * S.noise)).toFixed(3));
+    }
+    const idx = Array.from({ length: S.n }, (_, i) => i);
+    MLS.rng(S.seed * 31 + 7).shuffle(idx);
+    const nTe = Math.max(2, Math.round(S.n * S.testShare));
+    const isTest = new Array(S.n).fill(false); idx.slice(0, nTe).forEach(i => (isTest[i] = true));
+    const tr = [], te = []; isTest.forEach((t, i) => (t ? te : tr).push(i));
+    D = { d, x, y, isTest, tr, te, lo: d.xr[0], hi: d.xr[1], sigma: d.sd * S.noise };
+  }
+  const maxDeg = () => Math.min(MAXDEG, D.tr.length - 1);
+  const critMax = () => Math.min(maxDeg(), Math.floor(D.tr.length / 5) - 1);
+
+  function fitAll() {
+    const xt = D.tr.map(i => D.x[i]), yt = D.tr.map(i => D.y[i]), xe = D.te.map(i => D.x[i]), ye = D.te.map(i => D.y[i]);
+    const n = xt.length, my = MLS.mean(yt), sst = yt.reduce((s, v) => s + (v - my) * (v - my), 0);
+    const rows = [];
+    for (let d = 0; d <= maxDeg(); d++) {
+      const fit = MLS.polyFit(xt, yt, d, D.lo, D.hi), k = d + 1;
+      const ssr = Math.max(0, yt.reduce((s, v, i) => s + (v - fit.f(xt[i])) ** 2, 0));
+      const trR = Math.sqrt(ssr / n), teR = MLS.rmse(ye, xe.map(fit.f));
+      /* criteria only for degrees with at least 5 training observations per coefficient */
+      const ok = n >= 5 * k && ssr > 1e-12 * sst;
+      const llf = ok ? -n / 2 * (Math.log(2 * Math.PI) + Math.log(ssr / n) + 1) : NaN;
+      rows.push({ d, k, fit, trR, teR, adjR2: ok ? 1 - (ssr / (n - k)) / (sst / (n - 1)) : NaN, aic: ok ? -2 * llf + 2 * k + 2 * k * (k + 1) / (n - k - 1) : NaN, bic: ok ? -2 * llf + k * Math.log(n) : NaN });
+    }
+    const argBy = (key, better) => rows.filter(r => Number.isFinite(r[key])).reduce((a, r) => (better(r[key], a[key]) ? r : a));
+    R = { rows, best: argBy('teR', (a, b) => a < b), adj: argBy('adjR2', (a, b) => a > b), aic: argBy('aic', (a, b) => a < b), bic: argBy('bic', (a, b) => a < b), trainBest: argBy('trR', (a, b) => a < b - 1e-12) };
+    S.deg = Math.min(S.deg, maxDeg());
+    R.cur = rows[S.deg];
+  }
+
+  /* ------------------------------------------------------------------
+     stats, status, criteria table
+     ------------------------------------------------------------------ */
+  const card = MLS.statCard;
+  function regime() {
+    const c = R.cur, b = R.best;
+    if (c.k >= D.tr.length) return 'interp';
+    if (c.d < b.d && c.teR > 1.08 * b.teR) return 'under';
+    if (c.d > b.d && c.teR > 1.08 * b.teR) return 'over';
+    return 'good';
+  }
+  function updateStats() {
+    const c = R.cur, b = R.best, ratio = c.teR / Math.max(c.trR, 1e-12);
+    $('stats').innerHTML =
+      card('Degree d', String(c.d), c.k + ' coefficient' + (c.k > 1 ? 's' : '') + ' for ' + D.tr.length + ' training points', '', 'st_deg') +
+      card('Training RMSE', F(c.trR, 3), 'error on the data used to fit', '', 'st_train') +
+      card('Test RMSE', F(c.teR, 3), c.trR > 1e-9 ? 'test / training = ' + F(ratio, 2) : 'training error is zero', regime() === 'good' ? 'good' : regime() === 'under' ? '' : 'bad', 'st_test') +
+      card('Lowest test RMSE', F(b.teR, 3), 'at degree ' + b.d, '', 'st_best') +
+      card('Noise σ', F(D.sigma, 3), 'test RMSE of the true curve is about this', '', 'st_sigma');
+    const sl = $('statusLine'); let msg, cls = 'status-line';
+    switch (regime()) {
+      case 'interp': msg = '⚠ Interpolation: ' + c.k + ' coefficients for ' + D.tr.length + ' training points. The curve passes through every training point (training error zero) and predicts new data badly.'; cls += ' bad'; break;
+      case 'under': msg = '⚠ Underfitting: degree ' + c.d + ' is too simple for this pattern. Both errors are high; a higher degree (around ' + b.d + ') predicts better.'; cls += ' bad'; break;
+      case 'over': msg = '⚠ Overfitting: the training error keeps falling, but the test error is ' + F((c.teR / b.teR - 1) * 100, 0) + '% above its lowest value (degree ' + b.d + '). The extra bends follow noise.'; cls += ' bad'; break;
+      default: msg = '✓ Good balance: the test error is within 8% of the lowest possible (degree ' + b.d + ').'; cls += ' ok';
+    }
+    sl.textContent = msg; sl.className = cls;
+    /* criteria */
+    const line = (name, uses, r, help) => '<tr' + (r.d === S.deg ? ' class="hl"' : '') + '><td class="var">' + name + MLS.helpBtn(help) + '</td><td style="text-align:left">' + uses + '</td><td><b>' + r.d + '</b></td><td>' + F(r.teR, 3) + '</td></tr>';
+    $('critTable').innerHTML = '<thead><tr><th>Method</th><th>Data it uses</th><th>Chosen degree</th><th>Test RMSE at that degree</th></tr></thead><tbody>' +
+      line('Lowest test RMSE (machine learning)', 'test set', R.best, 'c_test') +
+      line('Highest adjusted R²', 'training data', R.adj, 'c_adj') +
+      line('Lowest AICc (corrected AIC)', 'training data', R.aic, 'c_aic') +
+      line('Lowest BIC', 'training data', R.bic, 'c_bic') +
+      line('Lowest training RMSE (wrong!)', 'training data', R.trainBest, 'c_train') + '</tbody>';
+    $('critRead').innerHTML = 'BIC chooses degree <b>' + R.bic.d + '</b>, AICc <b>' + R.aic.d + '</b>, adjusted R² <b>' + R.adj.d + '</b>; the test set prefers <b>' + R.best.d + '</b>. ' +
+      (R.bic.d <= R.aic.d && R.aic.d <= R.adj.d ? 'As usual, the heavier the penalty, the smaller the model (BIC ≤ AICc ≤ adjusted R²). ' : '') +
+      'Minimizing the training error always picks the highest degree allowed, which is why it cannot be used to choose a model. ' +
+      '<span class="note">The criteria consider degrees with at least 5 training observations per coefficient (here up to degree ' + critMax() + ').</span>';
+    $('degNote').innerHTML = c.k + ' coefficients. Maximum degree here: ' + maxDeg() + ' (one less than the ' + D.tr.length + ' training points' + (maxDeg() === MAXDEG ? ', capped at 15' : '') + ').';
+  }
+
+  /* ------------------------------------------------------------------
+     figures
+     ------------------------------------------------------------------ */
+  const col = () => ({ tr: MLS.color('series-1'), te: MLS.color('series-2'), tru: MLS.color('series-3'), ink: MLS.color('chart-ink'), mu: MLS.color('chart-muted'), shade: MLS.color('series-4') });
+  const figFit = MLS.figure($('figFit'), {
+    title: 'Data and the fitted polynomial', help: 'figfit', file: 'polynomial-fit',
+    plot: { aspect: 0.42, margin: { l: 66 }, x: { label: () => D.d.xl }, y: { label: () => D.d.yl } },
+    data: () => ({ cols: [D.d.xl, D.d.yl, 'Sample', 'Fitted (degree ' + S.deg + ')', 'True curve'], rows: D.x.map((x, i) => [x, D.y[i], D.isTest[i] ? 'test' : 'train', R.cur.fit.f(x), D.d.f(x)]) })
+  });
+  const figErr = MLS.figure($('figErr'), {
+    title: 'Training and test error by degree', help: 'figerr', file: 'polynomial-error-by-degree',
+    plot: { aspect: 0.72, margin: { l: 62 }, x: { label: 'Polynomial degree d', fmt: v => (Math.abs(v - Math.round(v)) < 1e-9 ? String(Math.round(v)) : '') }, y: { label: 'RMSE' },
+      onClick: x => { const d = Math.max(0, Math.min(maxDeg(), Math.round(x))); if (d !== S.deg) { S.deg = d; stopSweep(); refresh(); } } },
+    data: () => ({ cols: ['Degree', 'Training RMSE', 'Test RMSE', 'Adjusted R²', 'AIC', 'BIC'], rows: R.rows.map(r => [r.d, r.trR, r.teR, r.adjR2, r.aic, r.bic]) })
+  });
+  const figCoef = MLS.figure($('figCoef'), {
+    title: 'Coefficients of the current polynomial', help: 'figcoef', file: 'polynomial-coefficients',
+    plot: { aspect: 0.72, margin: { l: 62 }, x: { label: 'Power of the scaled x', fmt: v => (Math.abs(v - Math.round(v)) < 1e-9 && v >= 0 ? String(Math.round(v)) : '') }, y: { label: 'Size of coefficient (log scale)', fmt: v => (Math.abs(v - Math.round(v)) < 1e-9 ? G(Math.pow(10, v), 1) : '') } },
+    data: () => ({ cols: ['Power of scaled x', 'Coefficient'], rows: R.cur.fit.mono.map((c, i) => [i, c]) })
+  });
+  function drawFit() {
+    const P = figFit.plot, c = col(), f = R.cur.fit.f;
+    const W = D.hi - D.lo, x0 = S.extrap ? D.lo - 0.2 * W : D.lo - 0.02 * W, x1 = S.extrap ? D.hi + 0.2 * W : D.hi + 0.02 * W;
+    const ys = D.y.slice(); if (S.showTrue) for (let k = 0; k <= 40; k++) ys.push(D.d.f(x0 + (x1 - x0) * k / 40));
+    const yd = MLS.niceDomain(MLS.stat.min(ys), MLS.stat.max(ys), 0.18);
+    P.setX(x0, x1); P.setY(yd[0], yd[1]);
+    P.draw(P => {
+      if (S.extrap) { P.rect(x0, yd[0], D.lo, yd[1], { fill: MLS.rgba(c.shade, 0.12) }); P.rect(D.hi, yd[0], x1, yd[1], { fill: MLS.rgba(c.shade, 0.12) }); P.text(D.lo - 0.1 * W, yd[1] - (yd[1] - yd[0]) * 0.05, 'no data', { anchor: 'middle', size: 12, color: c.mu }); P.text(D.hi + 0.1 * W, yd[1] - (yd[1] - yd[0]) * 0.05, 'no data', { anchor: 'middle', size: 12, color: c.mu }); }
+      if (S.showTrue) P.fn(D.d.f, { color: c.tru, width: 2.2, dash: '7 5', samples: 300 });
+      P.fn(f, { color: c.ink, width: 2.8, samples: 500 });
+      const tip = i => '<b>Observation ' + (i + 1) + '</b> (' + (D.isTest[i] ? 'test' : 'training') + ')<br>' + MLS.esc(D.d.xl) + ': ' + F(D.x[i]) + '<br>' + MLS.esc(D.d.yl) + ': ' + F(D.y[i]) + '<br>Fitted: ' + F(f(D.x[i])) + '<br>Error: ' + F(D.y[i] - f(D.x[i]));
+      P.points(D.tr.map(i => ({ x: D.x[i], y: D.y[i], i })), { color: c.tr, r: S.n > 150 ? 3.4 : 4.8, tip: d => tip(d.i) });
+      P.points(D.te.map(i => ({ x: D.x[i], y: D.y[i], i })), { color: c.te, shape: 'square', r: S.n > 150 ? 3.6 : 4.8, tip: d => tip(d.i) });
+    });
+    const leg = [{ label: 'Training set (' + D.tr.length + ')', color: c.tr }, { label: 'Test (hold-out) set (' + D.te.length + ')', color: c.te, shape: 'square' }, { label: 'Fitted polynomial, degree ' + S.deg, color: c.ink, line: true, width: 2.8 }];
+    if (S.showTrue) leg.push({ label: 'True relationship', color: c.tru, line: true, dash: '7 5' });
+    figFit.legend(leg);
+    figFit.caption('The curve is estimated on the blue training points only. The orange test points play the role of new data.');
+  }
+  function drawErr() {
+    const P = figErr.plot, c = col(), md = maxDeg();
+    const top = 2.2 * Math.max(R.rows[0].trR, R.rows[0].teR, D.sigma);
+    P.setX(-0.4, md + 0.4); P.setY(0, top);
+    const cap = v => Math.min(v, top * 0.985);
+    const trPts = R.rows.map(r => [r.d, r.trR]), tePts = R.rows.map(r => [r.d, cap(r.teR)]);
+    P.crosshair([{ name: 'Training RMSE', color: c.tr, pts: trPts }, { name: 'Test RMSE', color: c.te, pts: R.rows.map(r => [r.d, r.teR]) }], v => 'Degree ' + Math.round(v), v => F(v, 3));
+    P.draw(P => {
+      P.hline(D.sigma, { color: c.tru, dash: '3 4', width: 1.4 });
+      P.vline(S.deg, { color: c.ink, width: 1.4, dash: '5 4' });
+      P.line(trPts, { color: c.tr, width: 2.4 }); P.line(tePts, { color: c.te, width: 2.4 });
+      P.points(trPts.map(p => ({ x: p[0], y: p[1] })), { color: c.tr, r: 3.6 });
+      P.points(R.rows.map(r => ({ x: r.d, y: cap(r.teR), r })), { color: c.te, shape: d => (d.r.teR > top ? 'triangle' : 'square'), r: 3.8, tip: d => 'Degree ' + d.r.d + '<br>Training RMSE: ' + F(d.r.trR, 4) + '<br>Test RMSE: ' + F(d.r.teR, 4) + (d.r.teR > top ? '<br><i>(off the chart)</i>' : '') });
+      P.points([{ x: R.best.d, y: R.best.teR }], { color: c.tru, shape: 'star', r: 8 });
+    });
+    figErr.legend([{ label: 'Training RMSE', color: c.tr, line: true }, { label: 'Test RMSE', color: c.te, line: true }, { label: 'Lowest test RMSE', color: c.tru, shape: 'star' }, { label: 'Noise σ', color: c.tru, line: true, dash: '3 4', width: 1.4 }, { label: 'Current degree', color: c.ink, line: true, dash: '5 4', width: 1.4 }]);
+    figErr.caption('Click the chart to choose a degree.' + (R.rows.some(r => r.teR > top) ? ' Triangles at the top: test errors too large to show (hover for the value).' : ''));
+  }
+  function drawCoef() {
+    const P = figCoef.plot, c = col(), m = R.cur.fit.mono, floor = -2;
+    const v = m.map(x => Math.max(floor, Math.log10(Math.abs(x) || 1e-12)));
+    const top = Math.max(2, Math.ceil(Math.max(...v) + 0.3));
+    P.setX(-0.6, Math.max(3, m.length - 1) + 0.6); P.setY(floor, top);
+    P.draw(P => {
+      v.forEach((y, i) => P.rect(i - 0.32, floor, i + 0.32, y, { fill: m[i] >= 0 ? c.tr : c.te, opacity: 0.85 }));
+      P.points(v.map((y, i) => ({ x: i, y, i })), { color: 'transparent', r: 8, ring: false, tip: d => 'Power ' + d.i + ' of the scaled x<br>Coefficient: ' + G(m[d.i], 4) });
+    });
+    const big = Math.max(...m.map(Math.abs));
+    figCoef.legend([{ label: 'Positive coefficient', color: c.tr, box: true }, { label: 'Negative coefficient', color: c.te, box: true }]);
+    figCoef.caption('x is rescaled to run from −1 to 1. Largest coefficient: <b>' + G(big, 3) + '</b>. ' + (big > 100 ? 'Huge coefficients of alternating sign that cancel each other out are the fingerprint of overfitting.' : 'Moderate coefficients: the curve is smooth.'));
+  }
+
+  /* ------------------------------------------------------------------
+     controls
+     ------------------------------------------------------------------ */
+  function syncUI() {
+    $('ds').value = S.ds; $('n').value = S.n; $('nVal').textContent = S.n;
+    $('noise').value = S.noise; $('noiseVal').textContent = F(S.noise, 1) + '×';
+    $('testShare').value = S.testShare; $('testVal').textContent = F(100 * S.testShare, 0) + '% (' + D.te.length + ' points)';
+    $('seed').value = S.seed; $('deg').max = maxDeg(); $('deg').value = S.deg; $('degVal').textContent = S.deg;
+    $('showTrue').checked = S.showTrue; $('extrap').checked = S.extrap;
+    $('dataNote').innerHTML = D.d.story + ' <b>' + D.tr.length + '</b> training and <b>' + D.te.length + '</b> test observations.';
+  }
+  function refresh(rebuild) {
+    if (rebuild !== false) { buildData(); fitAll(); } else { S.deg = Math.min(S.deg, maxDeg()); R.cur = R.rows[S.deg]; }
+    syncUI(); updateStats(); drawFit(); drawErr(); drawCoef();
+    figFit.refreshTable(); figErr.refreshTable(); figCoef.refreshTable();
+    if (ch) ch.check();
+    MLS.state.save();
+  }
+  const degOnly = () => refresh(false);
+  $('ds').onchange = e => { S.ds = e.target.value; refresh(); };
+  $('n').oninput = e => { S.n = +e.target.value; refresh(); };
+  $('noise').oninput = e => { S.noise = +e.target.value; refresh(); };
+  $('testShare').oninput = e => { S.testShare = +e.target.value; refresh(); };
+  $('seed').onchange = e => { S.seed = Math.max(1, Math.round(+e.target.value) || 1); refresh(); };
+  $('newSeed').onclick = () => { S.seed = MLS.newSeed(); refresh(); };
+  $('deg').oninput = e => { S.deg = +e.target.value; stopSweep(); degOnly(); };
+  $('showTrue').onchange = e => { S.showTrue = e.target.checked; degOnly(); };
+  $('extrap').onchange = e => { S.extrap = e.target.checked; degOnly(); };
+  function stopSweep() { if (sweepTimer) { clearInterval(sweepTimer); sweepTimer = null; $('sweep').innerHTML = '&#9654; Sweep degrees'; } }
+  $('sweep').onclick = () => {
+    if (sweepTimer) { stopSweep(); return; }
+    S.deg = 0; degOnly();
+    $('sweep').innerHTML = '&#10074;&#10074; Stop';
+    sweepTimer = setInterval(() => { if (S.deg >= maxDeg()) { stopSweep(); return; } S.deg++; degOnly(); }, 800);
+  };
+
+  /* ------------------------------------------------------------------
+     help
+     ------------------------------------------------------------------ */
+  MLS.registerHelp({
+    dataset: { title: 'Dataset', html: 'Three economic patterns and one textbook curve. Each is simulated from a known true relationship plus random noise, so you can compare every fitted curve with the truth (green dashed line).' },
+    n: { title: 'Number of observations', html: 'All observations, before the split into training and test sets. With few observations high degrees overfit quickly; with many, the noise averages out and higher degrees become safe.' },
+    noise: { title: 'Noise', html: 'Multiplies the standard deviation of the random part of y. More noise: the true pattern is harder to see and overfitting starts at a lower degree.' },
+    testshare: { title: 'Test (hold-out) set share', html: 'The fraction of observations, chosen at random, held back as new data: the <b>test (hold-out) set</b>. The polynomial is fitted on the rest (the <b>training set</b>) and judged on these.' },
+    seed: { title: 'Random seed', html: 'Fixes the random numbers: the same seed gives the same data and split for everyone in the class. The dice button draws a new sample: watch how the best degree moves from sample to sample.' },
+    degree: { title: 'Polynomial degree', html: 'The highest power of x in the model. Degree 0: a constant (the average). 1: a straight line. 2: a parabola. A degree-d polynomial has d + 1 coefficients and can bend up to d − 1 times. The degree cannot exceed the number of training points minus one.' },
+    truecurve: { title: 'True relationship', html: 'The curve the data were generated from, before noise was added. In real data it is unknown; here it shows what a perfect model would draw.' },
+    extrap: { title: 'Extrapolation', html: 'Extends the chart 20% beyond the range of the data (shaded). High-degree polynomials explode there, because the highest power dominates. Predictions outside the range of the training data are always risky.' },
+    criteria: { title: 'Choosing the degree', html: 'Each row shows the degree a method would choose and how well that degree really predicts (its test RMSE). The test set gives the machine learning answer. Adjusted R², AICc and BIC are econometric criteria computed on the training data alone; they add a penalty for each coefficient. They are computed only for degrees with at least 5 training observations per coefficient: the criteria rest on large-sample theory, and when the number of coefficients approaches the number of observations, adjusted R² and BIC can be fooled by curves that nearly interpolate the data.' },
+    c_test: { title: 'Lowest test RMSE', html: 'The degree whose curve predicts the held-out test points best. In practice you would use cross-validation for this choice and keep the test set for a final check.' },
+    c_adj: { title: 'Adjusted R²', html: '1 − [SSR/(n − k)] / [SST/(n − 1)]. Rises only if a new coefficient improves the fit by more than chance would. The weakest penalty of the three.' },
+    c_aic: { title: 'AICc', html: 'Akaike information criterion with the small-sample correction of Hurvich and Tsai (1989): AIC + 2k(k + 1)/(n − k − 1), where AIC = −2 × log-likelihood + 2k. Lower is better. The plain AIC breaks down when the number of coefficients approaches the number of observations (it then favours near-interpolation); the correction fixes this and matters whenever n/k is below about 40.' },
+    c_bic: { title: 'BIC', html: 'Bayesian (Schwarz) information criterion: −2 × log-likelihood + k ln n. Lower is better. Its penalty per coefficient is ln n (about 3 for 20 observations, 5 for 150), so it prefers smaller models than AIC.' },
+    c_train: { title: 'Lowest training RMSE', html: 'Always the highest degree available, because adding powers can never worsen the training fit. Shown to make the point that the training error cannot be used to choose model complexity.' },
+    st_deg: { title: 'Degree', html: 'The current polynomial degree and its number of coefficients compared with the number of training points.' },
+    st_train: { title: 'Training RMSE', html: 'Root mean squared error on the training points: how closely the curve follows the data it was fitted to. It never rises when the degree rises.' },
+    st_test: { title: 'Test RMSE', html: 'Root mean squared error on the test points, which the fit did not see: an honest estimate of the prediction error on new data. The ratio to the training RMSE shows how optimistic the training error is.' },
+    st_best: { title: 'Lowest test RMSE', html: 'The smallest test RMSE across all degrees, and the degree that achieves it.' },
+    st_sigma: { title: 'Noise σ', html: 'The standard deviation of the noise in the data. Even the true curve misses each point by about σ on average, so no model can have a test RMSE much below it (except by luck in a small test set).' },
+    figfit: { title: 'Data and fitted polynomial', html: 'Blue circles: training points, used to fit the curve. Orange squares: test points, new data. Black: the fitted polynomial. Green dashed: the true relationship. Hover over a point for its values and its error.' },
+    figerr: { title: 'Error by degree', html: 'Training RMSE (blue) and test RMSE (orange) for every degree, Training error falls steadily; test error usually falls, reaches a minimum (star) and rises again: the U-shape of overfitting. The green dashed line is the noise level σ. Very large test errors are drawn as triangles at the top. Click to choose a degree.' },
+    figcoef: { title: 'Coefficients', html: 'The coefficients of the current polynomial in powers of x rescaled to [−1, 1]. The bar height is the size of the coefficient on a log scale (each step is ten times larger); the colour is its sign. When the model overfits they become very large with alternating signs: the bends come from big terms cancelling each other. Regularization (ridge, lasso) works by penalizing such coefficients.' }
+  });
+
+  /* ------------------------------------------------------------------
+     challenges
+     ------------------------------------------------------------------ */
+  function setup(o) { stopSweep(); Object.assign(S, o); MLS.pickTab('sim'); refresh(); window.scrollTo({ top: 0, behavior: 'smooth' }); }
+  const ch = MLS.challenges($('challenges'), META.id, [
+    { type: 'predict', q: 'Wage data, 50 observations. As you raise the degree from 1 to 15, the training RMSE will...',
+      options: ['fall at first, then rise', 'never rise: each extra power can only improve the fit to the training data', 'stay the same, because the true curve is a quadratic', 'rise, because more coefficients add more error'], answer: 1,
+      explain: 'OLS with an extra power can always reproduce the smaller model by setting the new coefficient to zero, so the training fit can only improve or stay equal. That is why training error is useless for choosing the degree.',
+      tryIt: () => setup({ ds: 'wage', n: 50, testShare: 0.4, noise: 1, deg: 1, seed: 2026 }) },
+    { type: 'predict', q: 'Same data. The test RMSE as the degree rises from 1 to 15 will most likely...',
+      options: ['fall steadily like the training RMSE', 'stay flat', 'rise steadily from degree 1', 'fall, reach a minimum near the true degree, then rise'], answer: 3,
+      explain: 'The first powers capture the real curvature of the wage profile, so the test error falls. Beyond that, the extra bends fit the noise of the 30 training workers, which new workers do not share: the test error rises. The U-shape is the signature of the bias-variance tradeoff.',
+      tryIt: () => setup({ ds: 'wage', n: 50, testShare: 0.4, noise: 1, deg: 1, seed: 2026 }) },
+    { type: 'predict', q: 'Keep degree 10 but raise the number of observations from 30 to 300. Overfitting will become...',
+      options: ['much milder, because the noise averages out over many points', 'worse, because more data means more noise', 'exactly the same, because the degree did not change'], answer: 0,
+      explain: 'With 180 training points, 11 coefficients are a small number relative to the data, so each coefficient is pinned down well and the curve cannot chase individual noisy points. Overfitting is about flexibility relative to the amount of data.',
+      tryIt: () => setup({ ds: 'wage', n: 30, testShare: 0.4, noise: 1, deg: 10, seed: 2026 }) },
+    { type: 'predict', q: 'Which econometric criterion usually chooses the smallest degree?',
+      options: ['Adjusted R²', 'AIC', 'BIC'], answer: 2,
+      explain: 'BIC charges ln n per coefficient, more than AIC\'s 2 once n is above 7, and much more than adjusted R². It therefore picks the most parsimonious model. In large samples BIC tends to find the true model if it is among the candidates; AIC tends to pick a slightly larger model that predicts well.' },
+    { type: 'task', q: 'Wage data: set the degree that gives the lowest test RMSE.', hint: 'Sweep the degrees or click the error chart at the star.',
+      check: () => S.ds === 'wage' && R && S.deg === R.best.d },
+    { type: 'task', q: 'Make the training RMSE exactly zero. What happens to the test RMSE?', hint: 'Use few observations (for example 15) and set the degree to its maximum: one less than the number of training points.',
+      check: () => R && R.cur.k >= D.tr.length },
+    { type: 'task', q: 'Business-cycle data: find a sample where the best degree is 8 or higher.', hint: 'A wavy pattern needs many bends. Use more observations and less noise.',
+      check: () => S.ds === 'cycle' && R && R.best.d >= 8 },
+    { type: 'task', q: 'Show the danger of extrapolation: with degree 9 or higher, display the curve beyond the data.', hint: 'Tick “Show beyond the data”.',
+      check: () => S.extrap && S.deg >= 9 }
+  ]);
+
+  /* ------------------------------------------------------------------
+     state
+     ------------------------------------------------------------------ */
+  MLS.moduleBar({ id: META.id, title: META.title, section: META.sectionTitle, level: META.level },
+    { tabs: [{ id: 'sim', label: 'Simulation' }, { id: 'lesson', label: 'Lesson' }, { id: 'challenges', label: 'Challenges' }, { id: 'real', label: 'On real data' }] });
+  MLS.state.init({
+    id: META.id,
+    get: () => ({ ds: S.ds, n: S.n, noise: S.noise, testShare: S.testShare, seed: S.seed, deg: S.deg, showTrue: S.showTrue, extrap: S.extrap }),
+    set: o => {
+      if (DS[o.ds]) S.ds = o.ds;
+      ['n', 'noise', 'testShare', 'seed', 'deg'].forEach(k => { if (Number.isFinite(o[k])) S[k] = o[k]; });
+      ['showTrue', 'extrap'].forEach(k => { if (typeof o[k] === 'boolean') S[k] = o[k]; });
+    }
+  });
+  $('fourCast').href = MLS.APP.fourCastUrl;
+  window.__mls = { S, get D() { return D; }, get R() { return R; } };
+  document.addEventListener('mls:theme', () => degOnly());
+  refresh();
+})();
+</script>
+</body>
+</html>

@@ -1,0 +1,337 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Hierarchical Clustering | 4MLSim</title>
+  <meta name="theme-color" content="#1B2340">
+  <link rel="manifest" href="../manifest.json">
+  <link rel="icon" type="image/svg+xml" href="../assets/img/icon.svg">
+  <link rel="apple-touch-icon" href="../assets/img/apple-touch-icon.png">
+  <link rel="stylesheet" href="../assets/vendor/temml.css">
+  <link rel="stylesheet" href="../assets/css/4mlsim.css">
+  <script src="../assets/vendor/temml.min.js"></script>
+  <script src="../assets/js/core.js"></script>
+  <script src="../assets/js/stats.js"></script>
+  <script src="../assets/js/plot.js"></script>
+  <script src="../assets/js/modules.js"></script>
+  <script src="../assets/js/core-ml.js"></script>
+  <script src="../assets/js/classify-ui.js"></script>
+  <script src="../assets/js/clust-ui.js"></script>
+</head>
+<body>
+<div class="page">
+  <header id="mlsHeader" data-variant="compact"></header>
+  <div class="mod-top" id="mlsTop"><div id="mlsModBar"></div><div id="mlsTabs"></div></div>
+
+  <div class="intro-box" id="mlsIntro">
+    <h3>What this module shows</h3>
+    <div class="intro-cols">
+      <div>
+        <p><b>Hierarchical clustering</b> does not need the number of clusters in advance. It starts with every observation as its own cluster and, step by step, <b>merges the two closest clusters</b>, until only one is left.</p>
+        <p>The history of the merges is drawn as a tree, the <b>dendrogram</b>. Cut the tree at some height and you get the clusters. How "closest" is measured (the <b>linkage</b>) changes the result.</p>
+      </div>
+      <div>
+        <p><b>How to use it</b></p>
+        <ol>
+          <li>Press <b>Step</b> and follow the merges on the map and in the dendrogram.</li>
+          <li>Run to the end, then move the cut (or click on the dendrogram) to choose the number of clusters.</li>
+          <li>Compare the four linkages, especially on the moons and the stretched groups.</li>
+        </ol>
+      </div>
+    </div>
+  </div>
+
+  <!-- ===================== SIMULATION ===================== -->
+  <section data-panel="sim">
+    <div class="mod-grid">
+      <aside class="side" aria-label="Controls">
+        <div class="card">
+          <div class="card-head"><h3>1. Data<button type="button" class="help" data-help="data">?</button></h3></div>
+          <select id="ds" aria-label="Data set"><option value="customers">Supermarket customers (spending, visits)</option><option value="blobs3">Generic: three round groups</option><option value="elong">Generic: stretched groups</option><option value="moonsU">Generic: moons</option></select>
+          <div class="field-row"><label for="n">Observations<button type="button" class="help" data-help="n">?</button></label><output id="nVal"></output></div>
+          <input type="range" id="n" min="10" max="80" step="2" value="30">
+          <div class="field-row"><label for="seed">Random seed<button type="button" class="help" data-help="seed">?</button></label></div>
+          <div class="inline-inputs"><input type="number" id="seed" min="1" max="99999" step="1" value="1" aria-label="Random seed"><button type="button" class="btn-ghost btn-icon" id="newSeed" title="New random data" style="flex:0 0 auto">&#127922;</button></div>
+        </div>
+        <div class="card">
+          <div class="card-head"><h3>2. Linkage and cut<button type="button" class="help" data-help="hc">?</button></h3></div>
+          <div class="field-row"><label>Linkage<button type="button" class="help" data-help="link">?</button></label></div>
+          <div class="seg full" role="group" aria-label="Linkage"><button type="button" data-link="single">Single</button><button type="button" data-link="complete">Complete</button><button type="button" data-link="average">Average</button><button type="button" data-link="ward">Ward</button></div>
+          <div class="field-row"><label for="k">Number of clusters (the cut)<button type="button" class="help" data-help="k">?</button></label><output id="kVal"></output></div>
+          <input type="range" id="k" min="1" max="8" step="1" value="3">
+        </div>
+        <div class="card">
+          <div class="card-head"><h3>3. Merge step by step<button type="button" class="help" data-help="run">?</button></h3></div>
+          <div id="stepper"></div>
+          <p class="note" id="stepNote"></p>
+        </div>
+      </aside>
+
+      <main class="main">
+        <div class="story" id="story"></div>
+        <div class="stat-grid" id="stats" style="margin-top:12px"></div>
+        <div id="statusLine" class="status-line" style="margin:10px 0"></div>
+        <div class="fig-grid">
+          <div id="figMap" class="fig-wide"></div>
+          <div id="figDen" class="fig-wide"></div>
+          <div id="figH"></div>
+          <div class="card" id="tblCard"></div>
+        </div>
+      </main>
+    </div>
+  </section>
+
+  <!-- ===================== LESSON ===================== -->
+  <section data-panel="lesson" class="card lesson" hidden>
+    <div id="mlsMathCtl"></div>
+    <p class="lvl-only-intuition note" style="margin-bottom:8px">Showing the intuition only. Choose <b>Formulas</b> or <b>Deep dive</b> above to add the mathematics.</p>
+
+    <h4>Bottom-up merging</h4>
+    <p>Agglomerative (bottom-up) hierarchical clustering:</p>
+    <ol>
+      <li>Start with n clusters, one per observation.</li>
+      <li>Find the two clusters that are closest and merge them.</li>
+      <li>Repeat until one cluster contains everything (n − 1 merges).</li>
+    </ol>
+    <p>No number of clusters is needed in advance: the whole hierarchy is computed once, and the number of clusters is chosen afterwards by cutting the tree.</p>
+
+    <h4>Linkage: the distance between two clusters</h4>
+    <ul>
+      <li><b>Single</b>: the distance of the two <i>closest</i> members. Follows long, curved shapes, but can chain different groups together through a few points in between.</li>
+      <li><b>Complete</b>: the distance of the two <i>farthest</i> members. Gives compact clusters of similar diameter.</li>
+      <li><b>Average</b>: the average of all distances between members of the two clusters. A compromise.</li>
+      <li><b>Ward</b>: merge the pair whose merging increases the within-cluster sum of squares the least. Gives round clusters of similar size, close to k-means. The most common choice for economic and business data.</li>
+    </ul>
+
+    <h4>Reading the dendrogram</h4>
+    <p>The leaves at the bottom are the observations. Each horizontal bar is a merge, drawn at the <b>height</b> of the distance between the two clusters. Cutting the tree with a horizontal line gives the clusters: every branch hanging below the line is one cluster. A <b>large jump</b> in merge height means two well-separated groups were forced together: cut just below it.</p>
+
+    <div class="math-block lvl-math"><div class="mb-title">Linkage formulas (Euclidean distance d)</div>
+      <div class="tex-block">\text{single: } \min_{a \in A, b \in B} d(a, b), \quad \text{complete: } \max_{a \in A, b \in B} d(a, b), \quad \text{average: } \frac{1}{|A||B|} \sum_{a \in A} \sum_{b \in B} d(a, b)</div>
+      <div class="tex-block">\text{Ward (as SciPy): } d(A, B) = \sqrt{\frac{2 |A| |B|}{|A| + |B|}}\; \lVert \bar x_A - \bar x_B \rVert</div>
+      <p class="note">With this scaling, half the squared Ward height is the increase in the within-cluster sum of squares caused by the merge.</p>
+    </div>
+    <div class="math-block deep lvl-deep"><div class="mb-title">Deep dive</div>
+      <p><b>Lance-Williams update.</b> After merging A and B into C, the distance from C to any other cluster Q is computed from d(A, Q), d(B, Q) and d(A, B) alone, so the n × n distance matrix is updated without revisiting the observations. This is how the module (and SciPy) computes all four linkages.</p>
+      <p><b>Cost.</b> The distance matrix needs memory of order n², and the simple algorithm time of order n³; hierarchical clustering suits hundreds or a few thousand observations, k-means millions.</p>
+      <p><b>Cophenetic correlation.</b> The correlation between the original distances and the dendrogram heights at which pairs first join measures how faithfully the tree represents the data.</p>
+      <p class="note">References: Ward (1963), "Hierarchical grouping to optimize an objective function", <i>JASA</i>; Lance and Williams (1967), <i>The Computer Journal</i>; Kaufman and Rousseeuw (1990), <i>Finding Groups in Data</i>.</p>
+    </div>
+  </section>
+
+  <!-- ===================== CHALLENGES ===================== -->
+  <section data-panel="challenges" class="card" hidden>
+    <div class="card-head"><h3>Challenges</h3><span class="card-sub">Answer the "predict first" questions before testing them in the Simulation tab.</span></div>
+    <div id="challenges"></div>
+  </section>
+
+  <!-- ===================== REAL DATA ===================== -->
+  <section data-panel="real" class="card lesson" hidden>
+    <h4>From the simulation to real data</h4>
+    <ul>
+      <li>Grouping countries by macro indicators, banks by their ratios, or products by their sales patterns, when the number of groups is not known and a tree of similarities is itself useful.</li>
+      <li>Standardize the inputs, use Ward linkage as a default, and look for the large jumps in merge height. In Python: <code>scipy.cluster.hierarchy.linkage(X, "ward")</code> and <code>dendrogram</code>.</li>
+    </ul>
+    <div class="crosslink"><span>&#10140;</span><span><a id="fourCast" target="_blank" rel="noopener"><b>4Cast Lab</b></a> works with your own data for forecasting and classification.</span></div>
+  </section>
+
+  <footer id="mlsFooter"></footer>
+</div>
+
+<script>
+(function () {
+  'use strict';
+  const MLS = window.MLS, ML = MLS.ml, CL = MLS.cls;
+  const META = MLS.moduleMeta('hierarchical');
+  const $ = id => document.getElementById(id);
+  const F = MLS.fmt, pct = CL.pct;
+
+  const U = MLS.clust, LNAME = { single: 'Single', complete: 'Complete', average: 'Average', ward: 'Ward' };
+  const DEFN = { customers: 30, blobs3: 36, elong: 50, moonsU: 60 };
+  const S = { ds: 'customers', n: {}, seed: 1, link: 'ward', k: 3, step: -1 };
+  let D = null, R = null;
+  const nObs = () => S.n[S.ds] || DEFN[S.ds];
+  function makeData() { D = U.make(S.ds, S.seed, nObs()); }
+  function compute() {
+    const X = D.X, n = X.length, M = ML.hclust(X, S.link);
+    const members = {}; for (let i = 0; i < n; i++) members[i] = [i];
+    M.forEach((m, s) => { members[n + s] = members[m[0]].concat(members[m[1]]); });
+    /* leaf order and x positions for the dendrogram */
+    const order = []; (function walk(c) { if (c < n) order.push(c); else { walk(M[c - n][0]); walk(M[c - n][1]); } })(2 * n - 2);
+    const xpos = {}; order.forEach((c, i) => (xpos[c] = i)); M.forEach((m, s) => { xpos[n + s] = (xpos[m[0]] + xpos[m[1]]) / 2; });
+    /* the biggest jump in merge height, for 2 to 8 clusters */
+    let jumpK = 2, best = -1; for (let k = 2; k <= Math.min(8, n - 1); k++) { const j = M[n - k][2] - M[n - k - 1][2]; if (j > best) { best = j; jumpK = k; } }
+    R = { M, n, members, order, xpos, jumpK };
+    R.labels = ML.hcut(M, n, S.k); R.sil = S.k > 1 ? ML.silhouette(X, R.labels).mean : NaN;
+    R.cutH = S.k <= 1 ? M[n - 2][2] * 1.04 : (M[n - S.k][2] + M[n - S.k - 1][2]) / 2;
+  }
+  const atEnd = () => S.step < 0 || S.step >= R.n - 1;
+  const done = () => (atEnd() ? R.n - 1 : S.step);
+  /* the link drawn for a merge: closest pair (single), farthest pair (complete), centers (average, Ward) */
+  function linkOf(m) {
+    const A = R.members[m[0]], B = R.members[m[1]], X = D.X;
+    if (S.link === 'single' || S.link === 'complete') {
+      let best = null; A.forEach(a => B.forEach(b => { const d = ML.dist2(X[a], X[b]); if (!best || (S.link === 'single' ? d < best[0] : d > best[0])) best = [d, a, b]; }));
+      return [X[best[1]], X[best[2]]];
+    }
+    const c = I => [0, 1].map(j => I.reduce((s, i) => s + X[i][j], 0) / I.length); return [c(A), c(B)];
+  }
+
+  function updateText() {
+    const card = MLS.statCard, s = done(), n = R.n;
+    $('story').innerHTML = '<h3>Data: ' + D.label + '</h3><p>' + D.note + ' <b>' + n + ' observations, no labels.</b> ' + LNAME[S.link] + ' linkage.</p>';
+    $('stats').innerHTML =
+      card('Merges done', s + ' of ' + (n - 1), atEnd() ? 'the tree is complete' : 'step by step', '', 'st_merges') +
+      card('Clusters', String(atEnd() ? S.k : n - s), atEnd() ? 'after the cut' : 'at this step', '', 'st_clusters') +
+      card(atEnd() ? 'Height of the cut' : 'Height of the last merge', atEnd() ? F(R.cutH, 2) : s ? F(R.M[s - 1][2], 2) : 'n/a', LNAME[S.link] + ' distance', '', 'st_height') +
+      card('Mean silhouette', atEnd() && S.k > 1 ? F(R.sil, 3) : 'n/a', 'at the cut, from -1 to 1', '', 'st_sil');
+    if (atEnd()) $('stepNote').innerHTML = 'All ' + (n - 1) + ' merges done. Move the cut with the slider or click on the dendrogram.';
+    else if (!s) $('stepNote').innerHTML = 'Step 0: every observation is its own cluster. Press <b>Step</b> to merge the two closest.';
+    else { const m = R.M[s - 1]; $('stepNote').innerHTML = 'Merge ' + s + ': two clusters of ' + R.members[m[0]].length + ' and ' + R.members[m[1]].length + ' observation(s) at distance <b>' + F(m[2], 2) + '</b>. ' + (n - s) + ' clusters remain.'; }
+    let msg, cls = 'status-line';
+    if (!atEnd()) msg = 'Press Step, Play or End to continue merging.';
+    else if (S.ds === 'moonsU' && S.k === 2) { const pure = R.labels.every((l, i) => l === R.labels[0] ? D.pts[i].truth === D.pts[0].truth : D.pts[i].truth !== D.pts[0].truth); msg = pure ? 'The two clusters are exactly the two moons: ' + LNAME[S.link] + ' linkage follows the curved shapes.' : LNAME[S.link] + ' linkage does not separate the two moons. Try single linkage.'; cls += pure ? ' ok' : ' bad'; }
+    else if (S.link === 'single' && Math.max(...U.sizes(R.labels, S.k)) > 0.8 * n && S.k > 1) { msg = 'Single linkage chains: one cluster holds ' + Math.max(...U.sizes(R.labels, S.k)) + ' of ' + n + ' observations and the others are a few stragglers.'; cls += ' bad'; }
+    else { msg = 'The largest jump in merge height suggests ' + R.jumpK + ' clusters. Current cut: ' + S.k + ' cluster' + (S.k > 1 ? 's' : '') + (S.k > 1 ? ', mean silhouette ' + F(R.sil, 3) : '') + '.'; cls += ' ok'; }
+    $('statusLine').textContent = msg; $('statusLine').className = cls;
+  }
+  function stepLabels() {
+    const s = done(), lab = atEnd() ? R.labels : ML.hcut(R.M, R.n, R.n - s);
+    if (atEnd()) return lab;
+    const size = {}; lab.forEach(l => (size[l] = (size[l] || 0) + 1)); const rank = {}; let r = 0;
+    lab.forEach(l => { if (size[l] > 1 && rank[l] === undefined) rank[l] = r++; });
+    return lab.map(l => (size[l] > 1 ? rank[l] % 8 : -1));
+  }
+  const figMap = MLS.figure($('figMap'), { title: 'The clusters on the map', help: 'figmap', file: 'hierarchical',
+    plot: { aspect: 0.55, margin: { l: 66, b: 50 }, x: { label: () => D.names[0] }, y: { label: () => D.names[1] } },
+    data: () => ({ cols: D.names.concat(['Cluster at the cut']), rows: D.pts.map((p, i) => p.x.concat([R.labels[i] + 1])) }) });
+  function drawMap() {
+    const P = figMap.plot, lab = stepLabels(), s = done(), ink = MLS.color('chart-ink');
+    P.setX(D.dom.x[0], D.dom.x[1]); P.setY(D.dom.y[0], D.dom.y[1]);
+    P.draw(P => {
+      if (!atEnd() && s) { const m = R.M[s - 1], L = linkOf(m); P.segment(L[0][0], L[0][1], L[1][0], L[1][1], { color: ink, width: 2.4, dash: S.link === 'single' || S.link === 'complete' ? null : '5 4' }); P.text((L[0][0] + L[1][0]) / 2, (L[0][1] + L[1][1]) / 2, F(m[2], 2), { anchor: 'middle', dy: -7, size: 12, weight: 800 }); }
+      P.points(D.pts, { x: p => p.x[0], y: p => p.x[1], color: (p, i) => U.color(lab[i]), r: 5, tip: (p, i) => '<b>Observation ' + (i + 1) + '</b><br>' + D.names[0] + ': ' + F(p.x[0], 2) + '<br>' + D.names[1] + ': ' + F(p.x[1], 2) + (atEnd() ? '<br>Cluster ' + (lab[i] + 1) : ''),
+        highlight: (p, i) => !atEnd() && s && (R.members[R.M[s - 1][0]].includes(i) || R.members[R.M[s - 1][1]].includes(i)) });
+    });
+    figMap.legend(atEnd() ? U.legend(S.k, U.sizes(R.labels, S.k)) : [{ label: 'Still on its own', color: MLS.color('chart-muted') }, { label: 'Coloured: clusters with 2 or more members', color: U.color(0) }, { label: 'Circled: the two clusters just merged', color: 'transparent', stroke: ink }]);
+    figMap.caption(atEnd() ? 'The clusters after cutting the tree into ' + S.k + '.' : 'The line shows the distance used by ' + LNAME[S.link] + ' linkage for the last merge: ' + ({ single: 'the two closest members', complete: 'the two farthest members', average: 'between the two cluster centers (the linkage itself averages all pairwise distances)', ward: 'between the two cluster centers (Ward also weighs the cluster sizes)' })[S.link] + '.');
+  }
+  const figDen = MLS.figure($('figDen'), { title: 'The dendrogram', help: 'figden', file: 'dendrogram',
+    plot: { aspect: 0.42, margin: { l: 66, b: 30 }, x: { label: '', ticks: false }, y: { label: () => LNAME[S.link] + ' distance (height)' }, onClick: (x, y) => { if (!atEnd()) return; const M = R.M, n = R.n; let k = 1; for (let s = 0; s < n - 1; s++) if (M[s][2] > y) { k = n - s; break; } S.k = Math.max(1, Math.min(8, k)); refresh(); } } });
+  function drawDen() {
+    const P = figDen.plot, M = R.M, n = R.n, s = done(), ink = MLS.color('chart-ink'), faint = MLS.color('chart-muted'), top = M[n - 2][2] * 1.06;
+    const clusterOf = c => { const mem = R.members[c], l = R.labels[mem[0]]; return mem.every(i => R.labels[i] === l) ? l : -1; };
+    P.setX(-0.8, n - 0.2); P.setY(0, top);
+    P.draw(P => {
+      const H = c => (c < n ? 0 : M[c - n][2]);
+      M.forEach((m, q) => {
+        const c = n + q, col = q >= s ? faint : atEnd() && S.k > 1 && clusterOf(c) >= 0 ? U.color(clusterOf(c)) : ink, op = q >= s ? 0.35 : 1, w = q === s - 1 && !atEnd() ? 3 : 1.6;
+        const xa = R.xpos[m[0]], xb = R.xpos[m[1]], h = m[2];
+        [[xa, H(m[0]), xa, h], [xb, H(m[1]), xb, h], [xa, h, xb, h]].forEach(L => P.segment(L[0], L[1], L[2], L[3], { color: col, width: w, opacity: op }));
+      });
+      if (atEnd() && S.k > 1) { P.hline(R.cutH, { color: MLS.color('series-2'), width: 2, dash: '7 4' }); P.text(n - 0.4, R.cutH, 'cut: ' + S.k + ' clusters', { anchor: 'end', dy: -6, size: 12, weight: 800, color: MLS.color('series-2') }); }
+      if (!atEnd() && s) P.hline(M[s - 1][2], { color: MLS.color('series-2'), width: 1.4, dash: '4 4' });
+      if (n <= 40) R.order.forEach((c, i) => P.text(i, 0, String(c + 1), { anchor: 'middle', dy: 14, size: 9.5, weight: 600, color: faint }));
+    });
+    figDen.caption('Each bar joins two clusters at the height of their distance. ' + (atEnd() ? 'Every branch below the dashed cut is one cluster; click on the tree to move the cut.' : 'Faint: merges still to come.') + (n <= 40 ? ' Numbers: the observations.' : ''));
+  }
+  const figH = MLS.figure($('figH'), { title: 'Merge heights', help: 'figh', file: 'merge-heights', plot: { aspect: 0.65, margin: { l: 66, b: 48 }, x: { label: 'Clusters left after the merge' }, y: { label: 'Height of the merge' } } });
+  function drawH() {
+    const P = figH.plot, M = R.M, n = R.n, K = Math.min(12, n - 1), c1 = MLS.color('series-1'), c2 = MLS.color('series-2');
+    const pts = []; for (let k = 1; k <= K; k++) pts.push({ x: k, y: M[n - 1 - k][2] });
+    P.setX(0.5, K + 0.5); P.setY(0, M[n - 2][2] * 1.1);
+    P.draw(P => {
+      P.line(pts.map(p => [p.x, p.y]), { color: c1, width: 2 });
+      P.points(pts, { color: d => (d.x === R.jumpK - 1 ? c2 : c1), r: d => (d.x === R.jumpK - 1 ? 7 : 4.5), tip: d => 'The merge that leaves ' + d.x + ' cluster' + (d.x > 1 ? 's' : '') + '<br>height ' + F(d.y, 3) });
+    });
+    figH.caption('The height of the last ' + K + ' merges. Orange: the merge after the largest jump, from ' + R.jumpK + ' clusters to ' + (R.jumpK - 1) + '. Cut just below it: ' + R.jumpK + ' clusters.');
+  }
+  function drawTbl() {
+    const M = R.M, n = R.n, last = M.slice(Math.max(0, n - 9)).map((m, i, a) => [n - 1 - (a.length - 1 - i), m]);
+    $('tblCard').innerHTML = '<div class="card-head"><h3>The last merges' + MLS.helpBtn('tbl') + '</h3></div><div style="overflow-x:auto"><table class="tbl"><thead><tr><th>Merge</th><th>Sizes joined</th><th>Height</th><th>Clusters left</th></tr></thead><tbody>' +
+      last.map(([q, m]) => '<tr' + (n - q === R.jumpK - 1 ? ' style="font-weight:800;background:var(--tint)"' : '') + '><td>' + q + '</td><td>' + R.members[m[0]].length + ' + ' + R.members[m[1]].length + '</td><td>' + F(m[2], 3) + '</td><td>' + (n - q) + '</td></tr>').join('') + '</tbody></table></div><p class="note">Bold: the merge after the largest jump in height.</p>';
+  }
+
+  function syncUI() {
+    $('ds').value = S.ds; $('n').value = nObs(); $('nVal').textContent = nObs(); $('seed').value = S.seed; $('k').value = S.k; $('kVal').textContent = S.k;
+    MLS.$$('[data-link]').forEach(b => b.setAttribute('aria-pressed', String(b.dataset.link === S.link)));
+  }
+  function render() { syncUI(); updateText(); drawMap(); drawDen(); drawH(); drawTbl(); figMap.refreshTable(); if (ch) ch.check(); MLS.state.save(); }
+  function refresh() { compute(); render(); }
+  const full = () => { makeData(); refresh(); };
+  MLS.stepper($('stepper'), { speed: 3, runMax: 500,
+    step: () => { if (atEnd()) return false; S.step++; return true; },
+    reset: () => { S.step = 0; }, after: () => render() });
+  $('ds').onchange = e => { S.ds = e.target.value; S.step = -1; full(); };
+  $('n').addEventListener('input', e => ($('nVal').textContent = e.target.value));
+  $('n').onchange = e => { S.n[S.ds] = +e.target.value; S.step = -1; full(); };
+  $('seed').onchange = e => { S.seed = Math.max(1, Math.round(+e.target.value) || 1); S.step = -1; full(); };
+  $('newSeed').onclick = () => { S.seed = MLS.newSeed(); S.step = -1; full(); };
+  $('k').addEventListener('input', e => ($('kVal').textContent = e.target.value));
+  $('k').onchange = e => { S.k = +e.target.value; S.step = -1; refresh(); };
+  MLS.$$('[data-link]').forEach(b => (b.onclick = () => { S.link = b.dataset.link; S.step = -1; refresh(); }));
+
+  MLS.registerHelp({
+    data: { title: 'Data', html: '<b>Supermarket customers</b>: yearly spending and visits per month. <b>Generic</b>: round groups, stretched groups and moons. Simulated, without labels. Keep the number small so the dendrogram stays readable.' },
+    n: { title: 'Observations', html: 'How many observations are simulated (10 to 80).' },
+    seed: { title: 'Random seed', html: 'Fixes the random numbers: the same seed gives the same data.' },
+    hc: { title: 'Hierarchical clustering', html: 'Merge the two closest clusters, again and again, then cut the tree into the number of clusters you want.' },
+    link: { title: 'Linkage', html: '<b>Single</b>: closest members. <b>Complete</b>: farthest members. <b>Average</b>: average of all pairs. <b>Ward</b>: the merge that increases the within-cluster sum of squares the least.' },
+    k: { title: 'Number of clusters', html: 'Where to cut the finished tree. You can also click on the dendrogram at the height where you want to cut.' },
+    run: { title: 'Step by step', html: '<b>Step</b>: one merge. <b>Play</b>: run on. <b>End</b>: all merges. <b>Reset</b>: back to one cluster per observation.' },
+    st_merges: { title: 'Merges done', html: 'With n observations there are n − 1 merges until one cluster is left.' },
+    st_clusters: { title: 'Clusters', html: 'During the merging: the clusters left at this step. At the end: the clusters after the cut.' },
+    st_height: { title: 'Height', html: 'The distance between the two clusters merged, measured with the chosen linkage: the height of the bar in the dendrogram.' },
+    st_sil: { title: 'Mean silhouette', html: 'How compact and separated the clusters at the cut are: near 1 good, near 0 overlapping.' },
+    figmap: { title: 'The map', html: 'During the merging, clusters with two or more members are coloured and the two just merged are circled, with the distance the linkage used. At the end: the clusters at the cut.' },
+    figden: { title: 'Dendrogram', html: 'The full merge history. Leaves: observations; bars: merges at their height. The dashed line is the cut. Click to move it.' },
+    figh: { title: 'Merge heights', html: 'The heights of the last merges. A large jump means two separate groups were joined: the number of clusters just before the jump is a natural choice.' },
+    tbl: { title: 'The last merges', html: 'The last merges in order: sizes of the two clusters joined, the height, and how many clusters were left.' }
+  });
+
+  function setup(o) { Object.assign(S, { step: -1 }, o); MLS.pickTab('sim'); full(); window.scrollTo({ top: 0, behavior: 'smooth' }); }
+  const ch = MLS.challenges($('challenges'), META.id, [
+    { type: 'predict', q: 'Single linkage measures the distance between two clusters by...',
+      options: ['the distance between their centers', 'the two members farthest apart', 'the two members closest to each other'], answer: 2,
+      explain: 'Single linkage uses the closest pair, complete linkage the farthest pair, average linkage all pairs, Ward the increase in the within-cluster sum of squares.',
+      tryIt: () => setup({ ds: 'customers', link: 'single', step: 5 }) },
+    { type: 'predict', q: 'Moons, cut into 2 clusters. Which linkage can find the two moons?',
+      options: ['Single, because it joins neighbours one by one along the curve', 'Ward, because it makes round clusters', 'Complete, because it makes compact clusters'], answer: 0,
+      explain: 'Single linkage grows clusters through chains of close neighbours, so it can follow a curved shape. Ward and complete prefer compact, round groups and cut the moons.',
+      tryIt: () => setup({ ds: 'moonsU', link: 'single', k: 2 }) },
+    { type: 'task', q: 'Supermarket customers, complete linkage: cut the tree into the number of clusters suggested by the largest jump in merge height.', hint: 'Choose Complete, read the orange point in the "Merge heights" chart, and set the cut.',
+      check: () => R && S.ds === 'customers' && S.link === 'complete' && atEnd() && S.k === R.jumpK },
+    { type: 'predict', q: 'In the dendrogram, the height of a horizontal bar is...',
+      options: ['the number of observations in the cluster', 'the distance between the two clusters it joins', 'the order of the merge'], answer: 1,
+      explain: 'Bars are drawn at the linkage distance of the merge. Long vertical branches mean that a cluster stayed far from the rest for a long time: a well-separated group.',
+      tryIt: () => setup({ ds: 'blobs3', link: 'ward', k: 3 }) },
+    { type: 'task', q: 'Merge step by step until exactly 5 clusters remain.', hint: 'Press Reset in the stepper, then Step, and watch the "Clusters" tile.',
+      check: () => R && S.step >= 0 && !atEnd() && R.n - S.step === 5 },
+    { type: 'predict', q: 'Ward linkage merges the pair of clusters that...',
+      options: ['increases the within-cluster sum of squares the least', 'are farthest apart', 'have the most observations'], answer: 0,
+      explain: 'Ward keeps the clusters as compact as possible at every step, the same objective as k-means. That is why its clusters look like k-means clusters.',
+      tryIt: () => setup({ ds: 'elong', link: 'ward', k: 3 }) }
+  ]);
+  const STATE = {
+    get: () => ({ ds: S.ds, n: S.n, seed: S.seed, link: S.link, k: S.k }),
+    set: o => {
+      if (DEFN[o.ds]) S.ds = o.ds;
+      if (o.n) Object.keys(o.n).forEach(q => { if (DEFN[q] && Number.isFinite(o.n[q])) S.n[q] = Math.max(10, Math.min(80, o.n[q])); });
+      if (Number.isFinite(o.seed)) S.seed = o.seed;
+      if (LNAME[o.link]) S.link = o.link;
+      if (Number.isFinite(o.k)) S.k = Math.max(1, Math.min(8, o.k));
+    }
+  };
+  const start = full;
+  MLS.moduleBar({ id: META.id, title: META.title, section: META.sectionTitle, level: META.level },
+    { tabs: [{ id: 'sim', label: 'Simulation' }, { id: 'lesson', label: 'Lesson' }, { id: 'challenges', label: 'Challenges' }, { id: 'real', label: 'On real data' }] });
+  MLS.state.init({ id: META.id, get: STATE.get, set: STATE.set });
+  const fc = $('fourCast'); if (fc) fc.href = MLS.APP.fourCastUrl;
+  window.__mls = { S, get R() { return R; }, get D() { return D; } };
+  document.addEventListener('mls:theme', () => refresh());
+  start();
+})();
+</script>
+</body>
+</html>

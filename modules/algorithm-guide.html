@@ -1,0 +1,124 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Which Algorithm? Guide | 4MLSim</title>
+  <meta name="theme-color" content="#1B2340">
+  <link rel="manifest" href="../manifest.json">
+  <link rel="icon" type="image/svg+xml" href="../assets/img/icon.svg">
+  <link rel="apple-touch-icon" href="../assets/img/apple-touch-icon.png">
+  <link rel="stylesheet" href="../assets/vendor/temml.css">
+  <link rel="stylesheet" href="../assets/css/4mlsim.css">
+  <script src="../assets/vendor/temml.min.js"></script>
+  <script src="../assets/js/core.js"></script>
+  <script src="../assets/js/stats.js"></script>
+  <script src="../assets/js/plot.js"></script>
+  <script src="../assets/js/modules.js"></script>
+</head>
+<body>
+<div class="page">
+  <header id="mlsHeader" data-variant="compact"></header>
+  <div class="mod-top" id="mlsTop"><div id="mlsModBar"></div><div id="mlsTabs"></div></div>
+
+  <div class="intro-box" id="mlsIntro">
+    <h3>What this tool does</h3>
+    <div class="intro-cols">
+      <div>
+        <p>Which method should you try for your problem? Answer four questions and the guide suggests where to start, with the reasons and a link to the module that simulates each method.</p>
+        <p>Below, a side-by-side table compares every method in 4MLSim.</p>
+      </div>
+      <div>
+        <p><b>Remember</b></p>
+        <ul>
+          <li>No method is best for every problem: compare a few on the same data.</li>
+          <li>Always start with a simple benchmark, and judge every model on a test set used once.</li>
+        </ul>
+      </div>
+    </div>
+  </div>
+
+  <section data-panel="sim">
+    <div class="mod-grid">
+      <aside class="side" aria-label="Questions">
+        <div class="card">
+          <div class="card-head"><h3>1. What do you want to do?</h3></div>
+          <div class="seg full" role="group" aria-label="Task" style="flex-wrap:wrap"><button type="button" data-task="reg">Predict a number</button><button type="button" data-task="cls">Predict a class</button><button type="button" data-task="ts">Forecast a time series</button><button type="button" data-task="clu">Find groups</button><button type="button" data-task="dim">Summarize many inputs</button><button type="button" data-task="rl">Learn decisions from rewards</button><button type="button" data-task="text">Work with text</button></div>
+        </div>
+        <div class="card">
+          <div class="card-head"><h3>2. How many observations?</h3></div>
+          <div class="seg full" role="group" aria-label="Data size"><button type="button" data-size="s">Under 1,000</button><button type="button" data-size="m">Up to 100,000</button><button type="button" data-size="l">More</button></div>
+        </div>
+        <div class="card">
+          <div class="card-head"><h3>3. Must it be easy to explain?</h3></div>
+          <div class="seg full" role="group" aria-label="Explainability"><button type="button" data-exp="yes">Yes</button><button type="button" data-exp="some">Somewhat</button><button type="button" data-exp="no">No</button></div>
+        </div>
+        <div class="card">
+          <div class="card-head"><h3>4. Curves and interactions?</h3></div>
+          <div class="seg full" role="group" aria-label="Nonlinearity"><button type="button" data-nl="no">Unlikely</button><button type="button" data-nl="maybe">Not sure</button><button type="button" data-nl="yes">Likely</button></div>
+        </div>
+      </aside>
+      <main class="main">
+        <div class="card" id="recCard"></div>
+        <div class="card" id="alwaysCard" style="margin-top:14px"></div>
+        <div class="card" id="tblCard" style="margin-top:14px"></div>
+        <style>#tblCard td, #tblCard th { text-align: left; }</style>
+      </main>
+    </div>
+  </section>
+
+  <footer id="mlsFooter"></footer>
+</div>
+
+<script>
+(function () {
+  'use strict';
+  const MLS = window.MLS;
+  const META = MLS.moduleMeta('algorithm-guide');
+  const $ = id => document.getElementById(id);
+
+  const M = [["ols", "Linear regression", "linear-regression", ["reg"], "sml", 3, false, "No", "None", "The benchmark for numbers: coefficients with standard errors; add squares or interactions by hand."], ["reg", "Ridge, lasso, elastic net", "regularization", ["reg", "cls"], "sml", 3, false, "Yes", "Penalty \u03bb, mix \u03b1", "Many inputs or correlated inputs; lasso also selects inputs."], ["poly", "Polynomial regression", "polynomial-overfitting", ["reg"], "sm", 2, true, "Helps", "Degree", "Curved relations with one or two inputs; high degrees overfit."], ["logit", "Logistic regression", "logistic-regression", ["cls"], "sml", 3, false, "Helps", "Threshold; penalty if regularized", "The benchmark for classes: probabilities and odds ratios."], ["knn", "K-nearest neighbours", "knn", ["cls", "reg"], "sm", 2, true, "Yes", "k, distance", "Simple and flexible with few inputs; slow and weak with many inputs."], ["nb", "Naive Bayes", "naive-bayes", ["cls", "text"], "sml", 2, true, "No", "Priors", "Very fast, works with little data and with text; probabilities are often overconfident."], ["svml", "Support vector machine, linear", "svm-linear", ["cls"], "sm", 2, false, "Yes", "C", "Wide-margin straight separator; robust with many inputs."], ["svmk", "Support vector machine, kernel", "svm-kernel", ["cls", "reg"], "sm", 1, true, "Yes", "Kernel, C, \u03b3", "Curved boundaries on small and medium data sets."], ["tree", "Decision tree", "decision-tree", ["cls", "reg"], "sml", 3, true, "No", "Depth, minimum leaf size", "Readable if-then rules; one tree alone is unstable."], ["rf", "Random forest", "random-forest", ["cls", "reg"], "sml", 2, true, "No", "Number of trees, inputs per split", "Strong default for tables of data; little tuning needed."], ["gbm", "Gradient boosting", "gradient-boosting", ["cls", "reg"], "ml", 2, true, "No", "Learning rate, rounds, depth", "Usually the most accurate on tables of data; needs tuning."], ["xgb", "XGBoost", "xgboost", ["cls", "reg"], "ml", 2, true, "No", "\u03b7, depth, \u03bb, \u03b3, rounds", "Regularized, fast boosting; a standard in competitions and industry."], ["ann", "Neural network", "ann", ["cls", "reg"], "l", 1, true, "Yes", "Layers, neurons, learning rate", "Large data and complex patterns; images, text, many series."], ["ar", "Autoregression and simple benchmarks", "ts-validation", ["ts"], "sml", 3, false, "No", "Lags", "Always the first forecast to beat: no change, AR, seasonal no change."], ["lstm", "LSTM network", "lstm", ["ts"], "l", 1, true, "Yes", "Window, units, learning rate", "Long series, many related series, nonlinear dynamics."], ["treets", "Trees and boosting with lagged inputs", "gradient-boosting", ["ts"], "ml", 2, true, "No", "As for boosting, plus lags", "Forecasting with many predictors; validate in time order."], ["km", "K-means", "k-means", ["clu"], "sml", 2, false, "Yes", "Number of clusters k", "Round groups of similar size; fast on big data."], ["hc", "Hierarchical clustering", "hierarchical", ["clu"], "s", 3, true, "Yes", "Linkage, where to cut", "A tree of similarities; no k needed in advance; small data."], ["db", "DBSCAN", "dbscan", ["clu"], "sm", 2, true, "Yes", "\u03b5, minPts", "Groups of any shape, and outliers flagged as noise."], ["gmm", "Gaussian mixtures", "gmm-em", ["clu"], "sm", 2, true, "Helps", "Components K", "Soft groups of different sizes and shapes; regimes."], ["pca", "Principal component analysis", "pca", ["dim"], "sml", 2, false, "Yes", "Components kept", "Summarize many correlated inputs with a few factors."], ["q", "Q-learning", "q-learning", ["rl"], "sml", 2, true, "No", "\u03b1, \u03b3, \u03b5", "Sequential decisions learned from rewards."], ["llm", "Language models", "llm-intuition", ["text"], "l", 1, true, "No", "Temperature (when using one)", "Text: classify, summarize, extract; check facts."]];
+  const TASKS = {"reg": "Predict a number", "cls": "Predict a class", "ts": "Forecast a time series", "clu": "Find groups", "dim": "Summarize many inputs", "rl": "Learn decisions from rewards", "text": "Work with text"};
+  const S = { task: 'reg', size: 'm', exp: 'some', nl: 'maybe' };
+  const link = id => '<a ' + MLS.navAttrs('modules/' + id + '.html') + '>open the module &rarr;</a>';
+  function score(m) {
+    const [id, , , tasks, sizes, ex, nl] = m; if (!tasks.includes(S.task)) return null;
+    let s = 0; const why = [];
+    if (sizes.includes(S.size)) { s += 2; } else { s -= 2; why.push(S.size === 'l' ? 'slow or limited on very large data' : 'needs more data than you have'); }
+    if (S.exp === 'yes') { s += (ex - 2) * 2; if (ex === 3) why.push('easy to explain'); if (ex === 1) why.push('hard to explain'); }
+    else if (S.exp === 'some') s += (ex - 2) * 0.5;
+    if (S.nl === 'yes') { s += nl ? 2 : -1.5; if (nl) why.push('handles curves and interactions'); else why.push('straight-line effects only (add terms by hand)'); }
+    if (S.nl === 'no') { s += nl ? -0.5 : 1.5; if (!nl) why.push('simple and stable when effects are straight'); }
+    if (['ols', 'logit', 'ar'].includes(id)) { s += 1.5; why.push('the benchmark every other model must beat'); }
+    if (sizes.includes(S.size) && S.size === 'l' && ['gbm', 'xgb', 'ann', 'lstm', 'rf'].includes(id)) why.push('makes good use of large data');
+    return { m, s, why };
+  }
+  const STATE = { get: () => Object.assign({}, S), set: o => { if (TASKS[o.task]) S.task = o.task; if (['s', 'm', 'l'].includes(o.size)) S.size = o.size; if (['yes', 'some', 'no'].includes(o.exp)) S.exp = o.exp; if (['no', 'maybe', 'yes'].includes(o.nl)) S.nl = o.nl; } };
+  function render() {
+    [['task', 'task'], ['size', 'size'], ['exp', 'exp'], ['nl', 'nl']].forEach(([a, k]) => MLS.$$('[data-' + a + ']').forEach(b => b.setAttribute('aria-pressed', String(b.dataset[a] === S[k]))));
+    const list = M.map(score).filter(Boolean).sort((a, b) => b.s - a.s);
+    $('recCard').innerHTML = '<div class="card-head"><h3>Where to start: ' + TASKS[S.task].toLowerCase() + '</h3></div><ol style="margin:0;padding-left:22px;line-height:1.6">' +
+      list.map((r, i) => '<li style="margin-bottom:10px' + (i > 3 ? ';opacity:0.6' : '') + '"><b>' + r.m[1] + '</b>' + (i === 0 ? ' <span class="tag">first choice</span>' : '') + '<br><span class="note" style="margin:0">' + r.m[9] + (r.why.length ? ' Here: ' + r.why.join('; ') + '.' : '') + ' Tune: ' + r.m[8] + '. ' + link(r.m[2]) + '</span></li>').join('') + '</ol>';
+    $('alwaysCard').innerHTML = '<div class="card-head"><h3>Whatever the method</h3></div><ul style="margin:0;padding-left:20px;line-height:1.7">' +
+      '<li>Split the data: training set and test set (80/20); for time series, in time order. ' + link('cross-validation') + '</li>' +
+      '<li>Choose settings by cross-validation on the training set (4 folds), never on the test set. ' + link('cross-validation') + '</li>' +
+      '<li>Fit any scaling or other preparation on the training set only. ' + link('data-leakage') + '</li>' +
+      '<li>Compare with a simple benchmark; refit the chosen model and test it once. ' + link('hyperparameter-tuning') + '</li>' +
+      '<li>Pick the right measure: RMSE, MAE; accuracy, precision, recall, AUC. ' + link('confusion-matrix') + '</li>' +
+      '<li>If you tried many models, account for it. ' + link('data-snooping') + '</li>' +
+      '<li>Explain the result: importance, partial dependence, SHAP. ' + link('explainability') + '</li></ul>';
+    const yes = b => (b ? 'Yes' : 'No'), sz = s => s.split('').map(c => ({ s: 'small', m: 'medium', l: 'large' })[c]).join(', '), ex = e => ['', 'Low', 'Medium', 'High'][e];
+    $('tblCard').innerHTML = '<div class="card-head"><h3>All methods side by side</h3><span class="card-sub">Rows for the chosen task are bold</span></div><div style="overflow-x:auto"><table class="tbl"><thead><tr><th>Method</th><th>Tasks</th><th>Curves, interactions</th><th>Standardize inputs</th><th>Easy to explain</th><th>Data size</th><th>Main settings</th></tr></thead><tbody>' +
+      M.map(m => '<tr' + (m[3].includes(S.task) ? ' style="font-weight:700;background:var(--tint)"' : '') + '><td><a ' + MLS.navAttrs('modules/' + m[2] + '.html') + '>' + m[1] + '</a></td><td>' + m[3].map(t => TASKS[t]).join('; ') + '</td><td>' + yes(m[6]) + '</td><td>' + m[7] + '</td><td>' + ex(m[5]) + '</td><td>' + sz(m[4]) + '</td><td>' + m[8] + '</td></tr>').join('') + '</tbody></table></div>';
+    MLS.state.save();
+  }
+  [['task', 'task'], ['size', 'size'], ['exp', 'exp'], ['nl', 'nl']].forEach(([a, k]) => MLS.$$('[data-' + a + ']').forEach(b => (b.onclick = () => { S[k] = b.dataset[a]; render(); })));
+  MLS.moduleBar({ id: META.id, title: META.title, section: META.sectionTitle, level: META.level }, { tabs: [{ id: 'sim', label: 'Guide' }] });
+  MLS.state.init({ id: META.id, get: STATE.get, set: STATE.set });
+  window.__mls = { S };
+  document.addEventListener('mls:theme', () => render());
+  render();
+})();
+</script>
+</body>
+</html>

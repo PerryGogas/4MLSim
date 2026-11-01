@@ -1,0 +1,362 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Neural Networks: Forward Pass & Backpropagation | 4MLSim</title>
+  <meta name="theme-color" content="#1B2340">
+  <link rel="manifest" href="../manifest.json">
+  <link rel="icon" type="image/svg+xml" href="../assets/img/icon.svg">
+  <link rel="apple-touch-icon" href="../assets/img/apple-touch-icon.png">
+  <link rel="stylesheet" href="../assets/vendor/temml.css">
+  <link rel="stylesheet" href="../assets/css/4mlsim.css">
+  <script src="../assets/vendor/temml.min.js"></script>
+  <script src="../assets/js/core.js"></script>
+  <script src="../assets/js/stats.js"></script>
+  <script src="../assets/js/plot.js"></script>
+  <script src="../assets/js/modules.js"></script>
+  <script src="../assets/js/core-ml.js"></script>
+  <script src="../assets/js/classify-ui.js"></script>
+</head>
+<body>
+<div class="page">
+  <header id="mlsHeader" data-variant="compact"></header>
+  <div class="mod-top" id="mlsTop"><div id="mlsModBar"></div><div id="mlsTabs"></div></div>
+
+  <div class="intro-box" id="mlsIntro">
+    <h3>What this module shows</h3>
+    <div class="intro-cols">
+      <div>
+        <p>A <b>neural network</b> is built from simple units, the <b>neurons</b>. Each one takes a weighted sum of its inputs, adds a bias, and passes the result through an <b>activation function</b>. Neurons are arranged in layers: inputs, one or more <b>hidden layers</b>, and the output (here the probability of class 1).</p>
+        <p>Training repeats two passes: the <b>forward pass</b> computes the prediction; the <b>backward pass</b> (backpropagation) computes how the loss changes with every weight, and gradient descent moves every weight a little.</p>
+      </div>
+      <div>
+        <p><b>How to use it</b></p>
+        <ol>
+          <li>Click an observation on the map and follow its numbers through the network.</li>
+          <li>Press <b>Reset</b>, then <b>Play</b>: watch the boundary bend and the loss fall.</li>
+          <li>Try no hidden layer, fewer neurons, a huge learning rate, and the sigmoid in deep networks.</li>
+        </ol>
+      </div>
+    </div>
+  </div>
+
+  <!-- ===================== SIMULATION ===================== -->
+  <section data-panel="sim">
+    <div class="mod-grid">
+      <aside class="side" aria-label="Controls">
+        <div class="card">
+          <div class="card-head"><h3>1. Data<button type="button" class="help" data-help="data">?</button></h3></div>
+          <select id="ds" aria-label="Data set"><option value="circles">Generic: circles</option><option value="xor">Generic: XOR</option><option value="moons">Generic: moons</option><option value="banks">Bank failures (two ratios)</option></select>
+          <div class="field-row"><label for="n">Observations<button type="button" class="help" data-help="n">?</button></label><output id="nVal"></output></div>
+          <input type="range" id="n" min="60" max="400" step="10" value="160">
+          <div class="field-row"><label for="seed">Random seed<button type="button" class="help" data-help="seed">?</button></label></div>
+          <div class="inline-inputs"><input type="number" id="seed" min="1" max="99999" step="1" value="1" aria-label="Random seed"><button type="button" class="btn-ghost btn-icon" id="newSeed" title="New random data" style="flex:0 0 auto">&#127922;</button></div>
+        </div>
+        <div class="card">
+          <div class="card-head"><h3>2. The network<button type="button" class="help" data-help="net">?</button></h3></div>
+          <div class="field-row"><label>Hidden layers<button type="button" class="help" data-help="layers">?</button></label></div>
+          <div class="seg full" role="group" aria-label="Hidden layers"><button type="button" data-nl="0">0</button><button type="button" data-nl="1">1</button><button type="button" data-nl="2">2</button></div>
+          <div class="field-row"><label for="H">Neurons per hidden layer<button type="button" class="help" data-help="H">?</button></label><output id="HVal"></output></div>
+          <input type="range" id="H" min="1" max="8" step="1" value="4">
+          <div class="field-row"><label>Activation<button type="button" class="help" data-help="act">?</button></label></div>
+          <div class="seg full" role="group" aria-label="Activation"><button type="button" data-act="relu">ReLU</button><button type="button" data-act="tanh">tanh</button><button type="button" data-act="sigmoid">Sigmoid</button></div>
+          <div class="field-row"><label for="lr">Learning rate<button type="button" class="help" data-help="lr">?</button></label><output id="lrVal"></output></div>
+          <input type="range" id="lr" min="0" max="6" step="1" value="3">
+        </div>
+        <div class="card">
+          <div class="card-head"><h3>3. Train it<button type="button" class="help" data-help="run">?</button></h3></div>
+          <div id="stepper"></div>
+          <p class="note" id="stepNote"></p>
+          <div id="pseudo"></div>
+        </div>
+      </aside>
+
+      <main class="main">
+        <div class="story" id="story"></div>
+        <div class="stat-grid" id="stats" style="margin-top:12px"></div>
+        <div id="statusLine" class="status-line" style="margin:10px 0"></div>
+        <div class="fig-grid">
+          <div id="figNet" class="fig-wide"></div>
+          <div id="figMap"></div>
+          <div id="figLoss"></div>
+          <div class="card" id="fwdCard"></div>
+          <div id="figGrad"></div>
+        </div>
+      </main>
+    </div>
+  </section>
+
+  <!-- ===================== LESSON ===================== -->
+  <section data-panel="lesson" class="card lesson" hidden>
+    <div id="mlsMathCtl"></div>
+    <p class="lvl-only-intuition note" style="margin-bottom:8px">Showing the intuition only. Choose <b>Formulas</b> or <b>Deep dive</b> above to add the mathematics.</p>
+
+    <h4>The neuron</h4>
+    <p>A neuron receives inputs x<sub>1</sub>, x<sub>2</sub>, ..., multiplies each by a <b>weight</b>, adds them up with a <b>bias</b>, and applies an <b>activation function</b>: a = f(w<sub>1</sub>x<sub>1</sub> + w<sub>2</sub>x<sub>2</sub> + ... + b). With the sigmoid as f and no hidden layer, the network is exactly a <b>logistic regression</b>.</p>
+    <ul>
+      <li><b>ReLU</b>: max(0, z). Simple and fast; the default in deep networks.</li>
+      <li><b>tanh</b>: an S-curve from −1 to 1.</li>
+      <li><b>Sigmoid</b>: an S-curve from 0 to 1; used for the output probability.</li>
+    </ul>
+    <p>Without a nonlinear activation, any number of layers collapses into one weighted sum: a straight boundary. The activations let the network <b>bend</b> its boundary; more hidden neurons and layers allow more bends.</p>
+
+    <h4>Training: forward and backward</h4>
+    <ol>
+      <li><b>Forward pass</b>: for every observation, compute the hidden layers and the output probability.</li>
+      <li><b>Loss</b>: the average log loss (as in logistic regression): small when the probabilities are right.</li>
+      <li><b>Backward pass</b> (backpropagation): apply the chain rule from the output back to the first layer to get the gradient of the loss for every weight.</li>
+      <li><b>Update</b>: move every weight against its gradient: w ← w − (learning rate) × gradient. One pass over the training set is an <b>epoch</b>.</li>
+    </ol>
+    <p>Here the whole training set is used in every step (batch gradient descent) with momentum 0.9 (each step keeps 90% of the previous one), on standardized inputs. Real networks use small random batches (stochastic gradient descent) and optimizers such as Adam.</p>
+
+    <h4>Things that go wrong</h4>
+    <ul>
+      <li><b>Learning rate too large</b>: the loss jumps around or explodes. Too small: training takes forever. (See the Gradient Descent module.)</li>
+      <li><b>Overfitting</b>: many neurons and long training fit the noise of the training set; watch the test loss. Remedies: fewer neurons, early stopping, regularization, dropout.</li>
+      <li><b>Vanishing gradients</b>: the sigmoid's slope is at most 0.25, so gradients shrink layer by layer going backwards; the first layers learn slowly. ReLU avoids this.</li>
+    </ul>
+
+    <div class="math-block lvl-math"><div class="mb-title">Forward pass and backpropagation</div>
+      <div class="tex-block">z^{(l)} = W^{(l)} a^{(l-1)} + b^{(l)}, \qquad a^{(l)} = f\bigl(z^{(l)}\bigr), \qquad \hat p = \sigma\bigl(z^{(L)}\bigr)</div>
+      <div class="tex-block">\mathcal{L} = -\frac{1}{n} \sum_i \bigl[y_i \log \hat p_i + (1 - y_i) \log (1 - \hat p_i)\bigr], \qquad \delta^{(L)} = \frac{\hat p - y}{n}</div>
+      <div class="tex-block">\delta^{(l)} = \bigl(W^{(l+1)\top} \delta^{(l+1)}\bigr) \odot f'\bigl(z^{(l)}\bigr), \qquad \frac{\partial \mathcal{L}}{\partial W^{(l)}} = \delta^{(l)}\, a^{(l-1)\top}, \qquad \frac{\partial \mathcal{L}}{\partial b^{(l)}} = \delta^{(l)}</div>
+      <p class="note">With momentum μ: v ← μ v − η ∇, w ← w + v. The gradients in this module were checked against numerical derivatives (finite differences).</p>
+    </div>
+    <div class="math-block deep lvl-deep"><div class="mb-title">Deep dive</div>
+      <p><b>Universal approximation.</b> One hidden layer with enough neurons can approximate any continuous function on a bounded region; deeper networks often need far fewer neurons for the same accuracy.</p>
+      <p><b>Initialization.</b> Weights start at small random values scaled by the number of inputs (He initialization for ReLU, Glorot/Xavier for tanh and sigmoid); all-equal weights would make every neuron in a layer learn the same thing. Different seeds give different networks.</p>
+      <p><b>Non-convex loss.</b> The loss has many local minima and flat regions; gradient descent finds one of them, which is usually good enough.</p>
+      <p class="note">References: Rumelhart, Hinton and Williams (1986), "Learning representations by back-propagating errors", <i>Nature</i>; Hornik, Stinchcombe and White (1989), <i>Neural Networks</i>; Goodfellow, Bengio and Courville (2016), <i>Deep Learning</i>, ch. 6.</p>
+    </div>
+  </section>
+
+  <!-- ===================== CHALLENGES ===================== -->
+  <section data-panel="challenges" class="card" hidden>
+    <div class="card-head"><h3>Challenges</h3><span class="card-sub">Answer the "predict first" questions before testing them in the Simulation tab.</span></div>
+    <div id="challenges"></div>
+  </section>
+
+  <!-- ===================== REAL DATA ===================== -->
+  <section data-panel="real" class="card lesson" hidden>
+    <h4>From the simulation to real data</h4>
+    <ul>
+      <li>Neural networks shine with large data sets and unstructured inputs (text, images, many series). On small tabular economic data, tree ensembles and regularized regressions are often as good and easier to explain.</li>
+      <li>Standardize the inputs, start small, watch the validation loss for early stopping, and tune the learning rate. In Python: <code>sklearn.neural_network.MLPClassifier</code>, or Keras / PyTorch for larger models.</li>
+    </ul>
+    <div class="crosslink"><span>&#10140;</span><span><a id="fourCast" target="_blank" rel="noopener"><b>4Cast Lab</b></a> trains neural networks on your own data.</span></div>
+  </section>
+
+  <footer id="mlsFooter"></footer>
+</div>
+
+<script>
+(function () {
+  'use strict';
+  const MLS = window.MLS, ML = MLS.ml, CL = MLS.cls;
+  const META = MLS.moduleMeta('ann');
+  const $ = id => document.getElementById(id);
+  const F = MLS.fmt, pct = CL.pct;
+
+  const LRS = [0.01, 0.03, 0.1, 0.3, 1, 3, 10], AN = { relu: 'ReLU', tanh: 'tanh', sigmoid: 'Sigmoid' }, EMAX = 3000, ESTEP = 10;
+  const DEFN = { circles: 160, xor: 160, moons: 160, banks: 200 };
+  const S = { ds: 'circles', n: {}, seed: 1, L: 1, H: 4, act: 'tanh', lr: 0.3, ep: 600, sel: null };
+  let D = null, R = null;
+  const nObs = () => S.n[S.ds] || DEFN[S.ds];
+  function makeData() {
+    const g = ML.DATA[S.ds].gen(ML.rng(S.seed), nObs()), te = ML.split(g.X.length, S.seed);
+    const pts = g.X.map((x, i) => ({ x, y: g.y[i], te: te[i], id: i }));
+    const sc = ML.scaler(pts.filter(p => !p.te).map(p => p.x));
+    D = { pts, names: g.names, classes: g.classes, sc, dom: CL.domain(pts), tr: pts.filter(p => !p.te), test: pts.filter(p => p.te) };
+    D.Xtr = D.tr.map(p => sc.t(p.x)); D.ytr = D.tr.map(p => p.y); D.Xte = D.test.map(p => sc.t(p.x)); D.yte = D.test.map(p => p.y);
+  }
+  function build() {
+    const hid = new Array(S.L).fill(S.H);
+    R = { net: ML.Net([2].concat(hid, [1]), S.act, S.seed), hist: [], grads: null };
+    R.hist.push({ ep: 0, tr: R.net.loss(D.Xtr, D.ytr), te: R.net.loss(D.Xte, D.yte) });
+  }
+  function trainTo(ep) {
+    const net = R.net;
+    while (net.epoch < ep) {
+      const g = net.step(D.Xtr, D.ytr, S.lr, 0.9, 0); R.grads = g;
+      const tr = net.loss(D.Xtr, D.ytr); R.hist.push({ ep: net.epoch, tr: Number.isFinite(tr) ? tr : 99, te: net.loss(D.Xte, D.yte) });
+    }
+    if (!R.grads) R.grads = net.grad(D.Xtr, D.ytr, 0);
+    const acc = (X, y) => X.filter((x, i) => (net.p(x) >= 0.5 ? 1 : 0) === y[i]).length / X.length;
+    R.atr = acc(D.Xtr, D.ytr); R.ate = acc(D.Xte, D.yte);
+  }
+  const selPt = () => (S.sel !== null && D.pts[S.sel] ? D.pts[S.sel] : D.test[0]);
+  const pseudo = MLS.pseudo($('pseudo'), ['**for** every epoch:', '  forward pass: every neuron, then P(class 1)', '  loss = average log loss on the training set', '  backward pass: gradients from the output back', '  update: w = w - learning rate x gradient (+ momentum)']);
+
+  function updateText() {
+    const card = MLS.statCard, h = R.hist[R.hist.length - 1], nW = R.net.W.reduce((s, m) => s + m.length * (m[0].length + 1), 0);
+    $('story').innerHTML = '<h3>Data: ' + ML.DATA[S.ds].label + '</h3><p>' + ML.DATA[S.ds].note + ' <b>' + D.tr.length + ' in the training set (filled), ' + D.test.length + ' in the test set (rings).</b> Network: 2 inputs, ' + (S.L ? S.L + ' hidden layer' + (S.L > 1 ? 's' : '') + ' of ' + S.H + ' ' + AN[S.act] + ' neuron' + (S.H > 1 ? 's' : '') : 'no hidden layer (a logistic regression)') + ', 1 sigmoid output: <b>' + nW + ' weights and biases</b>.</p>';
+    $('stats').innerHTML =
+      card('Epoch', String(R.net.epoch), 'passes over the training set', '', 'st_ep') +
+      card('Log loss, training set', F(h.tr, 3), 'test set: ' + F(h.te, 3), '', 'st_loss') +
+      card('Accuracy, training set', pct(R.atr), D.tr.length + ' observations', '', 'm_acc') +
+      card('Accuracy, test set', pct(R.ate), D.test.length + ' new observations', '', 'm_acc');
+    pseudo.hl([2, 3, 4, 5]);
+    $('stepNote').innerHTML = 'Each <b>Step</b> trains ' + ESTEP + ' epochs. ' + (R.net.epoch >= EMAX ? 'Maximum of ' + EMAX + ' epochs reached.' : '');
+    let msg, cls = 'status-line';
+    const best = R.hist.reduce((b, q) => (q.te < b.te ? q : b));
+    if (!Number.isFinite(h.tr) || h.tr > 5 || (R.hist.length > 20 && h.tr > R.hist[0].tr * 1.2)) { msg = 'The loss is not falling: the learning rate ' + S.lr + ' is too large, every step jumps over the minimum. Try a smaller one.'; cls += ' bad'; }
+    else if (S.L === 0 && ['circles', 'xor', 'moons'].includes(S.ds)) { msg = 'No hidden layer: the network is a logistic regression and its boundary is a straight line. Test accuracy ' + pct(R.ate) + '. Add a hidden layer.'; cls += ' bad'; }
+    else if (R.net.epoch > 200 && h.te > best.te * 1.25 && best.ep < R.net.epoch * 0.7) { msg = 'Overfitting: the test loss was lowest at epoch ' + best.ep + ' (' + F(best.te, 3) + ') and has risen since, while the training loss keeps falling. Early stopping would stop near epoch ' + best.ep + '.'; cls += ' bad'; }
+    else { msg = 'After ' + R.net.epoch + ' epochs: test accuracy ' + pct(R.ate) + ', training ' + pct(R.atr) + '.'; cls += R.ate >= 0.85 ? ' ok' : ''; }
+    $('statusLine').textContent = msg; $('statusLine').className = cls;
+  }
+  /* the network diagram with the values for the selected observation */
+  const figNet = MLS.figure($('figNet'), { title: 'The network and the forward pass', help: 'fignet', file: 'neural-network', plot: { aspect: 0.4, margin: { l: 20, r: 20, t: 16, b: 16 }, x: { label: '', ticks: false }, y: { label: '', ticks: false } } });
+  function drawNet() {
+    const P = figNet.plot, net = R.net, sizes = net.sizes, L = net.L, p = selPt(), f = net.forward(D.sc.t(p.x));
+    const maxN = Math.max(...sizes), pos = (l, k) => [l, 1 - (k + 0.5) / sizes[l] * 1, sizes[l]];
+    const yAt = (l, k) => (maxN === 1 ? 0.5 : 0.5 + ((sizes[l] - 1) / 2 - k) / (maxN) * 0.95);
+    let wmax = 1e-9; net.W.forEach(m => m.forEach(row => row.forEach(w => (wmax = Math.max(wmax, Math.abs(w))))));
+    P.setX(-0.35, L + 0.35); P.setY(0, 1);
+    const c1 = MLS.color('series-1'), c2 = MLS.color('series-2'), ink = MLS.color('chart-ink');
+    P.draw(P => {
+      for (let l = 0; l < L; l++) net.W[l].forEach((row, k) => row.forEach((w, j) => {
+        const e = P.segment(l, yAt(l, j), l + 1, yAt(l + 1, k), { color: w >= 0 ? c1 : c2, width: 0.6 + 4 * Math.abs(w) / wmax, opacity: 0.75 });
+        e.setAttribute('data-tip', P.tips.length); P.tips.push(() => 'Weight from ' + (l ? 'hidden ' + l + '.' + (j + 1) : D.names[j]) + ' to ' + (l === L - 1 ? 'the output' : 'hidden ' + (l + 1) + '.' + (k + 1)) + ': <b>' + F(w, 3) + '</b>');
+      }));
+      sizes.forEach((m, l) => { for (let k = 0; k < m; k++) {
+        const a = f.a[l][k], hid = l > 0 && l < L, out = l === L, zv = l ? f.z[l - 1][k] : null;
+        const fill = out ? MLS.rgba(CL.color(a >= 0.5 ? 1 : 0), 0.25 + 0.6 * Math.abs(a - 0.5) * 2) : MLS.rgba(a >= 0 ? c1 : c2, Math.min(0.85, 0.12 + 0.7 * Math.min(1, Math.abs(a))));
+        P.points([{ x: l, y: yAt(l, k) }], { color: fill, r: 17, ringColor: ink, tip: () => (l === 0 ? '<b>Input ' + D.names[k] + '</b><br>standardized value ' + F(a, 3) : (out ? '<b>Output</b>' : '<b>Hidden neuron ' + l + '.' + (k + 1) + '</b>') + '<br>z = Σ w·a + b = ' + F(zv, 3) + '<br>bias b = ' + F(net.b[l - 1][k], 3) + '<br>a = ' + (out ? 'sigmoid' : AN[S.act]) + '(z) = <b>' + F(a, 3) + '</b>') });
+        P.text(l, yAt(l, k), F(a, 2), { anchor: 'middle', dy: 4, size: 11, weight: 800, halo: false, color: ink });
+      } });
+      P.text(0, 0, 'Inputs', { anchor: 'middle', dy: -2, size: 12, weight: 700 });
+      for (let l = 1; l < L; l++) P.text(l, 0, 'Hidden layer ' + l, { anchor: 'middle', dy: -2, size: 12, weight: 700 });
+      P.text(L, 0, 'P(' + D.classes[1] + ')', { anchor: 'middle', dy: -2, size: 12, weight: 700 });
+    });
+    figNet.legend([{ label: 'Positive weight', color: c1, line: true }, { label: 'Negative weight', color: c2, line: true }, { label: 'Line width: size of the weight', color: 'transparent' }]);
+    figNet.caption('The numbers in the circles are the values for the selected observation (' + D.names[0] + ' ' + F(p.x[0], 2) + ', ' + D.names[1] + ' ' + F(p.x[1], 2) + ', actual: ' + D.classes[p.y] + '). Hover over a line for its weight, over a neuron for its sum z and activation. Click another observation on the map.');
+  }
+  const figMap = MLS.figure($('figMap'), { title: 'The boundary', help: 'figmap', file: 'neural-network-map',
+    plot: { aspect: 0.85, margin: { l: 56, b: 48 }, x: { label: () => D.names[0] }, y: { label: () => D.names[1] }, onClick: (x, y, e, q) => { const P = figMap.plot; let best = null; D.pts.forEach((p, i) => { const d = Math.hypot(P.sx(p.x[0]) - q.px, P.sy(p.x[1]) - q.py); if (d < 12 && (!best || d < best[0])) best = [d, i]; }); if (best) { S.sel = best[1]; render(); } } } });
+  function drawMap() {
+    const P = figMap.plot, net = R.net, sel = selPt();
+    P.setX(D.dom.x[0], D.dom.x[1]); P.setY(D.dom.y[0], D.dom.y[1]);
+    P.draw(P => {
+      CL.drawRegions(P, CL.regionGrid(D.dom, x => { const q = net.p(D.sc.t(x)); return [1 - q, q]; }, 80, 60), D.dom, 2, 0.5);
+      const tip = p => '<b>' + (p.te ? 'Test set' : 'Training set') + '</b><br>Actual: ' + D.classes[p.y] + '<br>P(' + D.classes[1] + ') = ' + F(net.p(D.sc.t(p.x)), 3) + '<br><i>Click to trace it</i>';
+      P.points(D.tr, { x: p => p.x[0], y: p => p.x[1], color: p => CL.color(p.y), r: 4.2, tip, highlight: p => p === sel });
+      P.points(D.test, { x: p => p.x[0], y: p => p.x[1], color: p => CL.color(p.y), r: 4.8, hollow: true, tip, highlight: p => p === sel });
+    });
+    figMap.legend(D.classes.map((c, k) => ({ label: c, color: CL.color(k) })).concat([{ label: 'ring = test set', color: 'transparent', stroke: MLS.color('chart-muted') }, { label: 'Boundary, P = 0.5', color: MLS.color('chart-ink'), line: true }]));
+    figMap.caption('Shading: the predicted class, stronger where the network is more confident. Circled: the observation traced in the network.');
+  }
+  const figLoss = MLS.figure($('figLoss'), { title: 'Log loss by epoch', help: 'figloss', file: 'neural-network-loss', plot: { aspect: 0.85, margin: { l: 56, b: 48 }, x: { label: 'Epoch' }, y: { label: 'Log loss' } } });
+  function drawLoss() {
+    const P = figLoss.plot, h = R.hist, c1 = MLS.color('series-1'), c2 = MLS.color('series-2'), top = Math.min(2, Math.max(0.75, ...h.map(q => Math.max(q.tr, q.te)).filter(Number.isFinite)) * 1.05);
+    P.setX(0, Math.max(50, R.net.epoch)); P.setY(0, top);
+    P.draw(P => { P.line(h.map(q => [q.ep, Math.min(top, q.tr)]), { color: c1, width: 2.2 }); P.line(h.map(q => [q.ep, Math.min(top, q.te)]), { color: c2, width: 2.2 });
+      P.crosshair([{ name: 'Training', color: c1, pts: h.map(q => [q.ep, q.tr]) }, { name: 'Test', color: c2, pts: h.map(q => [q.ep, q.te]) }], v => 'Epoch ' + Math.round(v), v => F(v, 4)); });
+    figLoss.legend([{ label: 'Training set', color: c1, line: true }, { label: 'Test set', color: c2, line: true }]);
+    figLoss.caption('0.693 = log(2) is the loss of guessing 50%. The training loss is what gradient descent lowers; the test loss shows how well the network generalizes.');
+  }
+  function drawFwd() {
+    const net = R.net, p = selPt(), f = net.forward(D.sc.t(p.x)), L = net.L, l = 0, rows = [];
+    net.W[0].forEach((row, k) => rows.push('<tr><td>' + (L === 1 ? 'Output' : 'Hidden 1.' + (k + 1)) + '</td><td style="text-align:left;font-family:IBM Plex Mono,monospace;font-size:12.5px">' + row.map((w, j) => F(w, 2) + '×(' + F(f.a[0][j], 2) + ')').join(' + ') + ' + ' + F(net.b[0][k], 2) + ' = ' + F(f.z[0][k], 3) + '</td><td>' + (L === 1 ? 'sigmoid' : AN[S.act]) + '(' + F(f.z[0][k], 2) + ') = <b>' + F(f.a[1][k], 3) + '</b></td></tr>'));
+    if (L > 1) rows.push('<tr><td>Output</td><td style="text-align:left;font-family:IBM Plex Mono,monospace;font-size:12.5px">Σ w × (last hidden values) + b = ' + F(f.z[L - 1][0], 3) + '</td><td>sigmoid(' + F(f.z[L - 1][0], 2) + ') = <b>' + F(f.p, 3) + '</b></td></tr>');
+    $('fwdCard').innerHTML = '<div class="card-head"><h3>Forward pass in numbers' + MLS.helpBtn('fwd') + '</h3></div><p class="note" style="margin-top:0">Selected observation, standardized inputs: ' + D.names[0] + ' = ' + F(f.a[0][0], 3) + ', ' + D.names[1] + ' = ' + F(f.a[0][1], 3) + '.</p><div style="overflow-x:auto"><table class="tbl"><thead><tr><th>Neuron</th><th>z = weights × inputs + bias</th><th>a = f(z)</th></tr></thead><tbody>' + rows.join('') + '</tbody></table></div>' +
+      '<p class="note">P(' + D.classes[1] + ') = <b>' + F(f.p, 3) + '</b>: predicted ' + D.classes[f.p >= 0.5 ? 1 : 0] + '; actual ' + D.classes[p.y] + '. Its log loss: ' + F(-(p.y ? Math.log(Math.max(1e-12, f.p)) : Math.log(Math.max(1e-12, 1 - f.p))), 3) + '.</p>';
+  }
+  const figGrad = MLS.figure($('figGrad'), { title: 'Backpropagation: gradient size by layer', help: 'figgrad', file: 'neural-network-gradients', plot: { aspect: 0.85, margin: { l: 60, b: 48 }, x: { label: 'Layer of weights (1 = from the inputs)', ticks: () => R.net.W.map((_, l) => l + 1) }, y: { label: 'Mean |gradient|' } } });
+  function drawGrad() {
+    const P = figGrad.plot, g = R.grads.gW, v = g.map(m => { let s = 0, c = 0; m.forEach(row => row.forEach(x => { s += Math.abs(x); c++; })); return s / c; }), c3 = MLS.color('series-3');
+    P.setX(0.4, g.length + 0.6); P.setY(0, Math.max(...v) * 1.2 || 1);
+    P.draw(P => { v.forEach((x, l) => { P.rect(l + 1 - 0.3, 0, l + 1 + 0.3, x, { fill: MLS.rgba(c3, 0.85) }); P.text(l + 1, x, x.toExponential(1), { anchor: 'middle', dy: -6, size: 11 }); }); });
+    figGrad.caption('The average size of ∂loss/∂w for the weights of each layer, at the current epoch. With the sigmoid in deeper networks the first layers get much smaller gradients (vanishing gradients).');
+  }
+
+  function syncUI() {
+    $('ds').value = S.ds; $('n').value = nObs(); $('nVal').textContent = nObs(); $('seed').value = S.seed;
+    MLS.$$('[data-nl]').forEach(b => b.setAttribute('aria-pressed', String(+b.dataset.nl === S.L)));
+    MLS.$$('[data-act]').forEach(b => b.setAttribute('aria-pressed', String(b.dataset.act === S.act)));
+    $('H').value = S.H; $('HVal').textContent = S.H; $('H').disabled = S.L === 0; $('lr').value = LRS.indexOf(S.lr); $('lrVal').textContent = S.lr;
+  }
+  function render() { syncUI(); updateText(); drawNet(); drawMap(); drawLoss(); drawFwd(); drawGrad(); if (ch) ch.check(); MLS.state.save(); }
+  function refresh() { build(); trainTo(S.ep); render(); }
+  const full = () => { S.sel = null; makeData(); refresh(); };
+  MLS.stepper($('stepper'), { speed: 10, runMax: EMAX / ESTEP,
+    step: () => { if (R.net.epoch >= EMAX) return false; S.ep = Math.min(EMAX, R.net.epoch + ESTEP); trainTo(S.ep); return true; },
+    reset: () => { S.ep = 0; build(); trainTo(0); }, after: () => render() });
+  $('ds').onchange = e => { S.ds = e.target.value; full(); };
+  $('n').addEventListener('input', e => ($('nVal').textContent = e.target.value));
+  $('n').onchange = e => { S.n[S.ds] = +e.target.value; full(); };
+  $('seed').onchange = e => { S.seed = Math.max(1, Math.round(+e.target.value) || 1); full(); };
+  $('newSeed').onclick = () => { S.seed = MLS.newSeed(); full(); };
+  MLS.$$('[data-nl]').forEach(b => (b.onclick = () => { S.L = +b.dataset.nl; refresh(); }));
+  MLS.$$('[data-act]').forEach(b => (b.onclick = () => { S.act = b.dataset.act; refresh(); }));
+  $('H').addEventListener('input', e => ($('HVal').textContent = e.target.value)); $('H').onchange = e => { S.H = +e.target.value; refresh(); };
+  $('lr').addEventListener('input', e => ($('lrVal').textContent = LRS[+e.target.value])); $('lr').onchange = e => { S.lr = LRS[+e.target.value]; refresh(); };
+
+  MLS.registerHelp({
+    data: { title: 'Data', html: '<b>Circles, XOR, moons</b>: classic shapes that need a curved boundary. <b>Bank failures</b>: two ratios (debt-to-equity, Tier 1 capital). Simulated; 80% training set, 20% test set; inputs standardized with the training set.' },
+    n: { title: 'Observations', html: 'How many observations are simulated.' },
+    seed: { title: 'Random seed', html: 'Fixes the data and the random starting weights of the network.' },
+    net: { title: 'The network', html: 'Fully connected: every neuron receives every value of the previous layer.' },
+    layers: { title: 'Hidden layers', html: '0: no hidden layer, the network is a logistic regression. 1 or 2: hidden layers of the chosen size.' },
+    H: { title: 'Neurons per hidden layer', html: 'More neurons allow more bends in the boundary, and more risk of overfitting.' },
+    act: { title: 'Activation', html: '<b>ReLU</b>: max(0, z). <b>tanh</b>: S-curve from −1 to 1. <b>Sigmoid</b>: S-curve from 0 to 1. The output always uses the sigmoid to give a probability.' },
+    lr: { title: 'Learning rate', html: 'The size of every gradient descent step (with momentum 0.9). Too large: the loss jumps or explodes; too small: slow training.' },
+    run: { title: 'Train it', html: '<b>Step</b>: 10 more epochs. <b>Play</b>: keep training. <b>End</b>: up to 3000 epochs. <b>Reset</b>: back to the random starting weights (epoch 0).' },
+    st_ep: { title: 'Epoch', html: 'How many times the whole training set has been used for a gradient descent step.' },
+    st_loss: { title: 'Log loss', html: 'The average of −log(probability given to the actual class). 0.693 is guessing 50%; 0 is perfect.' },
+    fignet: { title: 'The network', html: 'Circles: neurons, with their values for the selected observation. Lines: weights (blue positive, orange negative; thicker = larger).' },
+    figmap: { title: 'The boundary', html: 'The predicted class over the plane and the observations. Click one to trace it through the network.' },
+    figloss: { title: 'Loss by epoch', html: 'Training and test log loss during training. When the test loss rises while the training loss falls, the network overfits.' },
+    fwd: { title: 'Forward pass', html: 'The first layer computed by hand for the selected observation: each neuron multiplies the inputs by its weights, adds its bias, and applies the activation.' },
+    figgrad: { title: 'Gradients by layer', html: 'Backpropagation gives a gradient for every weight. The bars show their average size per layer at the current epoch.' }
+  });
+
+  function setup(o) { Object.assign(S, o); MLS.pickTab('sim'); full(); window.scrollTo({ top: 0, behavior: 'smooth' }); }
+  const ch = MLS.challenges($('challenges'), META.id, [
+    { type: 'predict', q: 'Circles with no hidden layer. The boundary will be...',
+      options: ['a circle', 'a straight line: the network is a logistic regression', 'two circles'], answer: 1,
+      explain: 'One sigmoid neuron on the inputs is exactly a logistic regression: its boundary is a straight line, so it cannot separate a ring from a circle.',
+      tryIt: () => setup({ ds: 'circles', L: 0, ep: 600 }) },
+    { type: 'task', q: 'XOR: reach a test accuracy of at least 95%.', hint: 'One hidden layer with 4 or more tanh neurons, learning rate 0.3; train enough epochs.',
+      check: () => R && S.ds === 'xor' && R.ate >= 0.95 },
+    { type: 'predict', q: 'Why do neural networks need a nonlinear activation in the hidden layers?',
+      options: ['Without it, all layers together are one weighted sum: a straight boundary', 'To make training faster', 'To reduce the number of weights'], answer: 0,
+      explain: 'A weighted sum of weighted sums is again a weighted sum. Only the nonlinear activations let the network bend its boundary.',
+      tryIt: () => setup({ ds: 'moons', L: 1, H: 8 }) },
+    { type: 'predict', q: 'You set the learning rate to 10. The training loss will...',
+      options: ['fall faster and lower', 'stay exactly the same', 'jump around or explode instead of falling'], answer: 2,
+      explain: 'Each step overshoots the minimum by more than it gains. The Gradient Descent module shows the same with one parameter.',
+      tryIt: () => setup({ ds: 'circles', lr: 10, ep: 300 }) },
+    { type: 'task', q: 'Circles: reach 95% test accuracy with one hidden layer of at most 3 neurons.', hint: 'Choose 1 hidden layer, 3 neurons; try tanh or ReLU, and other seeds if needed.',
+      check: () => R && S.ds === 'circles' && S.L === 1 && S.H <= 3 && R.ate >= 0.95 },
+    { type: 'predict', q: 'Two hidden layers of sigmoid neurons. Compared with the last layer, the gradients of the first layer are...',
+      options: ['much larger', 'smaller: they shrink while going backwards (vanishing gradients)', 'exactly equal'], answer: 1,
+      explain: 'Each sigmoid layer multiplies the gradient by its slope, at most 0.25. Look at the gradient chart; then compare with ReLU.',
+      tryIt: () => setup({ ds: 'circles', L: 2, H: 6, act: 'sigmoid', ep: 300 }) }
+  ]);
+  const STATE = {
+    get: () => ({ ds: S.ds, n: S.n, seed: S.seed, L: S.L, H: S.H, act: S.act, lr: S.lr, ep: S.ep }),
+    set: o => {
+      if (DEFN[o.ds]) S.ds = o.ds;
+      if (o.n) Object.keys(o.n).forEach(q => { if (DEFN[q] && Number.isFinite(o.n[q])) S.n[q] = Math.max(60, Math.min(400, o.n[q])); });
+      if (Number.isFinite(o.seed)) S.seed = o.seed;
+      if ([0, 1, 2].includes(o.L)) S.L = o.L;
+      if (Number.isFinite(o.H)) S.H = Math.max(1, Math.min(8, o.H));
+      if (AN[o.act]) S.act = o.act;
+      if (LRS.includes(o.lr)) S.lr = o.lr;
+      if (Number.isFinite(o.ep)) S.ep = Math.max(0, Math.min(EMAX, o.ep));
+    }
+  };
+  const start = full;
+  MLS.moduleBar({ id: META.id, title: META.title, section: META.sectionTitle, level: META.level },
+    { tabs: [{ id: 'sim', label: 'Simulation' }, { id: 'lesson', label: 'Lesson' }, { id: 'challenges', label: 'Challenges' }, { id: 'real', label: 'On real data' }] });
+  MLS.state.init({ id: META.id, get: STATE.get, set: STATE.set });
+  const fc = $('fourCast'); if (fc) fc.href = MLS.APP.fourCastUrl;
+  window.__mls = { S, get R() { return R; }, get D() { return D; } };
+  document.addEventListener('mls:theme', () => refresh());
+  start();
+})();
+</script>
+</body>
+</html>

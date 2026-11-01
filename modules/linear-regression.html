@@ -1,0 +1,733 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Linear Regression | 4MLSim</title>
+  <meta name="theme-color" content="#1B2340">
+  <link rel="manifest" href="../manifest.json">
+  <link rel="icon" type="image/svg+xml" href="../assets/img/icon.svg">
+  <link rel="apple-touch-icon" href="../assets/img/apple-touch-icon.png">
+  <link rel="stylesheet" href="../assets/vendor/temml.css">
+  <link rel="stylesheet" href="../assets/css/4mlsim.css">
+  <script src="../assets/vendor/temml.min.js"></script>
+  <script src="../assets/js/core.js"></script>
+  <script src="../assets/js/stats.js"></script>
+  <script src="../assets/js/plot.js"></script>
+  <script src="../assets/js/modules.js"></script>
+</head>
+<body>
+<div class="page">
+  <header id="mlsHeader" data-variant="compact"></header>
+  <div class="mod-top" id="mlsTop"><div id="mlsModBar"></div><div id="mlsTabs"></div></div>
+
+  <div class="intro-box" id="mlsIntro">
+    <h3>What this module shows</h3>
+    <div class="intro-cols">
+      <div>
+        <p>A <b>linear regression</b> explains an outcome <i>Y</i> (for example a wage) with one or more variables <i>X</i> (schooling, experience...). The same estimated equation can be read with two different goals:</p>
+        <ul>
+          <li><b>Econometrics</b> (left panel): are the coefficients precisely estimated and statistically significant, and do the assumptions behind the standard errors hold? All observations are used.</li>
+          <li><b>Machine learning</b> (right panel): how accurately does the model predict observations it has <i>never seen</i>? Part of the data is held back as a test set.</li>
+        </ul>
+      </div>
+      <div>
+        <p><b>How to use it</b></p>
+        <ol>
+          <li>Choose a dataset and tick the X variables on the left.</li>
+          <li>Read the coefficient table and the diagnostic tests.</li>
+          <li>Compare the training error with the test error.</li>
+          <li>Click any <b>?</b> for an explanation, then try the <b>Challenges</b> tab.</li>
+        </ol>
+      </div>
+    </div>
+  </div>
+
+  <!-- ===================== SIMULATION ===================== -->
+  <section data-panel="sim">
+    <div class="mod-grid">
+      <aside class="side" aria-label="Controls">
+        <div class="card">
+          <div class="card-head"><h3>1. Data<button type="button" class="help" data-help="dataset">?</button></h3></div>
+          <label class="field" for="ds">Dataset</label>
+          <select id="ds">
+            <option value="wage">Labour: hourly wages</option>
+            <option value="housing">Housing: flat prices</option>
+            <option value="consumption">Households: consumption</option>
+            <option value="synthetic">Synthetic: known true model</option>
+            <option value="custom">My own points (click the chart)</option>
+            <option value="upload" disabled>Uploaded file</option>
+          </select>
+          <div id="yRow">
+            <div class="field-row"><label for="yvar">Outcome Y<button type="button" class="help" data-help="yvar">?</button></label></div>
+            <select id="yvar"></select>
+          </div>
+          <div id="xRow">
+            <div class="field-row"><label>Explanatory variables X<button type="button" class="help" data-help="xvars">?</button></label></div>
+            <div class="var-list" id="xList"></div>
+          </div>
+          <div id="genControls">
+            <div class="field-row"><label for="n">Number of observations<button type="button" class="help" data-help="n">?</button></label><output id="nVal"></output></div>
+            <input type="range" id="n" min="10" max="1000" step="10" value="200">
+            <div class="field-row"><label for="noise">Noise (unexplained variation)<button type="button" class="help" data-help="noise">?</button></label><output id="noiseVal"></output></div>
+            <input type="range" id="noise" min="0.1" max="3" step="0.05" value="1">
+            <label class="check" id="heteroRow"><input type="checkbox" id="hetero"> Noise grows with the first X<button type="button" class="help" data-help="hetero">?</button></label>
+            <div class="field-row"><label for="seed">Random seed<button type="button" class="help" data-help="seed">?</button></label></div>
+            <div class="inline-inputs"><input type="number" id="seed" min="1" max="99999" step="1" value="2026" aria-label="Random seed"><button type="button" class="btn-ghost btn-icon" id="newSeed" title="New random seed" style="flex:0 0 auto">&#127922;</button></div>
+          </div>
+          <label class="check" id="addRow"><input type="checkbox" id="addMode"> Add points by clicking the chart<button type="button" class="help" data-help="addpoints">?</button></label>
+          <div class="btn-row fill" style="margin-top:10px">
+            <button type="button" class="btn-secondary btn-small" id="uploadBtn">&#128193; Load CSV / Excel</button>
+            <button type="button" class="btn-ghost btn-small" id="undoBtn">&#8630; Undo last point</button>
+            <button type="button" class="btn-ghost btn-small" id="clearBtn">Clear all points</button>
+          </div>
+          <p class="note" id="dataNote"></p>
+        </div>
+
+        <div class="card">
+          <div class="card-head"><h3>2. Estimation</h3></div>
+          <div class="field-row"><label>Standard errors<button type="button" class="help" data-help="cov">?</button></label></div>
+          <div class="seg" role="group" aria-label="Standard errors" style="display:flex">
+            <button type="button" data-cov="classical" style="flex:1">Classical</button>
+            <button type="button" data-cov="HC1" style="flex:1">Robust (HC1)</button>
+          </div>
+          <div class="field-row"><label for="testShare">Test (hold-out) set share<button type="button" class="help" data-help="testshare">?</button></label><output id="testVal"></output></div>
+          <input type="range" id="testShare" min="0.1" max="0.5" step="0.05" value="0.2">
+          <label class="check"><input type="checkbox" id="showTrain" checked> Show the line fitted on training data<button type="button" class="help" data-help="trainline">?</button></label>
+        </div>
+      </aside>
+
+      <main class="main">
+        <div id="errBox" class="box-warn" hidden></div>
+        <div class="res-grid">
+          <div class="res-card econ">
+            <h3><span class="res-tag">Econometrics</span> Explain and test<button type="button" class="help" data-help="econpanel">?</button></h3>
+            <div class="res-sub" id="econSub"></div>
+            <div class="fig-table" style="max-height:none"><table class="tbl reg" id="coefTable"></table></div>
+            <div class="kv" id="fitStats"></div>
+            <div class="diag" id="diag"></div>
+            <div class="verdict" id="econRead"></div>
+          </div>
+          <div class="res-card ml">
+            <h3><span class="res-tag">Machine learning</span> Predict new data<button type="button" class="help" data-help="mlpanel">?</button></h3>
+            <div class="res-sub" id="mlSub"></div>
+            <div class="fig-table" style="max-height:none"><table class="tbl reg" id="mlTable"></table></div>
+            <div class="verdict" id="mlRead"></div>
+          </div>
+        </div>
+        <div class="fig-grid wide-first">
+          <div id="figFit"></div>
+          <div id="figResid"></div>
+          <div id="figQQ"></div>
+        </div>
+      </main>
+    </div>
+  </section>
+
+  <!-- ===================== LESSON ===================== -->
+  <section data-panel="lesson" class="card lesson" hidden>
+    <div id="mlsMathCtl"></div>
+    <p class="lvl-only-intuition note" style="margin-bottom:8px">Showing the intuition only. Choose <b>Formulas</b> or <b>Deep dive</b> above to add the mathematics.</p>
+    <h4>The model</h4>
+    <p>Linear regression assumes that the outcome is a weighted sum of the explanatory variables plus an error that collects everything else. Ordinary least squares (OLS) chooses the weights (coefficients) that make the sum of squared errors as small as possible.</p>
+    <div class="math-block lvl-math"><div class="mb-title">Model and OLS estimator</div>
+      <div class="tex-block">y_i = \beta_0 + \beta_1 x_{i1} + \dots + \beta_p x_{ip} + \varepsilon_i, \qquad \hat\beta = (X^\top X)^{-1} X^\top y</div>
+      <div class="tex-block">\text{SSR} = \sum_i (y_i - \hat y_i)^2, \qquad R^2 = 1 - \frac{\text{SSR}}{\sum_i (y_i - \bar y)^2}</div>
+    </div>
+
+    <h4>Two cultures, one equation</h4>
+    <p>Econometrics and machine learning use the same OLS estimates but ask different questions (Breiman, 2001; Mullainathan and Spiess, 2017).</p>
+    <div class="fig-table" style="max-height:none;margin-top:8px"><table class="tbl cmp-table">
+      <thead><tr><th></th><th>Econometrics</th><th>Machine learning</th></tr></thead>
+      <tbody>
+        <tr><td><b>Main question</b></td><td>What is the effect of X on Y, and how sure are we?</td><td>How well can we predict Y for new observations?</td></tr>
+        <tr><td><b>Focus</b></td><td>The coefficients <span class="tex">\hat\beta</span>, their standard errors, tests</td><td>The predictions <span class="tex">\hat y</span> and their error</td></tr>
+        <tr><td><b>Data used</b></td><td>All observations</td><td>Training set to estimate, test set to judge</td></tr>
+        <tr><td><b>Judged by</b></td><td>Unbiasedness, significance, valid assumptions</td><td>Out-of-sample error (RMSE, MAE, test R²)</td></tr>
+        <tr><td><b>Typical risk</b></td><td>Omitted variables, wrong standard errors</td><td>Overfitting: great on training data, poor on new data</td></tr>
+      </tbody></table></div>
+
+    <h4>Reading the econometric output</h4>
+    <ul>
+      <li><b>Coefficient</b>: the change in Y associated with a one-unit change in that X, holding the other X fixed.</li>
+      <li><b>Standard error</b>: how much the coefficient would vary across repeated samples. Smaller means more precise.</li>
+      <li><b>t-statistic and p-value</b>: test whether the true coefficient could be zero. A p-value below 0.05 is "significant at 5%" (two stars).</li>
+      <li><b>95% confidence interval</b>: the range of values compatible with the data.</li>
+      <li><b>R² and adjusted R²</b>: the share of the variation in Y explained in this sample. Adjusted R² penalizes extra variables.</li>
+      <li><b>F-test</b>: are all the slope coefficients jointly zero?</li>
+    </ul>
+    <div class="math-block lvl-math"><div class="mb-title">Standard errors, t-test, F-test</div>
+      <div class="tex-block">\hat V(\hat\beta) = \hat\sigma^2 (X^\top X)^{-1}, \quad \hat\sigma^2 = \frac{\text{SSR}}{n-k}, \qquad t_j = \frac{\hat\beta_j}{\operatorname{se}(\hat\beta_j)} \sim t_{n-k}</div>
+      <div class="tex-block">\bar R^2 = 1 - (1-R^2)\frac{n-1}{n-k}, \qquad F = \frac{(\text{SST}-\text{SSR})/(k-1)}{\text{SSR}/(n-k)} \sim F_{k-1,\,n-k}</div>
+      <p class="note">n = observations, k = number of coefficients including the constant.</p>
+    </div>
+
+    <h4>When the classical standard errors are wrong</h4>
+    <p>The classical formula assumes the errors have the same spread everywhere (<b>homoskedasticity</b>). Wages, prices and incomes usually vary more at higher levels. Then the coefficients are still fine, but the classical standard errors, t-tests and p-values are not. <b>Robust (HC1) standard errors</b> remain valid. The <b>Breusch-Pagan</b> test checks for this problem; the <b>Jarque-Bera</b> test checks whether the residuals look normal, which matters for exact tests in small samples. Look at the residual plot: a funnel shape signals heteroskedasticity.</p>
+    <div class="math-block lvl-math"><div class="mb-title">Robust (White / HC1) covariance</div>
+      <div class="tex-block">\hat V_{HC1}(\hat\beta) = \frac{n}{n-k}\,(X^\top X)^{-1}\Bigl(\sum_i \hat\varepsilon_i^2\, x_i x_i^\top\Bigr)(X^\top X)^{-1}</div>
+    </div>
+
+    <h4>Reading the machine learning output</h4>
+    <p>The model is estimated on the <b>training</b> rows only and then used to predict the <b>test</b> rows, which play the role of new data. <b>RMSE</b> is the typical size of a prediction error, in the units of Y; <b>MAE</b> is the average absolute error and is less sensitive to a few large misses. If the test error is much larger than the training error, the model has learned noise that does not repeat: it <b>overfits</b>. Test R² can even be negative: then the model predicts worse than simply using the average.</p>
+    <div class="math-block lvl-math"><div class="mb-title">Prediction metrics on a sample of m observations</div>
+      <div class="tex-block">\text{RMSE} = \sqrt{\tfrac{1}{m}\textstyle\sum_i (y_i-\hat y_i)^2}, \qquad \text{MAE} = \tfrac{1}{m}\textstyle\sum_i |y_i-\hat y_i|, \qquad R^2_{\text{test}} = 1 - \frac{\sum_i (y_i-\hat y_i)^2}{\sum_i (y_i-\bar y_{\text{test}})^2}</div>
+    </div>
+
+    <h4>More variables: better fit, not always better predictions</h4>
+    <p>Adding an X variable can never lower the training R². But if the new variable is unrelated to Y, its coefficient only fits noise, and the test error usually gets worse. That is the simplest form of overfitting, and the reason adjusted R², AIC and BIC penalize extra parameters.</p>
+
+    <div class="math-block deep lvl-deep"><div class="mb-title">Deep dive</div>
+      <p><b>Gauss-Markov.</b> Under linearity, random sampling, no perfect collinearity, <span class="tex">E[\varepsilon\mid X]=0</span> and homoskedasticity, OLS is the best linear unbiased estimator. Heteroskedasticity does not bias <span class="tex">\hat\beta</span> but invalidates <span class="tex">\hat\sigma^2(X^\top X)^{-1}</span>; the sandwich estimator above is consistent under heteroskedasticity of unknown form (White, 1980). HC1 multiplies by <span class="tex">n/(n-k)</span> as a small-sample correction.</p>
+      <p><b>Breusch-Pagan (Koenker version).</b> Regress <span class="tex">\hat\varepsilon_i^2</span> on the X variables; <span class="tex">LM = nR^2_{aux} \sim \chi^2_{k-1}</span> under homoskedasticity. <b>Jarque-Bera:</b> <span class="tex">JB = \tfrac{n}{6}\bigl(S^2 + \tfrac{(K-3)^2}{4}\bigr) \sim \chi^2_2</span>, with S the skewness and K the kurtosis of the residuals.</p>
+      <p><b>Information criteria.</b> With Gaussian log-likelihood <span class="tex">\ell = -\tfrac{n}{2}\bigl(\ln 2\pi + \ln(\text{SSR}/n) + 1\bigr)</span>: <span class="tex">\text{AIC} = -2\ell + 2k</span>, <span class="tex">\text{BIC} = -2\ell + k\ln n</span>. Lower is better; BIC penalizes extra parameters more heavily.</p>
+      <p><b>Why in-sample fit overstates predictive accuracy.</b> For OLS with homoskedastic errors, the expected training MSE is <span class="tex">\sigma^2(n-k)/n</span>, while the expected error on new data drawn at the same X values is about <span class="tex">\sigma^2(n+k)/n</span>. The gap grows with the number of parameters k relative to n: this is the optimism that a test set reveals.</p>
+      <p class="note">References: Wooldridge, <i>Introductory Econometrics</i> (ch. 3, 4, 8); White (1980), <i>Econometrica</i> 48(4); Breusch and Pagan (1979), <i>Econometrica</i> 47(5); Koenker (1981), <i>J. of Econometrics</i> 17(1); Jarque and Bera (1980), <i>Economics Letters</i> 6(3); Breiman (2001), "Statistical Modeling: The Two Cultures", <i>Statistical Science</i> 16(3); Mullainathan and Spiess (2017), "Machine Learning: An Applied Econometric Approach", <i>J. of Economic Perspectives</i> 31(2); Hastie, Tibshirani and Friedman (2009), <i>The Elements of Statistical Learning</i>, ch. 3 and 7.</p>
+    </div>
+    <div class="econ" id="econBox"></div>
+  </section>
+
+  <!-- ===================== CHALLENGES ===================== -->
+  <section data-panel="challenges" class="card" hidden>
+    <div class="card-head"><h3>Challenges</h3><span class="card-sub">Answer the "predict first" questions before testing them in the Simulation tab.</span></div>
+    <div id="challenges"></div>
+  </section>
+
+  <!-- ===================== REAL DATA ===================== -->
+  <section data-panel="real" class="card lesson" hidden>
+    <h4>From the simulation to real data</h4>
+    <ul>
+      <li>Use <b>Load CSV / Excel</b> in the Data panel to estimate a regression on your own file: choose Y and any number of numeric X columns.</li>
+      <li>Check the residual plot and the Breusch-Pagan test before trusting the classical standard errors; with cross-section economic data, robust standard errors are the safe default.</li>
+      <li>If your goal is forecasting, judge the model by its test error, not by R².</li>
+    </ul>
+    <div class="crosslink"><span>&#10140;</span><span>For full projects use <a id="fourCast" target="_blank" rel="noopener"><b>4Cast Lab</b></a>: its Estimation (econometrics) mode and Forecasting (machine learning) mode run on your own data with time-series splits and forecast evaluation.</span></div>
+  </section>
+
+  <footer id="mlsFooter"></footer>
+</div>
+
+<script>
+(function () {
+  'use strict';
+  const MLS = window.MLS;
+  const META = MLS.moduleMeta('linear-regression');
+  const $ = id => document.getElementById(id);
+  const F = MLS.fmt;
+
+  /* ------------------------------------------------------------------
+     datasets: each generates named columns and offers Y and X choices
+     ------------------------------------------------------------------ */
+  const DS = {
+    wage: {
+      nDefault: 200, hetero: false,
+      ys: [{ id: 'wage', label: 'Hourly wage (€)' }, { id: 'logwage', label: 'log(hourly wage)' }],
+      xs: [{ id: 'school', label: 'Schooling (years)' }, { id: 'exper', label: 'Experience (years)' }, { id: 'exper2', label: 'Experience squared' }, { id: 'female', label: 'Female (1 = yes, 0 = no)' }],
+      defX: ['school'], defY: 'wage',
+      story: 'Each row is a worker. The data follow a Mincer wage equation: wages rise with schooling and experience (at a decreasing rate) and differ by gender. Because wages grow in percentage terms, the spread of wages in euros is larger for the well paid.',
+      gen(r, n, noise) {
+        const c = { school: [], exper: [], exper2: [], female: [], wage: [], logwage: [] };
+        for (let i = 0; i < n; i++) {
+          const s = Math.min(21, Math.max(8, Math.round(r.normal(13, 3)))), e = r.int(0, 40), f = r.random() < 0.5 ? 1 : 0;
+          const lw = 1.35 + 0.08 * s + 0.03 * e - 0.0005 * e * e - 0.15 * f + r.normal(0, 0.25 * noise);
+          const w = +Math.exp(lw).toFixed(2);
+          c.school.push(s); c.exper.push(e); c.exper2.push(e * e); c.female.push(f); c.wage.push(w); c.logwage.push(+Math.log(w).toFixed(4));
+        }
+        return c;
+      },
+      read(name, b, ci, yId) {
+        const unit = { school: 'year of schooling', exper: 'year of experience', exper2: 'unit of experience squared', female: '' }[name];
+        if (yId === 'logwage') {
+          const pct = v => F(100 * (Math.exp(v) - 1), 1) + '%';
+          if (name === 'female') return 'Women earn about <b>' + pct(b) + '</b> ' + (b < 0 ? '' : 'more ') + 'than otherwise similar men (95% CI ' + pct(ci[0]) + ' to ' + pct(ci[1]) + ').';
+          return 'One more ' + unit + ' is associated with about <b>' + pct(b) + '</b> higher hourly wage (95% CI ' + pct(ci[0]) + ' to ' + pct(ci[1]) + '), other X held fixed.';
+        }
+        if (name === 'female') return 'Women earn <b>' + F(b, 2) + ' €</b> per hour relative to otherwise similar men (95% CI ' + F(ci[0], 2) + ' to ' + F(ci[1], 2) + ').';
+        return 'One more ' + unit + ' is associated with <b>' + F(b, 2) + ' €</b> per hour (95% CI ' + F(ci[0], 2) + ' to ' + F(ci[1], 2) + '), other X held fixed.';
+      }
+    },
+    housing: {
+      nDefault: 150, hetero: true,
+      ys: [{ id: 'price', label: 'Price (k€)' }],
+      xs: [{ id: 'area', label: 'Floor area (m²)' }, { id: 'rooms', label: 'Number of rooms' }, { id: 'age', label: 'Building age (years)' }, { id: 'dist', label: 'Distance to centre (km)' }],
+      defX: ['area'], defY: 'price',
+      story: 'Each row is a flat sold in one city. Price depends on size, age and location. Rooms and floor area move together (bigger flats have more rooms), which makes their separate effects hard to pin down.',
+      gen(r, n, noise, het) {
+        const c = { area: [], rooms: [], age: [], dist: [], price: [] };
+        for (let i = 0; i < n; i++) {
+          const a = Math.round(r.uniform(40, 180)), rm = Math.min(7, Math.max(1, Math.round(a / 35 + r.normal(0, 0.45)))), ag = r.int(0, 60), d = +r.uniform(0.5, 15).toFixed(1);
+          const sd = 22 * noise * (het ? a / 110 : 1);
+          const p = 30 + 1.45 * a + 3 * rm - 0.55 * ag - 3.2 * d + r.normal(0, sd);
+          c.area.push(a); c.rooms.push(rm); c.age.push(ag); c.dist.push(d); c.price.push(+p.toFixed(1));
+        }
+        return c;
+      },
+      read(name, b, ci) {
+        const u = { area: 'square metre', rooms: 'room', age: 'year of building age', dist: 'km from the centre' }[name];
+        return 'One more ' + u + ' is associated with a price change of <b>' + F(b, 2) + ' k€</b> (95% CI ' + F(ci[0], 2) + ' to ' + F(ci[1], 2) + '), other X held fixed.';
+      }
+    },
+    consumption: {
+      nDefault: 150, hetero: true,
+      ys: [{ id: 'cons', label: 'Consumption (k€ per year)' }],
+      xs: [{ id: 'income', label: 'Disposable income (k€)' }, { id: 'wealth', label: 'Net wealth (k€)' }, { id: 'hh', label: 'Household size (persons)' }],
+      defX: ['income'], defY: 'cons',
+      story: 'Each row is a household. Keynes\' consumption function: consumption rises with income, but by less than one for one. Wealth and household size also matter, and wealth is correlated with income.',
+      gen(r, n, noise, het) {
+        const c = { income: [], wealth: [], hh: [], cons: [] };
+        for (let i = 0; i < n; i++) {
+          const y = +r.uniform(8, 70).toFixed(1), w = Math.max(0, Math.round(2.5 * y + r.normal(0, 40))), h = r.int(1, 5);
+          const sd = 2.4 * noise * (het ? y / 35 : 1);
+          const cc = 2.5 + 0.62 * y + 0.035 * w + 1.1 * h + r.normal(0, sd);
+          c.income.push(y); c.wealth.push(w); c.hh.push(h); c.cons.push(+cc.toFixed(2));
+        }
+        return c;
+      },
+      read(name, b, ci) {
+        if (name === 'income') return 'Each extra 1 k€ of income goes with <b>' + F(b, 3) + ' k€</b> more consumption: the <b>marginal propensity to consume</b> (95% CI ' + F(ci[0], 3) + ' to ' + F(ci[1], 3) + ').';
+        const u = { wealth: '1 k€ of wealth', hh: 'household member' }[name];
+        return 'One more ' + u + ' is associated with <b>' + F(b, 3) + ' k€</b> more consumption (95% CI ' + F(ci[0], 3) + ' to ' + F(ci[1], 3) + '), other X held fixed.';
+      }
+    },
+    synthetic: {
+      nDefault: 60, hetero: true,
+      ys: [{ id: 'y', label: 'y' }],
+      xs: [{ id: 'x', label: 'x (true slope 0.5)' }, { id: 'z1', label: 'z1 (pure noise, no effect)' }, { id: 'z2', label: 'z2 (pure noise, no effect)' }],
+      defX: ['x'], defY: 'y',
+      story: 'Generated from the true model y = 2 + 0.5x + error. The variables z1 and z2 are pure noise with no effect on y, so you know the right answers: intercept 2, slope 0.5, and zero for z1 and z2.',
+      gen(r, n, noise, het) {
+        const c = { x: [], z1: [], z2: [], y: [] };
+        for (let i = 0; i < n; i++) {
+          const x = +r.uniform(0, 10).toFixed(2), sd = noise * (het ? 0.05 + 0.03 * x * x : 1);
+          c.x.push(x); c.z1.push(+r.normal(0, 1).toFixed(3)); c.z2.push(+r.normal(0, 1).toFixed(3)); c.y.push(+(2 + 0.5 * x + r.normal(0, sd)).toFixed(3));
+        }
+        return c;
+      },
+      read(name, b, ci) {
+        const truth = name === 'x' ? 0.5 : 0;
+        const inCI = truth >= ci[0] && truth <= ci[1];
+        return 'Estimated ' + name + ' coefficient <b>' + F(b, 3) + '</b> (95% CI ' + F(ci[0], 3) + ' to ' + F(ci[1], 3) + '). The true value is <b>' + truth + '</b>, which ' + (inCI ? 'lies inside' : 'lies <b>outside</b>') + ' the interval' + (inCI ? '.' : ': this happens in about 5% of samples. Try another seed.');
+      }
+    }
+  };
+
+  /* ------------------------------------------------------------------
+     state
+     ------------------------------------------------------------------ */
+  const S = { ds: 'wage', y: {}, x: {}, n: {}, noise: 1, hetero: false, seed: 2026, testShare: 0.2, cov: 'classical', showTrain: true, addMode: false, custom: { pts: [], xl: 'x', yl: 'y' } };
+  Object.keys(DS).forEach(k => { S.y[k] = DS[k].defY; S.x[k] = DS[k].defX.slice(); S.n[k] = DS[k].nDefault; });
+  let uploaded = null;   /* { cols:{name:[...]}, yName, xNames:[...], file } in memory only */
+  let D = null, R = null;
+
+  /* ------------------------------------------------------------------
+     build data and estimate
+     ------------------------------------------------------------------ */
+  function labelOf(dsId, colId) {
+    const d = DS[dsId]; if (!d) return colId;
+    const all = d.ys.concat(d.xs); const f = all.find(v => v.id === colId); return f ? f.label : colId;
+  }
+  function buildData() {
+    if (S.ds === 'upload' && !uploaded) S.ds = 'wage';
+    let cols, yId, xIds, labels = {};
+    if (S.ds === 'upload') {
+      cols = uploaded.cols; yId = uploaded.yName; xIds = (S.x.upload && S.x.upload.length ? S.x.upload : uploaded.xNames.slice(0, 1)).filter(v => uploaded.xNames.includes(v));
+      if (!xIds.length) xIds = [uploaded.xNames[0]];
+      S.x.upload = xIds;
+      uploaded.xNames.concat([yId]).forEach(v => labels[v] = v);
+    } else if (S.ds === 'custom') {
+      cols = { x: S.custom.pts.map(p => p[0]), y: S.custom.pts.map(p => p[1]) }; yId = 'y'; xIds = ['x'];
+      labels = { x: S.custom.xl, y: S.custom.yl };
+    } else {
+      const d = DS[S.ds];
+      cols = d.gen(MLS.rng(S.seed), S.n[S.ds], S.noise, S.hetero && d.hetero);
+      yId = S.y[S.ds]; xIds = S.x[S.ds].filter(v => d.xs.some(x => x.id === v));
+      if (!xIds.length) { xIds = d.defX.slice(); S.x[S.ds] = xIds.slice(); }
+      d.ys.concat(d.xs).forEach(v => labels[v.id] = v.label);
+    }
+    const n = cols[yId].length;
+    /* random train/test split (seeded, independent of the data draw) */
+    const idx = Array.from({ length: n }, (_, i) => i);
+    MLS.rng(S.seed * 31 + 7).shuffle(idx);
+    const nTest = n >= 6 ? Math.max(2, Math.round(n * S.testShare)) : 0;
+    const isTest = new Array(n).fill(false); idx.slice(0, nTest).forEach(i => (isTest[i] = true));
+    D = { cols, yId, xIds, labels, n, isTest, y: cols[yId] };
+  }
+  function design(rows) { return rows.map(i => [1].concat(D.xIds.map(v => D.cols[v][i]))); }
+  function estimate() {
+    R = { err: null };
+    const all = Array.from({ length: D.n }, (_, i) => i);
+    const k = D.xIds.length + 1;
+    if (D.n < k + 2) { R.err = 'Need at least ' + (k + 2) + ' observations for ' + (k - 1) + ' X variable' + (k > 2 ? 's' : '') + ' (now ' + D.n + ').'; return; }
+    const names = ['Constant'].concat(D.xIds.map(v => D.labels[v]));
+    const X = design(all);
+    R.fit = MLS.olsFit(X, D.y, names, { cov: S.cov });
+    if (R.fit.error) { R.err = R.fit.error; return; }
+    R.bp = MLS.breuschPagan(X, R.fit.resid);
+    R.jb = MLS.jarqueBera(R.fit.resid);
+    const tr = all.filter(i => !D.isTest[i]), te = all.filter(i => D.isTest[i]);
+    R.tr = tr; R.te = te;
+    if (tr.length >= k + 1 && te.length >= 2) {
+      R.trainFit = MLS.olsFit(design(tr), tr.map(i => D.y[i]), names, {});
+      if (!R.trainFit.error) {
+        const pTr = MLS.olsPredict(R.trainFit, design(tr)), pTe = MLS.olsPredict(R.trainFit, design(te));
+        R.mTr = MLS.metrics(tr.map(i => D.y[i]), pTr); R.mTe = MLS.metrics(te.map(i => D.y[i]), pTe);
+        R.predAll = MLS.olsPredict(R.trainFit, X);
+      } else R.trainFit = null;
+    }
+  }
+
+  /* ------------------------------------------------------------------
+     results panels
+     ------------------------------------------------------------------ */
+  function renderEcon() {
+    const f = R.fit, st = MLS.stars;
+    $('econSub').innerHTML = 'OLS on all <b>' + f.n + '</b> observations. Y = <b>' + MLS.esc(D.labels[D.yId]) + '</b>. ' + (f.cov === 'HC1' ? 'Robust (HC1) standard errors.' : 'Classical standard errors.');
+    let h = '<thead><tr><th>Variable</th><th>Coefficient' + MLS.helpBtn('coef') + '</th><th>Std. error' + MLS.helpBtn('se') + '</th><th>t' + MLS.helpBtn('tstat') + '</th><th>p-value' + MLS.helpBtn('pval') + '</th><th>95% CI' + MLS.helpBtn('ci') + '</th></tr></thead><tbody>';
+    f.b.forEach((b, i) => {
+      const G = v => MLS.fmtSig(v, 4);
+      h += '<tr' + (f.p[i] >= 0.1 ? ' class="insig"' : '') + '><td class="var">' + MLS.esc(f.names[i]) + '</td><td>' + G(b) + ' <span class="stars">' + st(f.p[i]) + '</span></td><td>' + G(f.se[i]) + '</td><td>' + F(f.t[i], 2) + '</td><td>' + MLS.fmtP(f.p[i]) + '</td><td>[' + MLS.fmtSig(f.ci[i][0], 3) + ', ' + MLS.fmtSig(f.ci[i][1], 3) + ']</td></tr>';
+    });
+    h += '</tbody>';
+    $('coefTable').innerHTML = h;
+    const kv = (l, v, help) => '<div><span>' + l + (help ? MLS.helpBtn(help) : '') + '</span><span>' + v + '</span></div>';
+    $('fitStats').innerHTML =
+      kv('Observations', f.n) + kv('R²', F(f.r2, 4), 'r2') + kv('Adjusted R²', F(f.adjR2, 4), 'adjr2') +
+      kv('F(' + f.q + ', ' + f.dfr + ')', Number.isFinite(f.F) ? F(f.F, 2) : 'n/a', 'fstat') + kv('Prob (F)', MLS.fmtP(f.pF), 'fstat') +
+      kv('Residual std. error', F(f.sigma, 4), 'resse') + kv('Log-likelihood', F(f.llf, 2), 'llf') + kv('AIC', F(f.aic, 2), 'aic') + kv('BIC', F(f.bic, 2), 'aic');
+    const bp = R.bp, jb = R.jb;
+    let dg = '';
+    const pTxt = p => (p < 0.0001 ? 'p < 0.0001' : 'p = ' + MLS.fmtP(p));
+    if (bp) {
+      const het = bp.p < 0.05;
+      dg += '<div class="dline ' + (het ? 'warn' : 'ok') + '"><span><b>Breusch-Pagan test</b>' + MLS.helpBtn('bp') + ' LM = ' + F(bp.lm, 3) + ', df = ' + bp.df + ', ' + pTxt(bp.p) + '</span><span class="res">' +
+        (het ? '⚠ Result: heteroskedasticity present' + (f.cov === 'HC1' ? '. Robust standard errors are in use ✓' : '. Use robust standard errors') : '✓ Result: no evidence of heteroskedasticity (homoskedastic errors)') + '</span></div>';
+    }
+    const nn = jb.p < 0.05;
+    dg += '<div class="dline ' + (nn ? 'warn' : 'ok') + '"><span><b>Jarque-Bera test</b>' + MLS.helpBtn('jb') + ' JB = ' + F(jb.jb, 3) + ', skewness = ' + F(jb.skew, 2) + ', kurtosis = ' + F(jb.kurt, 2) + ', ' + pTxt(jb.p) + '</span><span class="res">' +
+      (nn ? '⚠ Result: residuals are not normally distributed' + (f.n >= 100 ? ' (less important in large samples)' : '') : '✓ Result: residuals are consistent with a normal distribution') + '</span></div>';
+    dg += '<div class="diag-key"><span><span class="sw" style="background:var(--warn-bg);border:1px solid var(--warn-border)"></span>Yellow: the test found a problem</span><span><span class="sw" style="background:var(--tint);border:1px solid var(--tint-border)"></span>Green: no problem found</span><span>Tests at the 5% significance level.</span></div>';
+    $('diag').innerHTML = dg;
+    /* plain-language reading of the first X */
+    const d = DS[S.ds], j = 1, name = D.xIds[0];
+    let read = '';
+    if (d && d.read) read = d.read(name, f.b[j], f.ci[j], D.yId);
+    else read = 'One unit more of <b>' + MLS.esc(D.labels[name]) + '</b> is associated with a change of <b>' + F(f.b[j], 4) + '</b> in ' + MLS.esc(D.labels[D.yId]) + ' (95% CI ' + F(f.ci[j][0], 3) + ' to ' + F(f.ci[j][1], 3) + ')' + (D.xIds.length > 1 ? ', other X held fixed.' : '.');
+    const pt = 'p ' + (f.p[j] < 0.0001 ? '< 0.0001' : '= ' + MLS.fmtP(f.p[j]));
+    if (D.xIds.length === 1) read = read.replace(', other X held fixed', '');
+    read += ' ' + (f.p[j] < 0.05 ? 'The coefficient is <b>significant at 5%</b> (' + pt + ').' : 'The coefficient is <b>not significant at 5%</b> (' + pt + '): the data cannot rule out a zero effect.');
+    $('econRead').innerHTML = '<b>Reading:</b> ' + read;
+  }
+  function renderML() {
+    const nTr = R.tr.length, nTe = R.te.length;
+    $('mlSub').innerHTML = 'OLS estimated on the <b>training set</b> (' + nTr + ' observations, ' + F(100 * (1 - S.testShare), 0) + '%), then used to predict the <b>test (hold-out) set</b> (' + nTe + ' observations), which it never saw.';
+    if (!R.trainFit) { $('mlTable').innerHTML = '<tbody><tr><td>Not enough observations for a train/test split.</td></tr></tbody>'; $('mlRead').innerHTML = ''; return; }
+    const a = R.mTr, b = R.mTe;
+    $('mlTable').innerHTML = '<thead><tr><th>Sample</th><th>n</th><th>RMSE' + MLS.helpBtn('rmse') + '</th><th>MAE' + MLS.helpBtn('mae') + '</th><th>R²' + MLS.helpBtn('r2test') + '</th></tr></thead><tbody>' +
+      '<tr><td class="var">Training set (in-sample)</td><td>' + a.n + '</td><td>' + F(a.rmse, 4) + '</td><td>' + F(a.mae, 4) + '</td><td>' + F(a.r2, 4) + '</td></tr>' +
+      '<tr><td class="var">Test (hold-out) set</td><td>' + b.n + '</td><td>' + F(b.rmse, 4) + '</td><td>' + F(b.mae, 4) + '</td><td' + (b.r2 < 0 ? ' style="color:var(--danger);font-weight:800"' : '') + '>' + F(b.r2, 4) + '</td></tr></tbody>';
+    const ratio = b.rmse / a.rmse;
+    let msg;
+    if (b.r2 < 0) msg = '⚠ <b>Test R² is negative</b>: on new data the model predicts worse than simply using the average of Y. Typical with very few observations, many X variables, or variables that are pure noise.';
+    else if (ratio > 1.25) msg = 'The test RMSE is <b>' + F((ratio - 1) * 100, 0) + '% larger</b> than the training RMSE: the model fits the training data better than it predicts new data, a sign of <b>overfitting</b> (or of a small, unlucky test set: try other seeds).';
+    else if (ratio < 0.8) msg = 'The test RMSE happens to be <b>smaller</b> than the training RMSE. With a small test set this is luck of the split: change the seed and it moves around.';
+    else msg = 'Training and test errors are similar (test/training RMSE = ' + F(ratio, 2) + '): the model <b>generalizes</b> well to new data. A typical prediction misses by about <b>' + F(b.rmse, 3) + '</b> ' + MLS.esc(unitOfY()) + '.';
+    $('mlRead').innerHTML = msg;
+  }
+  function unitOfY() { const l = D.labels[D.yId] || ''; if (/^log\(/.test(l)) return 'log points (about ' + F(100 * R.mTe.rmse, 0) + '% of the wage)'; const m = l.match(/\(([^)]+)\)/); return m && !/^1 =/.test(m[1]) ? m[1] : 'units of Y'; }
+
+  /* ------------------------------------------------------------------
+     figures
+     ------------------------------------------------------------------ */
+  const col = () => ({ tr: MLS.color('series-1'), te: MLS.color('series-2'), ink: MLS.color('chart-ink'), mu: MLS.color('chart-muted') });
+  const figFit = MLS.figure($('figFit'), {
+    title: 'Data and fitted line', help: 'figfit', file: 'linear-regression-fit',
+    plot: { aspect: 0.42, margin: { l: 66 }, x: { label: () => fitXLabel() }, y: { label: () => fitYLabel() },
+      onClick: (x, y) => {
+        if (!singleX()) return;
+        if (S.ds === 'custom' && S.custom.pts.length) {
+          /* a click on (or very near) one of your points deletes it */
+          const P = figFit.plot; let best = -1, bd = 1e9;
+          S.custom.pts.forEach((q, i) => { const d = Math.hypot(P.sx(q[0]) - P.sx(x), P.sy(q[1]) - P.sy(y)); if (d < bd) { bd = d; best = i; } });
+          if (bd <= 9) { removePoint(best); return; }
+        }
+        if (S.addMode) addPoint(x, y);
+      } },
+    data: () => {
+      const cols = [D.labels[D.yId]].concat(D.xIds.map(v => D.labels[v]), ['Sample', 'Fitted (all data)', 'Predicted (training model)']);
+      return { cols, rows: D.y.map((y, i) => [y].concat(D.xIds.map(v => D.cols[v][i]), [D.isTest[i] ? 'test' : 'train', R.fit && !R.err ? R.fit.fitted[i] : '', R.predAll ? R.predAll[i] : ''])) };
+    }
+  });
+  const figResid = MLS.figure($('figResid'), {
+    title: 'Residuals vs fitted values', sub: 'All observations. Look for curves (missing nonlinearity) or a funnel (heteroskedasticity).', help: 'figresid', file: 'linear-regression-residuals',
+    plot: { aspect: 0.72, margin: { l: 62 }, x: { label: 'Fitted value' }, y: { label: 'Residual' } },
+    data: () => ({ cols: ['Fitted', 'Residual'], rows: R.fit && !R.err ? R.fit.fitted.map((f, i) => [f, R.fit.resid[i]]) : [] })
+  });
+  const figQQ = MLS.figure($('figQQ'), {
+    title: 'Normal Q-Q plot of residuals', sub: 'Points on the line = normally distributed residuals.', help: 'figqq', file: 'linear-regression-qq',
+    plot: { aspect: 0.72, square: false, margin: { l: 62 }, x: { label: 'Theoretical normal quantile' }, y: { label: 'Standardized residual' } },
+    data: () => ({ cols: ['Theoretical quantile', 'Standardized residual'], rows: qqPoints() })
+  });
+  const singleX = () => D.xIds.length === 1;
+  function fitXLabel() { return singleX() ? D.labels[D.xIds[0]] : 'Predicted ' + D.labels[D.yId] + ' (model fitted on training data)'; }
+  function fitYLabel() { return singleX() ? D.labels[D.yId] : 'Actual ' + D.labels[D.yId]; }
+
+  function drawFit() {
+    const P = figFit.plot, c = col();
+    const sx = singleX();
+    $('figFit').querySelector('.figure-title').firstChild.textContent = sx ? 'Data and fitted line' : 'Actual vs predicted values';
+    if (R.err || !D.n) {
+      /* not enough data to estimate: still show the points that exist */
+      let xd = [0, 10], yd = [0, 10];
+      if (S.ds === 'custom' && S.custom.view) { xd = S.custom.view[0]; yd = S.custom.view[1]; }
+      else if (D.n && sx) { const xs0 = D.cols[D.xIds[0]]; xd = MLS.niceDomain(MLS.stat.min(xs0), MLS.stat.max(xs0), 0.1); yd = MLS.niceDomain(MLS.stat.min(D.y), MLS.stat.max(D.y), 0.1); }
+      P.setX(xd[0], xd[1]); P.setY(yd[0], yd[1]);
+      P.draw(P => {
+        if (sx && D.n) P.points(D.y.map((y, i) => ({ x: D.cols[D.xIds[0]][i], y, i })), { color: c.tr, r: 5, tip: d => '<b>Observation ' + (d.i + 1) + '</b><br>' + MLS.esc(D.labels[D.xIds[0]]) + ': ' + F(d.x) + '<br>' + MLS.esc(D.labels[D.yId]) + ': ' + F(d.y) + (S.ds === 'custom' ? '<br><i>Click the point to delete it.</i>' : '') });
+        const need = D.xIds.length + 3 - D.n;
+        P.text((xd[0] + xd[1]) / 2, yd[1] - (yd[1] - yd[0]) * 0.06, D.n === 0 ? (S.addMode ? 'Click to add points' : 'No data: tick “Add points” and click here') : 'Add ' + need + ' more point' + (need > 1 ? 's' : '') + ' to estimate the line', { anchor: 'middle', size: 14, color: c.mu });
+      });
+      figFit.legend(D.n ? [{ label: 'Your points', color: c.tr }] : []); figFit.caption(''); return;
+    }
+    const xs = sx ? D.cols[D.xIds[0]] : R.predAll || R.fit.fitted;
+    let xd = MLS.niceDomain(MLS.stat.min(xs), MLS.stat.max(xs), 0.07), yd = MLS.niceDomain(MLS.stat.min(D.y), MLS.stat.max(D.y), 0.1);
+    if (!sx) { const lo = Math.min(xd[0], yd[0]), hi = Math.max(xd[1], yd[1]); xd = [lo, hi]; yd = [lo, hi]; }
+    if (S.ds === 'custom' && S.custom.view) { xd = S.custom.view[0]; yd = S.custom.view[1]; }
+    P.setX(xd[0], xd[1]); P.setY(yd[0], yd[1]);
+    const pts = D.y.map((y, i) => ({ x: xs[i], y, i, test: D.isTest[i] }));
+    const big = D.n > 300;
+    P.draw(P => {
+      if (sx) {
+        const b = R.fit.b; P.fn(x => b[0] + b[1] * x, { color: c.ink, width: 2.6 });
+        if (S.showTrain && R.trainFit) { const t = R.trainFit.b; P.fn(x => t[0] + t[1] * x, { color: c.te, width: 2, dash: '7 5' }); }
+      } else P.line([[xd[0], xd[0]], [xd[1], xd[1]]], { color: c.ink, width: 1.6, dash: '5 4' });
+      const tip = d => '<b>Observation ' + (d.i + 1) + '</b> (' + (d.test ? 'test' : 'training') + ')<br>' +
+        D.xIds.map(v => MLS.esc(D.labels[v]) + ': ' + F(D.cols[v][d.i])).join('<br>') + '<br>' + MLS.esc(D.labels[D.yId]) + ': ' + F(d.y) +
+        '<br>Fitted (all data): ' + F(R.fit.fitted[d.i]) + (R.predAll ? '<br>Predicted (training model): ' + F(R.predAll[d.i]) : '') + (S.ds === 'custom' && sx ? '<br><i>Click the point to delete it.</i>' : '');
+      P.points(pts.filter(p => !p.test), { color: c.tr, r: big ? 3.2 : 4.6, tip, opacity: big ? 0.75 : 1 });
+      P.points(pts.filter(p => p.test), { color: c.te, shape: 'square', r: big ? 3.4 : 4.6, tip, opacity: big ? 0.85 : 1 });
+    });
+    const leg = [{ label: 'Training set (' + R.tr.length + ')', color: c.tr }, { label: 'Test (hold-out) set (' + R.te.length + ')', color: c.te, shape: 'square' }];
+    if (sx) { leg.push({ label: 'OLS line on all data (econometrics)', color: c.ink, line: true, width: 2.6 }); if (S.showTrain && R.trainFit) leg.push({ label: 'OLS line on training data only (ML)', color: c.te, line: true, dash: '7 5' }); }
+    else leg.push({ label: 'Perfect prediction (45° line)', color: c.ink, line: true, dash: '5 4' });
+    figFit.legend(leg);
+    figFit.caption(sx ? (S.showTrain && R.trainFit ? 'The two lines differ only because the training line does not see the test points.' : '') : 'With several X variables one line cannot be drawn in two dimensions, so each point shows its actual value against the prediction of the model fitted on training data.');
+  }
+  function drawResid() {
+    const P = figResid.plot, c = col();
+    if (R.err || !D.n) { P.setX(0, 1); P.setY(-1, 1); P.draw(P => P.note('No estimate')); return; }
+    const f = R.fit, xd = MLS.niceDomain(MLS.stat.min(f.fitted), MLS.stat.max(f.fitted), 0.07);
+    const m = Math.max(...f.resid.map(Math.abs)) * 1.12 || 1;
+    P.setX(xd[0], xd[1]); P.setY(-m, m);
+    P.draw(P => {
+      P.hline(0, { color: c.ink, width: 1.4, dash: '5 4' });
+      P.points(f.fitted.map((x, i) => ({ x, y: f.resid[i], i })), { color: c.tr, r: D.n > 300 ? 3 : 4, opacity: D.n > 300 ? 0.7 : 1, tip: d => '<b>Observation ' + (d.i + 1) + '</b><br>Fitted: ' + F(d.x) + '<br>Residual: ' + F(d.y) });
+    });
+    figResid.legend([{ label: 'Residual = actual − fitted', color: c.tr }, { label: 'Zero', color: c.ink, line: true, dash: '5 4' }]);
+  }
+  function qqPoints() {
+    if (!R.fit || R.err) return [];
+    const e = R.fit.resid.slice().sort((a, b) => a - b), n = e.length, s = R.fit.sigma;
+    return e.map((v, i) => [MLS.dist.normQuantile((i + 1 - 0.5) / n), v / s]);
+  }
+  function drawQQ() {
+    const P = figQQ.plot, c = col();
+    if (R.err || !D.n) { P.setX(-3, 3); P.setY(-3, 3); P.draw(P => P.note('No estimate')); return; }
+    const q = qqPoints(); const m = Math.max(3, ...q.map(p => Math.max(Math.abs(p[0]), Math.abs(p[1])))) * 1.05;
+    P.setX(-m, m); P.setY(-m, m);
+    P.draw(P => {
+      P.line([[-m, -m], [m, m]], { color: c.ink, width: 1.4, dash: '5 4' });
+      P.points(q.map(p => ({ x: p[0], y: p[1] })), { color: c.tr, r: D.n > 300 ? 3 : 4, opacity: D.n > 300 ? 0.7 : 1, tip: d => 'Normal quantile: ' + F(d.x, 2) + '<br>Standardized residual: ' + F(d.y, 2) });
+    });
+    figQQ.legend([{ label: 'Residuals (sorted)', color: c.tr }, { label: 'Normal reference', color: c.ink, line: true, dash: '5 4' }]);
+  }
+
+  /* ------------------------------------------------------------------
+     controls
+     ------------------------------------------------------------------ */
+  function syncUI() {
+    $('ds').value = S.ds;
+    $('ds').querySelector('option[value=upload]').disabled = !uploaded;
+    const d = DS[S.ds];
+    const gen = !!d;
+    $('genControls').hidden = !gen; $('yRow').hidden = !(gen && d.ys.length > 1) && S.ds !== 'upload';
+    $('xRow').hidden = S.ds === 'custom';
+    $('addRow').hidden = !(S.ds === 'custom' || (gen && singleX()));
+    $('addMode').checked = !!S.addMode;
+    $('undoBtn').hidden = !(S.ds === 'custom' && S.custom.pts.length);
+    if (gen) {
+      $('yvar').innerHTML = d.ys.map(v => '<option value="' + v.id + '">' + v.label + '</option>').join(''); $('yvar').value = S.y[S.ds];
+      $('xList').innerHTML = d.xs.map(v => '<label class="check"><input type="checkbox" value="' + v.id + '"' + (S.x[S.ds].includes(v.id) ? ' checked' : '') + '> ' + v.label + '</label>').join('');
+      $('n').value = S.n[S.ds]; $('nVal').textContent = S.n[S.ds];
+      $('noise').value = S.noise; $('noiseVal').textContent = F(S.noise, 2) + '×';
+      $('hetero').checked = S.hetero; $('heteroRow').hidden = !d.hetero; $('seed').value = S.seed;
+    } else if (S.ds === 'upload') {
+      $('yvar').innerHTML = '<option>' + MLS.esc(uploaded.yName) + '</option>';
+      $('xList').innerHTML = uploaded.xNames.map(v => '<label class="check"><input type="checkbox" value="' + MLS.esc(v) + '"' + (D.xIds.includes(v) ? ' checked' : '') + '> ' + MLS.esc(v) + '</label>').join('');
+    }
+    MLS.$$('[data-cov]').forEach(b => b.setAttribute('aria-pressed', String(b.dataset.cov === S.cov)));
+    $('testShare').value = S.testShare; $('testVal').textContent = F(100 * S.testShare, 0) + '%';
+    $('showTrain').checked = S.showTrain;
+    $('dataNote').innerHTML = (d ? d.story + ' ' : S.ds === 'upload' ? 'From <b>' + MLS.esc(uploaded.file) + '</b>. ' : 'Your own points. ') + '<b>' + D.n + '</b> observations.';
+    $('econBox').innerHTML = d ? '<b>The economics behind the data.</b> ' + d.story : '';
+    $('econBox').hidden = !d;
+  }
+  function refresh() {
+    buildData(); estimate(); syncUI();
+    const eb = $('errBox');
+    eb.hidden = !R.err; eb.innerHTML = R.err ? '<b>Cannot estimate.</b> ' + R.err : '';
+    MLS.$$('.res-card').forEach(c => (c.style.display = R.err ? 'none' : ''));
+    if (!R.err) { renderEcon(); renderML(); }
+    drawFit(); drawResid(); drawQQ();
+    figFit.refreshTable(); figResid.refreshTable(); figQQ.refreshTable();
+    MLS.renderMath();
+    if (ch) ch.check();
+    MLS.state.save();
+  }
+  $('ds').onchange = e => { S.ds = e.target.value; if (S.ds === 'custom' && !S.custom.pts.length) S.addMode = true; refresh(); };
+  $('yvar').onchange = e => { if (DS[S.ds]) S.y[S.ds] = e.target.value; refresh(); };
+  $('xList').onchange = () => {
+    const sel = MLS.$$('#xList input:checked').map(i => i.value);
+    if (!sel.length) { MLS.toast('Keep at least one X variable.'); syncUI(); return; }
+    S.x[S.ds] = sel; refresh();
+  };
+  $('n').oninput = e => { S.n[S.ds] = +e.target.value; refresh(); };
+  $('noise').oninput = e => { S.noise = +e.target.value; refresh(); };
+  $('hetero').onchange = e => { S.hetero = e.target.checked; refresh(); };
+  $('seed').onchange = e => { S.seed = Math.max(1, Math.round(+e.target.value) || 1); refresh(); };
+  $('newSeed').onclick = () => { S.seed = MLS.newSeed(); refresh(); };
+  MLS.$$('[data-cov]').forEach(b => b.onclick = () => { S.cov = b.dataset.cov; refresh(); });
+  $('testShare').oninput = e => { S.testShare = +e.target.value; refresh(); };
+  $('showTrain').onchange = e => { S.showTrain = e.target.checked; refresh(); };
+  $('addMode').onchange = e => { S.addMode = e.target.checked; };
+  $('clearBtn').onclick = () => {
+    const P = figFit.plot;
+    S.custom = { pts: [], xl: singleX() ? D.labels[D.xIds[0]] : 'x', yl: D.labels[D.yId], view: singleX() ? [P.xd.slice(), P.yd.slice()] : null };
+    S.ds = 'custom'; S.addMode = true; refresh();
+  };
+  /* adding or deleting points changes the panels above the chart (results appear from the 4th point);
+     keep the chart at the same place on screen so the page does not jump */
+  function keepChartInView(fn) {
+    const el = $('figFit'), t0 = el.getBoundingClientRect().top;
+    fn();
+    const t1 = el.getBoundingClientRect().top;
+    if (Math.abs(t1 - t0) > 1) window.scrollBy(0, t1 - t0);
+  }
+  function removePoint(i) { keepChartInView(() => { S.custom.pts.splice(i, 1); refresh(); }); }
+  $('undoBtn').onclick = () => { if (S.ds === 'custom' && S.custom.pts.length) keepChartInView(() => { S.custom.pts.pop(); refresh(); }); };
+  function addPoint(x, y) { keepChartInView(() => addPointNow(x, y)); }
+  function addPointNow(x, y) {
+    const P = figFit.plot;
+    if (S.ds !== 'custom') {
+      S.custom = { pts: D.y.map((v, i) => [D.cols[D.xIds[0]][i], v]), xl: D.labels[D.xIds[0]], yl: D.labels[D.yId], view: [P.xd.slice(), P.yd.slice()] };
+      S.ds = 'custom';
+    }
+    if (!S.custom.view) S.custom.view = [P.xd.slice(), P.yd.slice()];
+    S.custom.pts.push([+x.toPrecision(4), +y.toPrecision(4)]);
+    refresh();
+  }
+  $('uploadBtn').onclick = async () => {
+    const r = await MLS.importTable({ roles: [{ key: 'y', label: 'Outcome Y' }, { key: 'x', label: 'Explanatory variables X (tick one or more)', multi: true }], maxRows: 20000 });
+    if (!r) return;
+    const cols = {}; cols[r.names.y] = r.cols.y; r.names.x.forEach((nm, j) => (cols[nm] = r.cols.x[j]));
+    uploaded = { cols, yName: r.names.y, xNames: r.names.x, file: r.file };
+    S.ds = 'upload'; S.x.upload = r.names.x.slice(); S.addMode = false; refresh();
+    MLS.toast('Loaded ' + r.n + ' rows' + (r.dropped ? ' (' + r.dropped + ' skipped)' : '') + '.');
+  };
+
+  /* ------------------------------------------------------------------
+     help texts ("?" buttons)
+     ------------------------------------------------------------------ */
+  MLS.registerHelp({
+    dataset: { title: 'Dataset', html: 'Three economic examples, a synthetic dataset where you know the true model, your own clicked points, or your own CSV/Excel file. The economic data are simulated from realistic equations, so results look like real studies but every class can reproduce them with the same seed.' },
+    yvar: { title: 'Outcome Y', html: 'The variable we want to explain or predict. For wages you can use the wage in euros or its logarithm. With log wages the coefficients read as approximate percentage effects, and the spread of the errors is more even.' },
+    xvars: { title: 'Explanatory variables X', html: 'Tick one variable for a simple regression (scatter plot and line) or several for a multiple regression. Each coefficient is then the effect of that X with the other ticked variables held constant.' },
+    n: { title: 'Number of observations', html: 'More observations give smaller standard errors (more precise coefficients) and a more reliable test-set evaluation.' },
+    noise: { title: 'Noise', html: 'Scales the part of Y that the X variables cannot explain. More noise: lower R², larger standard errors, larger prediction errors.' },
+    hetero: { title: 'Noise grows with the first X', html: 'Makes the errors spread out more for larger values of the first X (<b>heteroskedasticity</b>). The coefficients stay unbiased but the classical standard errors become wrong. Watch the residual plot, the Breusch-Pagan test and the robust standard errors.' },
+    seed: { title: 'Random seed', html: 'The random numbers come from this starting number. The same seed gives the same data and the same train/test split, so the whole class sees identical results.' },
+    addpoints: { title: 'Add and delete points', html: 'With one X variable, click on the chart to add observations and watch the estimates change. <b>Click on one of your points to delete it</b>, or use <b>Undo last point</b> and <b>Clear all points</b>. Try adding one extreme point (an outlier) far from the others, then delete it and compare.' },
+    cov: { title: 'Standard errors', html: '<b>Classical</b> standard errors assume the error variance is the same for all observations. <b>Robust (HC1)</b>, also called White or heteroskedasticity-consistent, standard errors stay valid when it is not. The coefficients are identical; only the standard errors, t, p, confidence intervals and the F-test change.' },
+    testshare: { title: 'Test (hold-out) set share', html: 'The fraction of observations, chosen at random, that form the <b>test (hold-out) set</b>: the machine learning model does not see them when it is estimated on the <b>training set</b>. They are used only to measure prediction error on new data. The econometric results always use all observations.' },
+    trainline: { title: 'Training-data line', html: 'The dashed orange line is estimated only on the training observations, as in machine learning. The solid line uses all observations, as in econometrics. They are usually very close; the difference shows how much one sample of observations moves the estimate.' },
+    econpanel: { title: 'Econometrics panel', html: 'OLS estimated on all observations, with the standard output of econometric software: coefficients, standard errors, t-tests, confidence intervals, fit statistics and diagnostic tests. The question is: what is the effect of each X on Y, and how sure are we?' },
+    mlpanel: { title: 'Machine learning panel', html: 'The same OLS model is estimated on the training rows and judged on the test rows. The question is: how well does the model predict new observations? A model can have significant coefficients and still predict poorly, and the reverse.' },
+    coef: { title: 'Coefficient', html: 'The estimated change in Y when this X rises by one unit, holding the other X variables fixed. The constant is the predicted Y when all X are zero. Stars: *** p &lt; 0.01, ** p &lt; 0.05, * p &lt; 0.1.' },
+    se: { title: 'Standard error', html: 'The estimated standard deviation of the coefficient across repeated samples: its precision. It shrinks with more observations, less noise and more variation in X.' },
+    tstat: { title: 't-statistic', html: 'Coefficient divided by its standard error. Values beyond about ±2 mean the coefficient is far from zero relative to its uncertainty.' },
+    pval: { title: 'p-value', html: 'The probability of a t-statistic at least this large if the true coefficient were zero. Below 0.05: reject “no effect” at the 5% level. It is not the probability that the coefficient is zero.' },
+    ci: { title: '95% confidence interval', html: 'Coefficient ± t-critical value × standard error. In 95% of repeated samples, intervals built this way contain the true coefficient.' },
+    r2: { title: 'R²', html: 'The share of the variation of Y around its mean explained by the model, in this sample. It never falls when you add variables, so on its own it is a poor guide for choosing a model.' },
+    adjr2: { title: 'Adjusted R²', html: 'R² penalized for the number of coefficients: 1 − (1 − R²)(n − 1)/(n − k). It can fall when a useless variable is added.' },
+    fstat: { title: 'F-test', html: 'Tests whether all slope coefficients are zero together. A small Prob (F) means the X variables jointly help explain Y. With robust standard errors the robust (Wald) version is reported.' },
+    resse: { title: 'Residual standard error', html: 'The estimated standard deviation of the errors: √(SSR / (n − k)). In the units of Y.' },
+    llf: { title: 'Log-likelihood', html: 'The Gaussian log-likelihood of the fitted model. Used to compute AIC and BIC.' },
+    aic: { title: 'AIC and BIC', html: 'Information criteria: model fit penalized by the number of coefficients. Compare models on the same data: lower is better. BIC penalizes extra coefficients more than AIC.' },
+    bp: { title: 'Breusch-Pagan test', html: 'Tests whether the error variance depends on the X variables (heteroskedasticity), using the Koenker (studentized) version: n × R² from regressing the squared residuals on the X. A p-value below 0.05 is evidence of heteroskedasticity: use robust standard errors.' },
+    jb: { title: 'Jarque-Bera test', html: 'Tests whether the residuals are normally distributed, using their skewness and kurtosis (normal: skewness 0, kurtosis 3). Normality matters for exact t and F tests in small samples; in large samples the tests remain approximately valid without it.' },
+    rmse: { title: 'RMSE', html: 'Root mean squared error: the typical size of a prediction error, in the units of Y. Large errors weigh more.' },
+    mae: { title: 'MAE', html: 'Mean absolute error: the average size of the prediction errors, in the units of Y. Less sensitive to a few very large errors than RMSE.' },
+    r2test: { title: 'R² in and out of sample', html: 'Training R² is the usual in-sample R² of the training model. Test R² = 1 − SSE/SST computed on the test rows: the share of the test variation explained by predictions from the training model. It can be negative.' },
+    figfit: { title: 'Data and fitted line', html: 'Blue circles: training rows. Orange squares: test rows. With one X: the solid line is OLS on all data; the dashed line is OLS on training data only. With several X: actual against predicted values; points on the 45° line are predicted perfectly. Hover over a point for its values.' },
+    figresid: { title: 'Residuals vs fitted', html: 'Each residual (actual − fitted) against the fitted value. A good model leaves a shapeless band around zero. A curve suggests a missing nonlinear term (for example experience squared); a funnel that widens suggests heteroskedasticity.' },
+    figqq: { title: 'Normal Q-Q plot', html: 'Sorted standardized residuals against the quantiles a normal distribution would give. Points close to the line: normal residuals. S-shapes and curved tails show heavy tails or skewness.' }
+  });
+
+  /* ------------------------------------------------------------------
+     challenges
+     ------------------------------------------------------------------ */
+  function go(o) {
+    Object.assign(S, o.top || {});
+    if (o.ds) { S.ds = o.ds; if (o.x) S.x[o.ds] = o.x; if (o.y) S.y[o.ds] = o.y; if (o.n) S.n[o.ds] = o.n; }
+    MLS.pickTab('sim'); refresh(); window.scrollTo({ top: 0, behavior: 'smooth' });
+  }
+  const ch = MLS.challenges($('challenges'), META.id, [
+    { type: 'predict', q: 'Synthetic data, tick “Noise grows with the first X”. Compared with the classical standard error, the robust (HC1) standard error of the x coefficient will be...',
+      options: ['about the same, because the coefficient does not change', 'larger, because the classical formula ignores the extra noise at large x', 'smaller, because robust methods are always more precise', 'zero, because the true slope is known'], answer: 1,
+      explain: 'When the spread of the errors grows with x, the observations with large x, which carry most information about the slope, are also the noisiest. The classical formula averages the noise over all observations and understates the uncertainty. The coefficient is the same; only its standard error changes.',
+      tryIt: () => go({ ds: 'synthetic', x: ['x'], n: 200, top: { hetero: true, noise: 1, cov: 'classical' } }) },
+    { type: 'predict', q: 'Synthetic data: add z1 and z2, two variables with no effect on y. What happens to training R² and test R²?',
+      options: ['Both rise, because more information is always better', 'Both fall', 'Training R² rises a little; test R² usually does not improve and often falls', 'Nothing changes, because OLS ignores useless variables'], answer: 2,
+      explain: 'OLS uses every variable you give it. Pure-noise variables still pick up a little chance correlation in the training rows, so training R² can only go up, but that chance pattern does not repeat in the test rows. Adjusted R² and BIC usually fall, warning about the useless variables.',
+      tryIt: () => go({ ds: 'synthetic', x: ['x', 'z1', 'z2'], n: 30, top: { hetero: false, noise: 1 } }) },
+    { type: 'predict', q: 'Wage data with Y = hourly wage in euros: the Breusch-Pagan test rejects. If you switch Y to log(hourly wage), the evidence of heteroskedasticity will most likely...',
+      options: ['weaken, because wages vary in percentage terms, which the log turns into equal spreads', 'get stronger, because logs exaggerate differences', 'stay exactly the same, because the X variables did not change'], answer: 0,
+      explain: 'Wage differences are roughly proportional: a 10% shock is worth more euros for a high earner. In euros the spread grows with the predicted wage; in logs it is about constant. That is one reason labour economists model log wages.',
+      tryIt: () => go({ ds: 'wage', x: ['school', 'exper', 'exper2', 'female'], y: 'wage', n: 400, top: { noise: 1, cov: 'classical' } }) },
+    { type: 'task', q: 'Make the Breusch-Pagan test detect heteroskedasticity (p &lt; 0.05), then switch to robust standard errors.', hint: 'Tick “Noise grows with the first X” and use enough observations.',
+      check: () => R && R.bp && R.bp.p < 0.05 && S.cov === 'HC1' },
+    { type: 'task', q: 'Find a case where the test R² is negative.', hint: 'Few observations, a lot of noise and useless variables. Try the synthetic data with z1 and z2.',
+      check: () => R && R.mTe && R.mTe.r2 < 0 },
+    { type: 'task', q: 'Housing data: put floor area and rooms in the model together and find which of the two loses significance at 5%.', hint: 'Tick both. Bigger flats have more rooms, so the data struggle to separate their effects (multicollinearity).',
+      check: () => S.ds === 'housing' && R && R.fit && !R.err && D.xIds.includes('area') && D.xIds.includes('rooms') && R.fit.p[1 + D.xIds.indexOf('rooms')] >= 0.05 },
+    { type: 'task', q: 'Wage data: estimate the full Mincer equation (all four X) with Y = log(hourly wage) and read the return to one year of schooling.', hint: 'Tick all four variables and choose log(hourly wage) as Y. The answer appears under the coefficient table.',
+      check: () => S.ds === 'wage' && D.yId === 'logwage' && D.xIds.length === 4 }
+  ]);
+
+  /* ------------------------------------------------------------------
+     state: remember + share
+     ------------------------------------------------------------------ */
+  MLS.moduleBar({ id: META.id, title: META.title, section: META.sectionTitle, level: META.level },
+    { tabs: [{ id: 'sim', label: 'Simulation' }, { id: 'lesson', label: 'Lesson' }, { id: 'challenges', label: 'Challenges' }, { id: 'real', label: 'On real data' }] });
+  MLS.state.init({
+    id: META.id,
+    get: () => {
+      const o = { ds: S.ds === 'upload' ? 'wage' : S.ds, y: S.y, x: Object.assign({}, S.x, { upload: undefined }), n: S.n, noise: S.noise, hetero: S.hetero, seed: S.seed, testShare: S.testShare, cov: S.cov, showTrain: S.showTrain };
+      if (S.ds === 'custom') o.custom = { pts: S.custom.pts.slice(0, 300), xl: S.custom.xl, yl: S.custom.yl, view: S.custom.view };
+      return o;
+    },
+    set: o => {
+      ['noise', 'hetero', 'seed', 'testShare', 'cov', 'showTrain'].forEach(k => { if (o[k] !== undefined) S[k] = o[k]; });
+      ['y', 'x', 'n'].forEach(k => { if (o[k] && typeof o[k] === 'object') Object.keys(DS).forEach(d => { if (o[k][d] !== undefined) S[k][d] = o[k][d]; }); });
+      if (o.custom && Array.isArray(o.custom.pts)) S.custom = o.custom;
+      if (o.ds && (DS[o.ds] || o.ds === 'custom')) S.ds = o.ds;
+    },
+    uploaded: () => S.ds === 'upload'
+  });
+  $('fourCast').href = MLS.APP.fourCastUrl;
+  window.__mls = { S, get D() { return D; }, get R() { return R; } };   /* used by the test suite */
+  document.addEventListener('mls:theme', () => { drawFit(); drawResid(); drawQQ(); });
+  refresh();
+})();
+</script>
+</body>
+</html>

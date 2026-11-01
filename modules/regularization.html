@@ -1,0 +1,620 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Regularization | 4MLSim</title>
+  <meta name="theme-color" content="#1B2340">
+  <link rel="manifest" href="../manifest.json">
+  <link rel="icon" type="image/svg+xml" href="../assets/img/icon.svg">
+  <link rel="apple-touch-icon" href="../assets/img/apple-touch-icon.png">
+  <link rel="stylesheet" href="../assets/vendor/temml.css">
+  <link rel="stylesheet" href="../assets/css/4mlsim.css">
+  <script src="../assets/vendor/temml.min.js"></script>
+  <script src="../assets/js/core.js"></script>
+  <script src="../assets/js/stats.js"></script>
+  <script src="../assets/js/plot.js"></script>
+  <script src="../assets/js/modules.js"></script>
+</head>
+<body>
+<div class="page">
+  <header id="mlsHeader" data-variant="compact"></header>
+  <div class="mod-top" id="mlsTop"><div id="mlsModBar"></div><div id="mlsTabs"></div></div>
+
+  <div class="intro-box" id="mlsIntro">
+    <h3>What this module shows</h3>
+    <div class="intro-cols">
+      <div>
+        <p>We explain flat prices with 7 variables that matter (floor area, rooms, age, ...) and a few that do not (photos in the ad, day listed, ...). With many variables and few flats, OLS fits noise: its coefficients are too large and unstable, and it predicts new flats poorly.</p>
+        <p><b>Regularization</b> adds a <b>penalty λ</b> on the size of the coefficients. <b>λ = 0 is OLS.</b> As λ grows:</p>
+        <ul>
+          <li><b>Ridge</b> shrinks all coefficients towards zero, but never exactly to zero.</li>
+          <li><b>Lasso</b> shrinks them and sets some <b>exactly to zero</b>: it also drops variables.</li>
+        </ul>
+      </div>
+      <div>
+        <p><b>How to use it</b></p>
+        <ol>
+          <li>Start at λ = 0 and read the OLS coefficients in the table, next to the true values.</li>
+          <li>Move the <b>λ</b> slider to the right and watch the coefficients shrink, in the table and in the charts.</li>
+          <li>The error chart shows the λ where the cross-validation error is lowest; press <b>Best λ by CV</b> to go there.</li>
+          <li>Compare Ridge and Lasso: which one drops the useless variables?</li>
+        </ol>
+      </div>
+    </div>
+  </div>
+
+  <!-- ===================== SIMULATION ===================== -->
+  <section data-panel="sim">
+    <div class="mod-grid">
+      <aside class="side" aria-label="Controls">
+        <div class="card">
+          <div class="card-head"><h3>1. Method and penalty<button type="button" class="help" data-help="method">?</button></h3></div>
+          <div class="seg" role="group" aria-label="Method" style="display:flex">
+            <button type="button" data-meth="ridge" style="flex:1">Ridge</button>
+            <button type="button" data-meth="lasso" style="flex:1">Lasso</button>
+            <button type="button" data-meth="enet" style="flex:1" id="enetBtn">Elastic net</button>
+          </div>
+          <div id="alphaRow">
+            <div class="field-row"><label for="alpha">Mix α (0 = ridge, 1 = lasso)<button type="button" class="help" data-help="alpha">?</button></label><output id="alphaVal"></output></div>
+            <input type="range" id="alpha" min="0.1" max="0.9" step="0.05" value="0.5">
+          </div>
+          <div class="field-row" style="margin-top:10px"><label for="lam">Penalty λ<button type="button" class="help" data-help="lambda">?</button></label><output id="lamVal"></output></div>
+          <input type="range" id="lam" min="0" max="100" step="1" value="0">
+          <div class="note" style="display:flex;justify-content:space-between;margin-top:-2px"><span>0 = OLS</span><span>stronger penalty →</span></div>
+          <div class="btn-row fill" style="margin-top:8px">
+            <button type="button" class="btn-ghost btn-small" id="useOLS">λ = 0 (OLS)</button>
+            <button type="button" class="btn-secondary btn-small" id="useMin">Best λ by CV</button>
+            <button type="button" class="btn-ghost btn-small" id="use1se">1-SE rule λ</button>
+          </div>
+          <p class="note" id="methNote"></p>
+        </div>
+
+        <div class="card">
+          <div class="card-head"><h3>2. Data<button type="button" class="help" data-help="problem">?</button></h3></div>
+          <div class="field-row"><label for="n">Number of flats<button type="button" class="help" data-help="n">?</button></label><output id="nVal"></output></div>
+          <input type="range" id="n" min="20" max="400" step="5" value="50">
+          <div id="irrRow">
+            <div class="field-row"><label for="irr">Useless variables added<button type="button" class="help" data-help="irr">?</button></label><output id="irrVal"></output></div>
+            <input type="range" id="irr" min="0" max="40" step="1" value="10">
+          </div>
+          <div class="field-row"><label for="noise">Noise<button type="button" class="help" data-help="noise">?</button></label><output id="noiseVal"></output></div>
+          <input type="range" id="noise" min="0.2" max="3" step="0.1" value="1">
+          <div class="field-row"><label for="seed">Random seed<button type="button" class="help" data-help="seed">?</button></label></div>
+          <div class="inline-inputs"><input type="number" id="seed" min="1" max="99999" step="1" value="2026" aria-label="Random seed"><button type="button" class="btn-ghost btn-icon" id="newSeed" title="New random sample" style="flex:0 0 auto">&#127922;</button></div>
+          <p class="note" id="dataNote"></p>
+          <label class="check" style="margin-top:8px"><input type="checkbox" id="advanced"> Advanced: elastic net and a wiggly curve<button type="button" class="help" data-help="advanced">?</button></label>
+          <div class="seg" role="group" aria-label="Problem" id="probRow" style="display:flex;margin-top:6px">
+            <button type="button" data-prob="many" style="flex:1">House prices</button>
+            <button type="button" data-prob="curve" style="flex:1">Wiggly curve</button>
+          </div>
+        </div>
+      </aside>
+
+      <main class="main">
+        <div class="stat-grid" id="stats"></div>
+        <div id="statusLine" class="status-line"></div>
+        <div class="fig-grid">
+          <div id="figCoef"></div>
+          <div id="figFit"></div>
+          <div class="res-card" id="coefCard">
+            <h3>Coefficients: true, OLS and now<button type="button" class="help" data-help="coeftable">?</button></h3>
+            <div class="res-sub" id="coefSub"></div>
+            <div class="fig-table" style="max-height:none"><table class="tbl" id="coefTable"></table></div>
+          </div>
+          <div id="figPath" class="fig-wide"></div>
+          <div id="figErr" class="fig-wide"></div>
+        </div>
+      </main>
+    </div>
+  </section>
+
+  <!-- ===================== LESSON ===================== -->
+  <section data-panel="lesson" class="card lesson" hidden>
+    <div id="mlsMathCtl"></div>
+    <p class="lvl-only-intuition note" style="margin-bottom:8px">Showing the intuition only. Choose <b>Formulas</b> or <b>Deep dive</b> above to add the mathematics.</p>
+
+    <h4>Why penalize coefficients?</h4>
+    <p>OLS is unbiased, but when there are many variables relative to the number of observations, or the variables are strongly correlated, its coefficients have a large variance: they swing from sample to sample and the model predicts new data poorly. Regularization deliberately <b>accepts a little bias to remove a lot of variance</b> (see the Bias-Variance module). It adds to the OLS objective a penalty that grows with the size of the coefficients, so a coefficient is allowed to be large only if it really improves the fit.</p>
+    <div class="math-block lvl-math"><div class="mb-title">Penalized least squares (X standardized, intercept not penalized)</div>
+      <div class="tex-block">\hat\beta(\lambda) = \arg\min_{\beta}\; \frac{1}{2n}\sum_{i=1}^n \bigl(y_i - \beta_0 - x_i^\top\beta\bigr)^2 + \lambda\, P(\beta)</div>
+      <div class="tex-block">\text{Ridge: } P(\beta) = \tfrac12\textstyle\sum_j \beta_j^2 \qquad \text{Lasso: } P(\beta) = \textstyle\sum_j |\beta_j| \qquad \text{Elastic net: } P(\beta) = \alpha\sum_j|\beta_j| + \tfrac{1-\alpha}{2}\sum_j\beta_j^2</div>
+      <p class="note">This is the scaling used by glmnet and scikit-learn's ElasticNet. With λ = 0 all three are OLS.</p>
+    </div>
+
+    <h4>Ridge, lasso and elastic net</h4>
+    <ul>
+      <li><b>Ridge</b> (Hoerl and Kennard, 1970) shrinks every coefficient proportionally. It was invented for <b>multicollinearity</b>: with correlated regressors it spreads the effect over them instead of letting their coefficients explode in opposite directions. It never sets a coefficient exactly to zero.</li>
+      <li><b>Lasso</b> (Tibshirani, 1996) subtracts a fixed amount from each coefficient and stops at zero. Weak variables are dropped completely: the result is a <b>sparse</b> model that is easier to read. Among strongly correlated variables it tends to keep one and drop the others, somewhat arbitrarily.</li>
+      <li><b>Elastic net</b> (Zou and Hastie, 2005) combines both: it selects variables like the lasso but keeps groups of correlated variables together like ridge.</li>
+    </ul>
+    <div id="figGeo" style="margin:10px 0;max-width:560px"></div>
+
+    <h4>Standardize first</h4>
+    <p>The penalty treats all coefficients alike, but a coefficient's size depends on the units of its variable (euros or thousands of euros, metres or square metres). The variables are therefore standardized (mean 0, standard deviation 1) before the penalty is applied, using the training data only. The coefficient paths are shown in these standardized units: the effect of a one-standard-deviation change.</p>
+
+    <h4>Choosing λ by cross-validation</h4>
+    <p>λ = 0 is OLS; a very large λ sets every coefficient to zero and predicts the average. The best λ lies in between. It must be chosen without touching the <b>test (hold-out) set</b>, so it is chosen by <b>cross-validation</b> on the <b>training set</b>: the training set is split into 4 folds; the model is fitted on 3 folds and its error measured on the remaining one, the <b>validation fold</b>; this is repeated so that each fold is the validation fold once, and the 4 errors are averaged (see the Cross-Validation module). The <b>1-SE rule</b> picks the largest λ (the simplest model) whose CV error is within one standard error of the lowest. The chosen model is then refitted on the whole training set and evaluated once on the test set.</p>
+    <div class="math-block lvl-math"><div class="mb-title">Cross-validation error and the 1-SE rule</div>
+      <div class="tex-block">\text{CV}(\lambda) = \frac1K\sum_{k=1}^K \text{MSE}_k(\lambda), \qquad \lambda_{1SE} = \max\{\lambda : \text{CV}(\lambda) \le \text{CV}(\lambda_{\min}) + \text{SE}(\lambda_{\min})\}</div>
+    </div>
+
+    <h4>A warning for economists</h4>
+    <p>Penalized coefficients are biased towards zero and the lasso's choice of variables can change from sample to sample, so they should <b>not</b> be read as causal effects or tested with the usual t-tests. Regularization is a tool for <b>prediction</b>. When the goal is a causal effect with many controls, use methods built for it, such as post-double-selection (Belloni, Chernozhukov and Hansen, 2014) or double machine learning.</p>
+
+    <div class="math-block deep lvl-deep"><div class="mb-title">Deep dive</div>
+      <p><b>Closed forms with orthonormal regressors</b> (<span class="tex">X^\top X/n = I</span>): ridge gives <span class="tex">\hat\beta_j = \hat\beta_j^{OLS}/(1+\lambda)</span>, proportional shrinkage; the lasso gives the soft-thresholding rule <span class="tex">\hat\beta_j = \operatorname{sign}(\hat\beta_j^{OLS})\,(|\hat\beta_j^{OLS}|-\lambda)_+</span>, which sets small coefficients exactly to zero.</p>
+      <p><b>Computation.</b> Ridge has the closed form <span class="tex">\hat\beta = (X^\top X/n + \lambda I)^{-1}X^\top y/n</span>, which exists even when there are more variables than observations. The lasso and elastic net have no closed form; 4MLSim uses cyclic coordinate descent with soft-thresholding and warm starts along a decreasing λ path (Friedman, Hastie and Tibshirani, 2010). The lasso is zero for every λ at or above <span class="tex">\lambda_{\max} = \max_j |x_j^\top (y-\bar y)|/n</span>.</p>
+      <p><b>Constraint form and geometry.</b> Equivalently, minimize the squared errors subject to <span class="tex">\sum_j \beta_j^2 \le t</span> (ridge) or <span class="tex">\sum_j|\beta_j|\le t</span> (lasso). The elliptical contours of the squared errors first touch the lasso's diamond typically at a corner, where some coefficients are zero; they touch ridge's circle at a point where none is.</p>
+      <p><b>Bayesian reading.</b> Ridge is the posterior mode under a normal prior on the coefficients; the lasso under a Laplace (double exponential) prior.</p>
+      <p class="note">References: Hoerl and Kennard (1970), <i>Technometrics</i> 12(1); Tibshirani (1996), <i>JRSS B</i> 58(1); Zou and Hastie (2005), <i>JRSS B</i> 67(2); Friedman, Hastie and Tibshirani (2010), <i>J. of Statistical Software</i> 33(1); Belloni, Chernozhukov and Hansen (2014), <i>J. of Economic Perspectives</i> 28(2); James, Witten, Hastie and Tibshirani (2021), <i>An Introduction to Statistical Learning</i>, ch. 6.</p>
+    </div>
+  </section>
+
+  <!-- ===================== CHALLENGES ===================== -->
+  <section data-panel="challenges" class="card" hidden>
+    <div class="card-head"><h3>Challenges</h3><span class="card-sub">Answer the "predict first" questions before testing them in the Simulation tab.</span></div>
+    <div id="challenges"></div>
+  </section>
+
+  <!-- ===================== REAL DATA ===================== -->
+  <section data-panel="real" class="card lesson" hidden>
+    <h4>From the simulation to real data</h4>
+    <ul>
+      <li>Typical uses in economics and finance: forecasting with many indicators (macro forecasting with large panels of series), credit scoring with many applicant characteristics, nowcasting, and selecting controls before estimating a causal effect.</li>
+      <li>Always standardize using the training set only, choose λ by cross-validation on the training set, and report the error on the test (hold-out) set once, at the end.</li>
+      <li>With time series, use walk-forward validation instead of random folds (see the Time-Series Validation module).</li>
+      <li>Software: glmnet (R), scikit-learn's Ridge, Lasso, ElasticNet and their CV versions (Python), lasso and elasticnet commands in Stata.</li>
+    </ul>
+    <div class="crosslink"><span>&#10140;</span><span><a id="fourCast" target="_blank" rel="noopener"><b>4Cast Lab</b></a> includes regularized regressions for forecasting on your own data.</span></div>
+  </section>
+
+  <footer id="mlsFooter"></footer>
+</div>
+
+<script>
+(function () {
+  'use strict';
+  const MLS = window.MLS;
+  const META = MLS.moduleMeta('regularization');
+  const $ = id => document.getElementById(id);
+  const F = MLS.fmt, G = (v, s) => MLS.fmtSig(v, s || 3);
+  const NL = 61, K = 4, TEST = 0.2, CURVE_DEG = 12;
+
+  /* ------------------------------------------------------------------
+     data
+     ------------------------------------------------------------------ */
+  const REL = [
+    { id: 'area', label: 'Floor area (m²)', unit: 'per m²', beta: 1.4 },
+    { id: 'rooms', label: 'Number of rooms', unit: 'per room', beta: 3 },
+    { id: 'age', label: 'Building age (years)', unit: 'per year', beta: -0.5 },
+    { id: 'dist', label: 'Distance to centre (km)', unit: 'per km', beta: -3 },
+    { id: 'floor', label: 'Floor level', unit: 'per floor', beta: 1.2 },
+    { id: 'balcony', label: 'Balcony (1 = yes)', unit: 'if yes', beta: 8 },
+    { id: 'parking', label: 'Parking space (1 = yes)', unit: 'if yes', beta: 12 }
+  ];
+  const IRR_NAMES = ['Ad text length (words)', 'Photos in the ad', 'Day of the week listed', 'Agent ID (last digit)', 'Street number', 'Views in the first week', 'Month listed', 'Seller\'s phone (last digit)'];
+  function genHouses(r, n, q, noise) {
+    const cols = {}; REL.forEach(v => (cols[v.id] = []));
+    const irr = Array.from({ length: q }, () => []), y = [];
+    for (let i = 0; i < n; i++) {
+      const a = Math.round(r.uniform(40, 180)), rm = Math.min(7, Math.max(1, Math.round(a / 35 + r.normal(0, 0.45))));
+      const ag = r.int(0, 60), d = +r.uniform(0.5, 15).toFixed(1), fl = r.int(0, 8), bal = r.random() < 0.6 ? 1 : 0, park = r.random() < 0.2 + 0.4 * (a - 40) / 140 ? 1 : 0;
+      const vals = { area: a, rooms: rm, age: ag, dist: d, floor: fl, balcony: bal, parking: park };
+      REL.forEach(v => cols[v.id].push(vals[v.id]));
+      let p = 30; REL.forEach(v => (p += v.beta * vals[v.id]));
+      y.push(+(p + r.normal(0, 25 * noise)).toFixed(1));
+      for (let j = 0; j < q; j++) {
+        let v;
+        switch (j) {
+          case 0: v = Math.round(80 + 0.6 * a + r.normal(0, 30)); break;      /* correlated with area, but no effect */
+          case 1: v = r.int(5, 40); break;
+          case 2: v = r.int(1, 7); break;
+          case 3: v = r.int(0, 9); break;
+          case 4: v = r.int(1, 200); break;
+          case 5: v = Math.round(r.normal(300, 80)); break;
+          case 6: v = r.int(1, 12); break;
+          case 7: v = r.int(0, 9); break;
+          default: v = +r.normal(0, 1).toFixed(3);
+        }
+        irr[j].push(v);
+      }
+    }
+    const names = REL.map(v => v.label).concat(Array.from({ length: q }, (_, j) => (j < IRR_NAMES.length ? IRR_NAMES[j] : 'Random variable ' + (j + 1))));
+    const units = REL.map(v => v.unit).concat(new Array(q).fill('per unit'));
+    const X = y.map((_, i) => REL.map(v => cols[v.id][i]).concat(irr.map(c => c[i])));
+    return { X, y, names, units, beta: REL.map(v => v.beta).concat(new Array(q).fill(0)), nRel: REL.length };
+  }
+  const wageF = e => 9 + 0.9 * e - 0.016 * e * e;
+  function genCurve(r, n, noise) {
+    const x = [], y = [];
+    for (let i = 0; i < n; i++) { const xi = 40 * (i + r.random()) / n; x.push(xi); y.push(wageF(xi) + r.normal(0, 1.8 * noise)); }
+    const X = x.map(v => MLS.legendre((2 * v - 40) / 40, CURVE_DEG).slice(1));
+    return { X, y, x, names: Array.from({ length: CURVE_DEG }, (_, j) => 'Power ' + (j + 1)), units: null, beta: null, nRel: 0 };
+  }
+
+  /* ------------------------------------------------------------------
+     state: lamPos 0 = λ = 0 (OLS); 1..100 = log scale from the smallest to the largest λ of the path
+     ------------------------------------------------------------------ */
+  const S = { adv: false, prob: 'many', n: { many: 50, curve: 30 }, irr: 10, noise: 1, seed: 2026, meth: 'lasso', alpha: 0.5, lamPos: { ridge: 0, lasso: 0, enet: 0 } };
+  let D = null, P = null, CUR = null;
+
+  const alphaOf = m => (m === 'ridge' ? 0 : m === 'lasso' ? 1 : S.alpha);
+  function buildData() {
+    const r = MLS.rng(S.seed), n = S.n[S.prob];
+    const raw = S.prob === 'many' ? genHouses(r, n, S.irr, S.noise) : genCurve(r, n, S.noise);
+    const idx = Array.from({ length: n }, (_, i) => i); MLS.rng(S.seed * 31 + 7).shuffle(idx);
+    const nTe = Math.round(n * TEST), te = idx.slice(0, nTe).sort((a, b) => a - b), tr = idx.slice(nTe).sort((a, b) => a - b);
+    const Xtr = tr.map(i => raw.X[i]), ytr = tr.map(i => raw.y[i]), st = MLS.colStats(Xtr);
+    D = Object.assign(raw, { tr, te, Xtr, ytr, Xte: te.map(i => raw.X[i]), yte: te.map(i => raw.y[i]), st, Ztr: MLS.applyScale(Xtr, st), p: raw.X[0].length });
+    D.Zte = MLS.applyScale(D.Xte, D.st);
+    D.betaStd = raw.beta ? raw.beta.map((b, j) => b * D.st.sd[j]) : null;
+    D.olsOK = tr.length > D.p + 1;
+    D.folds = MLS.kfold(tr.length, K, MLS.rng(S.seed * 13 + 5));
+  }
+  /* fit at one λ; λ = 0 is OLS (a tiny ridge stands in when OLS is impossible) */
+  function fitAt(Z, y, lam, alpha, warm) {
+    if (lam <= 0) return MLS.elasticNet(Z, y, Z.length > Z[0].length + 1 ? 0 : 1e-6, 0);
+    return MLS.elasticNet(Z, y, lam, alpha, { b0: warm, tol: 1e-7, maxIter: 3000 });
+  }
+  const predict = (fit, Z) => Z.map(row => row.reduce((s, v, j) => s + v * fit.b[j], fit.intercept));
+
+  /* the λ grid (largest first), the coefficient path, and training / test / CV errors, plus OLS (λ = 0) */
+  function buildPath() {
+    const m = S.meth, a = alphaOf(m);
+    const lmax = MLS.lambdaMax(D.Ztr, D.ytr, Math.max(a, 0.05)) * (a === 0 ? 20 : 1);
+    const hi = Math.log10(lmax) + 0.2, lo = a === 0 ? Math.min(-3, hi - 6) : hi - 4.4;
+    const grid = Array.from({ length: NL }, (_, k) => Math.pow(10, hi - (hi - lo) * k / (NL - 1)));
+    const coefs = [], trE = [], teE = [];
+    let warm = null;
+    grid.forEach(l => { const f = fitAt(D.Ztr, D.ytr, l, a, warm); warm = f.b; coefs.push(f.b.slice()); trE.push(MLS.rmse(D.ytr, predict(f, D.Ztr))); teE.push(MLS.rmse(D.yte, predict(f, D.Zte))); });
+    /* 4-fold cross-validation on the training set: fit on 3 folds, validate on the 4th, rotate; scaling refitted on each fitting part */
+    const lams = grid.concat([0]), cvF = lams.map(() => []);
+    for (let k = 0; k < K; k++) {
+      const a1 = [], a2 = []; D.folds.forEach((f, i) => (f === k ? a2 : a1).push(i));
+      const X1 = a1.map(i => D.Xtr[i]), st = MLS.colStats(X1), Z1 = MLS.applyScale(X1, st), Z2 = MLS.applyScale(a2.map(i => D.Xtr[i]), st);
+      const y1 = a1.map(i => D.ytr[i]), y2 = a2.map(i => D.ytr[i]);
+      let w = null;
+      lams.forEach((l, g) => { const f = fitAt(Z1, y1, l, a, w); if (l > 0) w = f.b; const e = predict(f, Z2); cvF[g].push(y2.reduce((s, v, t) => s + (v - e[t]) ** 2, 0) / y2.length); });
+    }
+    const cvAll = cvF.map(v => Math.sqrt(MLS.mean(v)));
+    const seAll = cvF.map(v => { const mm = MLS.mean(v), sd = Math.sqrt(v.reduce((s, x) => s + (x - mm) ** 2, 0) / (v.length - 1)); return sd / Math.sqrt(v.length) / (2 * Math.sqrt(mm)); });
+    const cv = cvAll.slice(0, NL), cvSE = seAll.slice(0, NL), cvOLS = cvAll[NL], seOLS = seAll[NL];
+    /* best λ by CV (OLS included), and the 1-SE rule: the largest λ whose CV error is within one SE of the best */
+    let iMin = 0; cv.forEach((v, g) => { if (v < cv[iMin]) iMin = g; });
+    const olsBest = cvOLS < cv[iMin];
+    const bestCV = olsBest ? cvOLS : cv[iMin], bestSE = olsBest ? seOLS : cvSE[iMin];
+    let i1 = olsBest ? -1 : iMin; for (let g = 0; g < NL; g++) if (cv[g] <= bestCV + bestSE) { i1 = g; break; }
+    const ols = fitAt(D.Ztr, D.ytr, 0);
+    P = { m, a, grid, lg: grid.map(Math.log10), coefs, trE, teE, cv, cvSE, iMin, olsBest, i1, cvOLS, seOLS, ols,
+      olsTe: MLS.rmse(D.yte, predict(ols, D.Zte)), olsTr: MLS.rmse(D.ytr, predict(ols, D.Ztr)) };
+    P.uLo = P.lg[NL - 1]; P.uHi = P.lg[0]; P.uOLS = P.uLo - 0.75;
+  }
+  const posOfIdx = g => (g < 0 ? 0 : 1 + Math.round(99 * (P.lg[g] - P.uLo) / (P.uHi - P.uLo)));
+  const lamOfPos = pos => (pos <= 0 ? 0 : Math.pow(10, P.uLo + (P.uHi - P.uLo) * (pos - 1) / 99));
+  const uOf = lam => (lam <= 0 ? P.uOLS : Math.log10(lam));          /* x position on the charts */
+  function current() {
+    const lam = lamOfPos(S.lamPos[P.m] || 0);
+    let near = 0; if (lam > 0) P.grid.forEach((l, g) => { if (Math.abs(Math.log10(l) - Math.log10(lam)) < Math.abs(Math.log10(P.grid[near]) - Math.log10(lam))) near = g; });
+    const f = lam <= 0 ? P.ols : fitAt(D.Ztr, D.ytr, lam, P.a, P.coefs[near]);
+    const nz = f.b.filter(v => Math.abs(v) > 1e-8).length;
+    CUR = { lam, f, nz, tr: MLS.rmse(D.ytr, predict(f, D.Ztr)), te: MLS.rmse(D.yte, predict(f, D.Zte)) };
+    if (D.beta) { CUR.relKept = f.b.slice(0, D.nRel).filter(v => Math.abs(v) > 1e-8).length; CUR.irrKept = f.b.slice(D.nRel).filter(v => Math.abs(v) > 1e-8).length; }
+  }
+  const lamTxt = l => (l <= 0 ? '0' : l >= 100 ? F(l, 0) : l >= 1 ? F(l, 2) : G(l, 2));
+  const bestLam = () => (P.olsBest ? 0 : P.grid[P.iMin]);
+  const oneSELam = () => (P.i1 < 0 ? 0 : P.grid[P.i1]);
+  const methName = () => ({ ridge: 'Ridge', lasso: 'Lasso', enet: 'Elastic net' })[P.m];
+
+  /* ------------------------------------------------------------------
+     stats, status, table
+     ------------------------------------------------------------------ */
+  const card = MLS.statCard;
+  function updateStats() {
+    const ols = CUR.lam <= 0, gain = (P.olsTe - CUR.te) / P.olsTe * 100;
+    $('stats').innerHTML =
+      card('Penalty λ', ols ? '0 (OLS)' : lamTxt(CUR.lam), ols ? 'no penalty: ordinary least squares' : methName() + ' penalty', '', 'st_lam') +
+      card('Variables kept', CUR.nz + ' of ' + D.p, D.beta ? CUR.relKept + ' of 7 useful, ' + CUR.irrKept + ' of ' + (D.p - 7) + ' useless' : 'powers with a non-zero coefficient', '', 'st_nz') +
+      card('Training set RMSE', F(CUR.tr, 2), 'OLS: ' + F(P.olsTr, 2), '', 'st_train') +
+      card('Test (hold-out) RMSE', F(CUR.te, 2), ols ? 'this is the OLS value' : 'OLS: ' + F(P.olsTe, 2) + ' (' + (gain >= 0 ? F(gain, 1) + '% better' : F(-gain, 1) + '% worse') + ')', !ols && gain > 2 ? 'good' : !ols && gain < -2 ? 'bad' : '', 'st_test') +
+      card('Best λ by CV', lamTxt(bestLam()), '1-SE rule: ' + lamTxt(oneSELam()), '', 'st_cv');
+    let msg, cls = 'status-line';
+    if (ols) { msg = D.olsOK ? 'λ = 0: these are the OLS estimates (column "OLS" in the table). Move the λ slider to the right to shrink them.' : '⚠ OLS is impossible here: ' + D.p + ' coefficients but only ' + D.tr.length + ' flats in the training set. Move λ above 0: ridge and lasso still work.'; if (!D.olsOK) cls += ' bad'; }
+    else if (CUR.nz === 0 || (P.m === 'ridge' && CUR.lam > P.grid[0] * 0.05)) { msg = '⚠ λ is so large that all coefficients are (almost) zero: the model predicts the average price for every flat. Too much penalty (underfitting).'; cls += ' bad'; }
+    else if (gain > 2) { msg = '✓ The penalty helps: the test (hold-out) error is ' + F(gain, 1) + '% below OLS.' + (D.beta && P.m !== 'ridge' ? ' ' + methName() + ' keeps ' + CUR.relKept + ' of the 7 useful variables and ' + CUR.irrKept + ' useless ones.' : ''); cls += ' ok'; }
+    else if (gain < -2) { const atBest = Math.abs(Math.log10(CUR.lam) - Math.log10(bestLam() || 1e-12)) < 0.05; msg = '⚠ At this λ the model predicts the test (hold-out) flats worse than OLS (' + F(-gain, 1) + '%). ' + (atBest ? 'This is the λ chosen by cross-validation: with only ' + D.te.length + ' flats in the test set, the test error is itself noisy, and the CV choice does not win every time. Try other seeds.' : CUR.lam > bestLam() ? 'Too much shrinkage: lower λ.' : 'Try the best λ by CV.'); cls += ' bad'; }
+    else msg = 'About the same test error as OLS. Press "Best λ by CV" to use the λ chosen by cross-validation.';
+    $('statusLine').textContent = msg; $('statusLine').className = cls;
+    /* coefficient table in original units */
+    const orig = (b, j) => b / D.st.sd[j];
+    const fmtC = v => (Math.abs(v) < 1e-8 ? '<span style="color:var(--muted)">0 (dropped)</span>' : F(v, 3));
+    $('coefSub').innerHTML = D.beta ? 'Effect on the price (k€) of one more unit of each variable (one more m², one more room, ...), other variables held fixed.' : 'Coefficients of the 12 powers of experience (on the standardized scale).';
+    $('coefTable').innerHTML = '<thead><tr><th>Variable</th>' + (D.beta ? '<th>True value</th>' : '') + '<th>OLS (λ = 0)</th><th>Now (λ = ' + lamTxt(CUR.lam) + ')</th></tr></thead><tbody>' +
+      D.names.map((nm, j) => {
+        const useful = D.beta && j < D.nRel;
+        const tv = D.beta ? '<td>' + F(D.beta[j], 2) + '</td>' : '';
+        const o = D.beta ? orig(P.ols.b[j], j) : P.ols.b[j], c = D.beta ? orig(CUR.f.b[j], j) : CUR.f.b[j];
+        return '<tr' + (D.beta && !useful ? ' class="insig"' : '') + '><td class="var">' + MLS.esc(nm) + (D.beta ? (useful ? '' : ' <span class="note" style="font-size:11px">(useless)</span>') : '') + '</td>' + tv + '<td>' + F(o, 3) + '</td><td><b>' + fmtC(c) + '</b></td></tr>';
+      }).join('') + '</tbody>';
+  }
+
+  /* ------------------------------------------------------------------
+     figures
+     ------------------------------------------------------------------ */
+  const col = () => ({ ink: MLS.color('chart-ink'), mu: MLS.color('chart-muted'), tr: MLS.color('series-1'), te: MLS.color('series-2'), cv: MLS.color('series-7'), tru: MLS.color('series-3') });
+  const relColors = () => [1, 2, 4, 5, 6, 7, 8].map(k => MLS.color('series-' + k));
+  /* x axis: log scale of λ labelled with the λ values themselves, and a separate position for λ = 0 (OLS) at the left */
+  const lamTick = v => { if (!P) return ''; if (Math.abs(v - Math.round(v)) > 1e-9 || v < P.uLo - 1e-9) return ''; const l = Math.pow(10, Math.round(v)); return l >= 1 ? String(l) : String(+l.toPrecision(1)); };
+  const xFromClick = x => { if (x < (P.uOLS + P.uLo) / 2) return 0; return Math.max(1, Math.min(100, 1 + Math.round(99 * (x - P.uLo) / (P.uHi - P.uLo)))); };
+  const setFromX = x => { S.lamPos[P.m] = xFromClick(x); light(); };
+  function lamAxis(Pl, yd, c) {
+    /* the λ = 0 position: a label under the axis and a break between it and the log scale */
+    Pl.text(P.uOLS, yd[0], 'λ = 0 (OLS)', { anchor: 'middle', dy: 17, size: 11.5, weight: 700, halo: false, color: c.ink });
+    const xb = (P.uOLS + P.uLo) / 2;
+    Pl.rect(xb - 0.12, yd[0], xb + 0.12, yd[1], { fill: MLS.css('--chart-surface') });
+    Pl.text(xb, yd[0], '//', { anchor: 'middle', dy: 4, size: 13, halo: false, color: c.mu });
+  }
+  function markLines(Pl, yd, c) {
+    /* labelled vertical lines: best λ by CV, 1-SE rule, current λ */
+    const top = yd[1], lab = (x, t, dy, colr, anchor) => Pl.text(x, top, t, { anchor: anchor || 'start', dx: anchor === 'end' ? -4 : 4, dy, size: 11, weight: 700, color: colr });
+    const ub = uOf(bestLam()), u1 = uOf(oneSELam()), uc = uOf(CUR.lam);
+    Pl.vline(ub, { color: c.cv, dash: '6 4', width: 1.6 }); lab(ub, 'best λ by CV', 14, c.cv, ub > P.uHi - 0.8 ? 'end' : 'start');
+    if (Math.abs(u1 - ub) > 1e-9) { Pl.vline(u1, { color: c.cv, dash: '2 4', width: 1.6 }); lab(u1, '1-SE rule', 28, c.cv, u1 > P.uHi - 0.8 ? 'end' : 'start'); }
+    Pl.vline(uc, { color: c.ink, width: 2.2 }); lab(uc, 'λ now', 42, c.ink, uc > P.uHi - 0.8 ? 'end' : 'start');
+  }
+  const figCoef = MLS.figure($('figCoef'), {
+    title: 'The same coefficients on one scale', help: 'figcoef', file: 'regularization-coefficients',
+    plot: { aspect: 1.0, margin: { l: 168, r: 14 }, x: { label: 'Effect of a one-standard-deviation change (k€)' }, y: { ticks: false } },
+    data: () => ({ cols: ['Variable', 'Now (standardized)', 'OLS (standardized)', 'True (standardized)'], rows: D.names.map((nm, j) => [nm, CUR.f.b[j], P.ols.b[j], D.betaStd ? D.betaStd[j] : '']) })
+  });
+  const figFit = MLS.figure($('figFit'), {
+    title: 'Data and fitted curve (degree 12)', help: 'figfit', file: 'regularization-curve',
+    plot: { aspect: 0.9, margin: { l: 58 }, x: { label: 'Experience (years)' }, y: { label: 'Hourly wage (€)' } },
+    data: () => ({ cols: ['Experience', 'Wage', 'Set'], rows: D.x.map((x, i) => [x, D.y[i], D.te.includes(i) ? 'test (hold-out)' : 'training']) })
+  });
+  const figPath = MLS.figure($('figPath'), {
+    title: 'How the coefficients shrink as λ grows', help: 'figpath', file: 'regularization-paths',
+    plot: { aspect: 0.38, margin: { l: 66, r: 20, b: 52 }, x: { label: 'Penalty λ (log scale)', fmt: lamTick }, y: { label: 'Coefficient (effect of 1 SD, k€)' }, onClick: x => setFromX(x) },
+    data: () => ({ cols: ['lambda'].concat(D.names), rows: [[0].concat(P.ols.b)].concat(P.grid.map((l, g) => [l].concat(P.coefs[g])).reverse()) })
+  });
+  const figErr = MLS.figure($('figErr'), {
+    title: 'Prediction error for every λ', help: 'figerr', file: 'regularization-error',
+    plot: { aspect: 0.34, margin: { l: 62, r: 20, b: 52 }, x: { label: 'Penalty λ (log scale)', fmt: lamTick }, y: { label: 'RMSE (k€)' }, onClick: x => setFromX(x) },
+    data: () => ({ cols: ['lambda', 'Training set RMSE', 'Test (hold-out) RMSE', 'CV RMSE (validation folds)', 'CV standard error'], rows: [[0, P.olsTr, P.olsTe, P.cvOLS, P.seOLS]].concat(P.grid.map((l, g) => [l, P.trE[g], P.teE[g], P.cv[g], P.cvSE[g]]).reverse()) })
+  });
+
+  function drawCoef() {
+    $('figCoef').hidden = S.prob !== 'many'; if (S.prob !== 'many') return;
+    const Pl = figCoef.plot, c = col(), p = D.p, b = CUR.f.b, o = P.ols.b, t = D.betaStd;
+    const m = Math.max(...b.concat(o, t).map(Math.abs)) * 1.1 || 1;
+    Pl.setX(-m, m); Pl.setY(-0.6, p - 0.4);
+    const yOf = j => p - 1 - j;
+    Pl.draw(Pl => {
+      Pl.vline(0, { color: c.ink, width: 1 });
+      D.names.forEach((nm, j) => {
+        const y = yOf(j), rel = j < D.nRel;
+        Pl.rect(0, y - 0.32, b[j], y + 0.32, { fill: rel ? c.tr : c.mu, opacity: 0.85 });
+        Pl.text(-m, y, nm.length > 26 ? nm.slice(0, 25) + '…' : nm, { anchor: 'end', dx: -8, dy: 4, size: 11.5, weight: rel ? 700 : 500, color: rel ? c.ink : c.mu, halo: false });
+      });
+      Pl.points(o.map((v, j) => ({ x: v, y: yOf(j), j })), { color: c.te, r: 4, hollow: true, tip: d => '<b>' + MLS.esc(D.names[d.j]) + '</b><br>OLS: ' + F(o[d.j], 3) + '<br>Now: ' + F(b[d.j], 3) + '<br>True: ' + F(t[d.j], 3) });
+      Pl.points(t.map((v, j) => ({ x: v, y: yOf(j), j })), { color: c.tru, shape: 'diamond', r: 4.5, tip: d => '<b>' + MLS.esc(D.names[d.j]) + '</b><br>True: ' + F(t[d.j], 3) + '<br>Now: ' + F(b[d.j], 3) });
+    });
+    figCoef.legend([{ label: 'Now (useful variable)', color: c.tr, box: true }, { label: 'Now (useless variable)', color: c.mu, box: true }, { label: 'OLS (λ = 0)', color: 'none', stroke: c.te, shape: 'circle' }, { label: 'True value', color: c.tru, shape: 'diamond' }]);
+    figCoef.caption('Bars are the current estimates. At λ = 0 they sit exactly on the OLS circles; as λ grows they move towards zero. Units: the price change (k€) for a one-standard-deviation change in each variable, so that variables measured in different units can be compared.');
+  }
+  function drawFitCurve() {
+    $('figFit').hidden = S.prob !== 'curve'; if (S.prob !== 'curve') return;
+    const Pl = figFit.plot, c = col();
+    const f = fit => x => { const z = MLS.legendre((2 * x - 40) / 40, CURVE_DEG).slice(1).map((v, j) => (v - D.st.mu[j]) / D.st.sd[j]); return z.reduce((s, v, j) => s + v * fit.b[j], fit.intercept); };
+    const yd = MLS.niceDomain(MLS.stat.min(D.y), MLS.stat.max(D.y), 0.2);
+    Pl.setX(0, 40); Pl.setY(yd[0], yd[1]);
+    Pl.draw(Pl => {
+      Pl.fn(wageF, { color: c.tru, width: 2.2, dash: '7 5' });
+      Pl.fn(f(P.ols), { color: c.mu, width: 1.6, dash: '3 3', samples: 400 });
+      Pl.fn(f(CUR.f), { color: c.ink, width: 2.8, samples: 400 });
+      Pl.points(D.tr.map(i => ({ x: D.x[i], y: D.y[i] })), { color: c.tr, r: 4.2 });
+      Pl.points(D.te.map(i => ({ x: D.x[i], y: D.y[i] })), { color: c.te, shape: 'square', r: 4.2 });
+    });
+    figFit.legend([{ label: 'Training set (' + D.tr.length + ')', color: c.tr }, { label: 'Test (hold-out) set (' + D.te.length + ')', color: c.te, shape: 'square' }, { label: 'Fit at λ = ' + lamTxt(CUR.lam), color: c.ink, line: true, width: 2.8 }, { label: 'OLS (λ = 0)', color: c.mu, line: true, dash: '3 3' }, { label: 'True relationship', color: c.tru, line: true, dash: '7 5' }]);
+    figFit.caption('A degree-12 polynomial with OLS wiggles through the noise. The penalty keeps the same 12 powers but forces small coefficients, so the curve is smooth.');
+  }
+  function drawPath() {
+    const Pl = figPath.plot, c = col(), rc = relColors();
+    const all = P.coefs.flat().concat(P.ols.b, D.betaStd || []), m = Math.max(...all.map(Math.abs)) * 1.12 || 1, yd = [-m, m];
+    Pl.setX(P.uOLS - 0.3, P.uHi); Pl.setY(yd[0], yd[1]);
+    const colOf = j => (D.beta ? (j < D.nRel ? rc[j] : c.mu) : rc[j % rc.length]);
+    Pl.crosshair(D.names.map((nm, j) => ({ name: nm, color: colOf(j), pts: P.lg.map((l, g) => [l, P.coefs[g][j]]) })).slice(0, 12), v => (v < P.uLo ? 'λ = 0 (OLS)' : 'λ = ' + lamTxt(Math.pow(10, v))), v => F(v, 3));
+    Pl.draw(Pl => {
+      Pl.hline(0, { color: c.ink, width: 1 });
+      lamAxis(Pl, yd, c);
+      D.names.forEach((nm, j) => {
+        const irr = D.beta && j >= D.nRel, colr = colOf(j);
+        Pl.segment(P.uOLS, P.ols.b[j], P.uLo, P.coefs[NL - 1][j], { color: colr, width: 1, dash: '2 3', opacity: 0.7 });
+        Pl.line(P.lg.map((l, g) => [l, P.coefs[g][j]]), { color: colr, width: irr ? 1.1 : 2.2, opacity: irr ? 0.7 : 1 });
+      });
+      Pl.points(P.ols.b.map((v, j) => ({ x: P.uOLS, y: v, j })), { color: d => colOf(d.j), r: 3.6, tip: d => '<b>' + MLS.esc(D.names[d.j]) + '</b><br>OLS: ' + F(P.ols.b[d.j], 3) });
+      markLines(Pl, yd, c);
+    });
+    const leg = D.beta ? REL.map((v, j) => ({ label: v.label.replace(/ \(.*\)/, ''), color: rc[j], line: true })).concat([{ label: 'Useless variables', color: c.mu, line: true, width: 1.2 }]) : [{ label: 'Each line: one power of experience', color: rc[0], line: true }];
+    figPath.legend(leg);
+    figPath.caption('Each line is one coefficient (effect of a one-standard-deviation change). The dots on the left are OLS (λ = 0). Read the chart from left to right: as λ grows, ' + (P.m === 'ridge' ? 'ridge shrinks all coefficients together; they approach zero but never reach it.' : P.m === 'lasso' ? 'the lasso pushes coefficients to exactly zero one after another; the last ones left are the strongest predictors.' : 'the elastic net (α = ' + F(S.alpha, 2) + ') drops variables like the lasso but keeps correlated ones together longer.') + ' Click anywhere to set λ.');
+  }
+  function drawErr() {
+    const Pl = figErr.plot, c = col();
+    const vals = P.trE.concat(P.teE, P.cv, [P.olsTe, P.olsTr, P.cvOLS]).filter(Number.isFinite);
+    const top = Math.min(Math.max(...vals), 2.5 * Math.min(...P.teE.concat(P.cv))) * 1.15, bot = Math.max(0, Math.min(...vals) * 0.85), yd = [bot, top];
+    Pl.setX(P.uOLS - 0.3, P.uHi); Pl.setY(bot, top);
+    const ln = arr => P.lg.map((l, g) => [l, arr[g]]);
+    Pl.crosshair([{ name: 'Training set', color: c.tr, pts: ln(P.trE) }, { name: 'Test (hold-out) set', color: c.te, pts: ln(P.teE) }, { name: 'CV (validation folds)', color: c.cv, pts: ln(P.cv) }], v => (v < P.uLo ? 'λ = 0 (OLS)' : 'λ = ' + lamTxt(Math.pow(10, v))), v => F(v, 2));
+    Pl.draw(Pl => {
+      const band = P.lg.map((l, g) => [l, P.cv[g] + P.cvSE[g]]).concat(P.lg.map((l, g) => [l, P.cv[g] - P.cvSE[g]]).reverse());
+      Pl.node('path', { d: 'M' + band.map(p => Pl.sx(p[0]).toFixed(1) + ',' + Pl.sy(Math.max(bot, Math.min(top, p[1]))).toFixed(1)).join('L') + 'Z', fill: MLS.rgba(c.cv, 0.14), stroke: 'none' }, Pl.layer);
+      lamAxis(Pl, yd, c);
+      [[P.trE, P.olsTr, c.tr], [P.teE, P.olsTe, c.te], [P.cv, P.cvOLS, c.cv]].forEach(([arr, o, colr]) => { Pl.segment(P.uOLS, o, P.uLo, arr[NL - 1], { color: colr, width: 1.2, dash: '2 3' }); Pl.line(ln(arr), { color: colr, width: 2.4 }); Pl.points([{ x: P.uOLS, y: o }], { color: colr, r: 4.5 }); });
+      Pl.segment(P.uOLS, P.cvOLS - P.seOLS, P.uOLS, P.cvOLS + P.seOLS, { color: c.cv, width: 1.6 });
+      markLines(Pl, yd, c);
+      /* direct labels at the right end */
+      const xr = P.uHi;
+      [[P.trE[0], 'training set', c.tr], [P.teE[0], 'test (hold-out) set', c.te], [P.cv[0], 'CV', c.cv]].forEach(([v, t, colr], i) => Pl.text(xr, Math.min(v, top), t, { anchor: 'end', dx: -4, dy: -6 - 12 * i, size: 11.5, weight: 700, color: colr }));
+    });
+    figErr.legend([{ label: 'Training set RMSE', color: c.tr, line: true }, { label: 'Test (hold-out) set RMSE', color: c.te, line: true }, { label: 'Cross-validation RMSE ± 1 SE (validation folds)', color: c.cv, line: true }, { label: 'Best λ by CV', color: c.cv, line: true, dash: '6 4' }, { label: '1-SE rule λ', color: c.cv, line: true, dash: '2 4' }, { label: 'λ now', color: c.ink, line: true, width: 2.2 }]);
+    figErr.caption('How to read it: the <b>training error</b> (blue) always rises with λ, because the penalty stops the model from fitting the training data as closely as OLS. The <b>test error</b> (orange) usually falls first, because shrinking removes noise, and then rises, because too much shrinking removes real effects. We cannot use the test set to choose λ, so we use the <b>cross-validation error</b> (purple), computed only from the training set (4 folds, each in turn the validation fold). Its lowest point is the "best λ by CV". The 1-SE rule picks a larger λ (a simpler model) whose CV error is within one standard error of the best. The dots on the left are OLS (λ = 0). Click to set λ.');
+  }
+
+  /* lesson figure: why the lasso gives exact zeros */
+  const figGeo = MLS.figure($('figGeo'), {
+    title: 'Why the lasso gives exact zeros', help: 'figgeo', file: 'regularization-geometry',
+    plot: { aspect: 0.62, square: true, margin: { l: 50, b: 44 }, x: { label: 'β₁' }, y: { label: 'β₂' } }
+  });
+  function drawGeo() {
+    const Pl = figGeo.plot, c = col(), bh = [1.6, 0.55], A = [[1, 0.55], [0.55, 1]], tB = 1;
+    const q = (b1, b2) => { const d1 = b1 - bh[0], d2 = b2 - bh[1]; return A[0][0] * d1 * d1 + 2 * A[0][1] * d1 * d2 + A[1][1] * d2 * d2; };
+    let bl = null, br = null;
+    for (let k = 0; k < 4000; k++) {
+      const th = 2 * Math.PI * k / 4000, cx = Math.cos(th), sy = Math.sin(th);
+      const r = [tB * cx, tB * sy], s = Math.abs(cx) + Math.abs(sy), l = [tB * cx / s, tB * sy / s];
+      if (!br || q(...r) < q(...br)) br = r; if (!bl || q(...l) < q(...bl)) bl = l;
+    }
+    Pl.setX(-1.4, 2.4); Pl.setY(-1.4, 2.4);
+    Pl.draw(Pl => {
+      Pl.hline(0, { color: c.mu, width: 1 }); Pl.vline(0, { color: c.mu, width: 1 });
+      [q(...bl), q(...br), 0.15, 1.6].forEach((lev, i) => {
+        const pts = []; for (let k = 0; k <= 200; k++) { const th = 2 * Math.PI * k / 200, u = [Math.cos(th), Math.sin(th)], qq = A[0][0] * u[0] * u[0] + 2 * A[0][1] * u[0] * u[1] + A[1][1] * u[1] * u[1], rr = Math.sqrt(lev / qq); pts.push([bh[0] + rr * u[0], bh[1] + rr * u[1]]); }
+        Pl.line(pts, { color: c.ink, width: i < 2 ? 1.5 : 1, opacity: i < 2 ? 0.9 : 0.4, dash: i < 2 ? null : '3 3' });
+      });
+      Pl.line([[tB, 0], [0, tB], [-tB, 0], [0, -tB], [tB, 0]], { color: c.te, width: 2.4 });
+      const circ = []; for (let k = 0; k <= 200; k++) circ.push([tB * Math.cos(2 * Math.PI * k / 200), tB * Math.sin(2 * Math.PI * k / 200)]);
+      Pl.line(circ, { color: c.tr, width: 2.4 });
+      Pl.points([{ x: bh[0], y: bh[1] }], { color: c.ink, shape: 'cross', r: 6 });
+      Pl.points([{ x: bl[0], y: bl[1] }], { color: c.te, shape: 'square', r: 6 });
+      Pl.points([{ x: br[0], y: br[1] }], { color: c.tr, r: 6 });
+      Pl.text(bh[0], bh[1], 'OLS', { dx: 8, dy: -8, size: 12 });
+      Pl.text(bl[0], bl[1], 'lasso: β₂ = 0', { dx: 8, dy: 16, size: 12, color: c.te });
+      Pl.text(br[0], br[1], 'ridge', { dx: -6, dy: -10, anchor: 'end', size: 12, color: c.tr });
+    });
+    figGeo.legend([{ label: 'Lasso constraint |β₁| + |β₂| ≤ t', color: c.te, line: true }, { label: 'Ridge constraint β₁² + β₂² ≤ t²', color: c.tr, line: true }, { label: 'Contours of the squared errors around OLS', color: c.ink, line: true, width: 1.2 }]);
+    figGeo.caption('The penalized solution is where the smallest contour of the squared errors touches the constraint. The diamond has corners on the axes, so the touching point is often a corner: one coefficient is exactly zero. The circle has no corners, so ridge shrinks both but keeps both.');
+  }
+
+  /* ------------------------------------------------------------------
+     controls
+     ------------------------------------------------------------------ */
+  function syncUI() {
+    if (!S.adv) { S.prob = 'many'; if (S.meth === 'enet') S.meth = 'lasso'; }
+    MLS.$$('[data-prob]').forEach(b => b.setAttribute('aria-pressed', String(b.dataset.prob === S.prob)));
+    MLS.$$('[data-meth]').forEach(b => b.setAttribute('aria-pressed', String(b.dataset.meth === S.meth)));
+    $('advanced').checked = S.adv; $('probRow').hidden = !S.adv; $('enetBtn').hidden = !S.adv;
+    $('n').value = S.n[S.prob]; $('nVal').textContent = S.n[S.prob];
+    $('irrRow').hidden = S.prob !== 'many'; $('irr').value = S.irr; $('irrVal').textContent = S.irr;
+    $('noise').value = S.noise; $('noiseVal').textContent = F(S.noise, 1) + '×'; $('seed').value = S.seed;
+    $('alphaRow').hidden = S.meth !== 'enet'; $('alpha').value = S.alpha; $('alphaVal').textContent = F(S.alpha, 2);
+    $('lam').value = S.lamPos[P.m] || 0; $('lamVal').textContent = CUR.lam <= 0 ? '0 (OLS)' : lamTxt(CUR.lam);
+    $('methNote').innerHTML = { ridge: '<b>Ridge</b>: penalty on the sum of squared coefficients.', lasso: '<b>Lasso</b>: penalty on the sum of absolute coefficients; some become exactly zero.', enet: '<b>Elastic net</b>: a mix of the two penalties.' }[S.meth] +
+      ' The variables are standardized on the training set. λ is chosen by 4-fold cross-validation on the training set.';
+    $('dataNote').innerHTML = S.prob === 'many'
+      ? 'Flat prices (k€) with <b>7 useful</b> variables and <b>' + S.irr + ' useless</b> ones (no effect on the price). <b>' + D.tr.length + '</b> flats in the training set (4 folds for CV) and <b>' + D.te.length + '</b> in the test (hold-out) set.'
+      : 'Hourly wages and experience (the true profile is a quadratic), fitted with a polynomial of degree 12. <b>' + D.tr.length + '</b> training and <b>' + D.te.length + '</b> test (hold-out) observations.';
+  }
+  function refresh(rebuild) {
+    if (!S.adv) { S.prob = 'many'; if (S.meth === 'enet') S.meth = 'lasso'; }
+    if (rebuild !== false) { buildData(); buildPath(); }
+    current(); syncUI(); updateStats(); drawCoef(); drawFitCurve(); drawPath(); drawErr();
+    [figCoef, figFit, figPath, figErr].forEach(f => f.refreshTable());
+    if (ch) ch.check();
+    MLS.state.save();
+  }
+  const light = () => refresh(false);
+  const repath = () => { buildPath(); light(); };
+  MLS.$$('[data-prob]').forEach(b => b.onclick = () => { S.prob = b.dataset.prob; S.lamPos = { ridge: 0, lasso: 0, enet: 0 }; refresh(); });
+  MLS.$$('[data-meth]').forEach(b => b.onclick = () => { S.meth = b.dataset.meth; repath(); });
+  $('advanced').onchange = e => { S.adv = e.target.checked; refresh(); };
+  $('n').oninput = e => { S.n[S.prob] = +e.target.value; refresh(); };
+  $('irr').oninput = e => { S.irr = +e.target.value; refresh(); };
+  $('noise').oninput = e => { S.noise = +e.target.value; refresh(); };
+  $('seed').onchange = e => { S.seed = Math.max(1, Math.round(+e.target.value) || 1); refresh(); };
+  $('newSeed').onclick = () => { S.seed = MLS.newSeed(); refresh(); };
+  $('alpha').oninput = e => { S.alpha = +e.target.value; repath(); };
+  $('lam').oninput = e => { S.lamPos[P.m] = +e.target.value; light(); };
+  $('useOLS').onclick = () => { S.lamPos[P.m] = 0; light(); };
+  $('useMin').onclick = () => { S.lamPos[P.m] = P.olsBest ? 0 : posOfIdx(P.iMin); light(); };
+  $('use1se').onclick = () => { S.lamPos[P.m] = posOfIdx(P.i1); light(); };
+
+  /* ------------------------------------------------------------------
+     help
+     ------------------------------------------------------------------ */
+  MLS.registerHelp({
+    problem: { title: 'Data', html: 'Simulated flat prices: 7 variables really affect the price (the true values are in the table), and a chosen number of useless variables have no effect at all. 20% of the flats form the test (hold-out) set; the rest are the training set. In the advanced options, a second problem fits a wage profile with a degree-12 polynomial.' },
+    n: { title: 'Number of flats', html: 'All observations; 80% form the training set and 20% the test (hold-out) set. With few flats relative to the number of variables, OLS overfits and the penalty helps most. With many flats OLS is fine and the best λ is small.' },
+    irr: { title: 'Useless variables', html: 'Variables with a true coefficient of zero: they do not affect the price. OLS still estimates a (noisy) coefficient for each; the lasso can drop them. The first one, the length of the ad text, is correlated with floor area, which makes it look useful.' },
+    noise: { title: 'Noise', html: 'Scales the part of the price that the variables cannot explain. More noise: OLS coefficients are noisier and more shrinkage pays off.' },
+    seed: { title: 'Random seed', html: 'Fixes the data, the split into training and test sets, and the cross-validation folds. The dice draws a new sample: watch how the lasso\'s choice of variables changes.' },
+    advanced: { title: 'Advanced options', html: 'Adds the <b>elastic net</b> (a mix of ridge and lasso) and a second problem: a <b>wiggly curve</b>, where a degree-12 polynomial fitted by OLS overfits a wage profile and the penalty smooths it.' },
+    method: { title: 'Ridge and Lasso', html: 'Both minimize the sum of squared errors <b>plus a penalty</b> on the size of the coefficients. <b>Ridge</b> penalizes the sum of squared coefficients and shrinks them all proportionally. <b>Lasso</b> penalizes the sum of absolute coefficients and sets the weakest exactly to zero. With λ = 0 there is no penalty: both are OLS.' },
+    alpha: { title: 'Elastic net mix α', html: 'The weight of the lasso penalty in the elastic net: α = 1 is the lasso, α = 0 is ridge.' },
+    lambda: { title: 'Penalty λ', html: 'How strongly large coefficients are penalized. <b>λ = 0 (far left) is OLS.</b> Moving right, λ grows: the slider steps through λ values that grow by equal percentages (0.001, 0.01, 0.1, 1, 10, 100 ...), because the interesting range covers several powers of ten. The value of λ is shown next to the label. The buttons jump to OLS, to the λ with the lowest cross-validation error, and to the larger λ of the 1-SE rule.' },
+    coeftable: { title: 'Coefficient table', html: 'For each variable: the true value used to generate the data, the OLS estimate (λ = 0) and the current estimate. Units: k€ per unit of the variable (per m², per room, ...), as in an ordinary regression table. "0 (dropped)" means the lasso has removed the variable.' },
+    st_lam: { title: 'Penalty λ', html: 'The current value of λ in the objective (1/2n)·SSR + λ·penalty, with standardized variables. 0 means OLS.' },
+    st_nz: { title: 'Variables kept', html: 'How many coefficients are not zero. Ridge and OLS keep all of them; the lasso drops some. For the flats: how many of the 7 useful variables are kept, and how many useless ones slip in.' },
+    st_train: { title: 'Training set RMSE', html: 'Prediction error on the flats used to estimate the model. It always rises with λ.' },
+    st_test: { title: 'Test (hold-out) RMSE', html: 'Prediction error on the test (hold-out) set: flats never used for estimation or for choosing λ. Compared with OLS.' },
+    st_cv: { title: 'Best λ by cross-validation', html: 'The λ with the lowest 4-fold cross-validation error on the training set, and the larger λ chosen by the 1-SE rule (the simplest model whose CV error is within one standard error of the lowest).' },
+    figpath: { title: 'Coefficient paths', html: 'Each line is one coefficient as λ grows from left to right. The dots at the far left are OLS (λ = 0). Coloured lines: the 7 useful variables; grey: useless variables. Vertical lines: <b>λ now</b> (black), <b>best λ by CV</b> (purple dashed), <b>1-SE rule</b> (purple dotted). Coefficients are in standardized units (effect of one standard deviation) so that all variables fit on one scale. Click to set λ.' },
+    figerr: { title: 'Prediction error for every λ', html: 'For every λ: the error on the training set (blue), on the test (hold-out) set (orange), and the 4-fold cross-validation error (purple, with a ±1 standard-error band), computed only from the training set. The dots at the left are OLS. The purple dashed line marks the λ with the lowest CV error, the dotted line the 1-SE rule, the black line the current λ.' },
+    figcoef: { title: 'Coefficients chart', html: 'Bars: current estimates. Hollow circles: OLS (λ = 0). Green diamonds: true values. Good regularization moves the bars from the noisy OLS circles towards the diamonds, and sets the useless ones to zero. Standardized units (effect of one standard deviation) so that all variables are comparable.' },
+    figfit: { title: 'Fitted curve', html: 'Training set (blue) and test (hold-out) set (orange) observations, the degree-12 OLS fit (grey dotted), the penalized fit (black) and the true wage profile (green dashed).' },
+    figgeo: { title: 'Geometry of the penalties', html: 'With two coefficients: the ellipses are combinations with equal squared errors around the OLS estimate. The penalized estimate is the point inside the constraint region (diamond for lasso, circle for ridge) on the lowest ellipse.' }
+  });
+
+  /* ------------------------------------------------------------------
+     challenges
+     ------------------------------------------------------------------ */
+  function setup(o) { Object.assign(S, o); S.lamPos = Object.assign({ ridge: 0, lasso: 0, enet: 0 }, o.lamPos || {}); MLS.pickTab('sim'); refresh(); window.scrollTo({ top: 0, behavior: 'smooth' }); }
+  const ch = MLS.challenges($('challenges'), META.id, [
+    { type: 'predict', q: 'Ridge with a very large λ (far right). The coefficients will be...',
+      options: ['all exactly zero', 'very small but not exactly zero', 'equal to the OLS coefficients', 'all equal to each other'], answer: 1,
+      explain: 'The ridge penalty grows with the square of each coefficient, so its pull towards zero weakens as a coefficient gets small: ridge shrinks proportionally and reaches exactly zero only in the limit. The lasso penalty keeps pulling with the same force, which is why it reaches zero.',
+      tryIt: () => setup({ prob: 'many', meth: 'ridge', lamPos: { ridge: 98 } }) },
+    { type: 'predict', q: 'Lasso on the flats: as λ grows from zero, which coefficients reach zero first?',
+      options: ['The useless variables and the weakest useful ones', 'The strongest variables, such as floor area', 'All at the same λ'], answer: 0,
+      explain: 'The lasso drops a variable when its contribution to the fit is smaller than the penalty λ. Useless variables only fit noise, so they go first; floor area, the strongest predictor, survives the longest.',
+      tryIt: () => setup({ prob: 'many', meth: 'lasso', lamPos: { lasso: 0 } }) },
+    { type: 'predict', q: 'With 400 flats instead of 50, the λ chosen by cross-validation will most likely be...',
+      options: ['larger', 'about the same', 'smaller, because OLS is now precise and needs little shrinkage'], answer: 2,
+      explain: 'With many observations per coefficient the OLS estimates have little variance, so there is little to gain from shrinking them, and the bias from shrinkage costs more than it saves. Regularization matters most when data are scarce relative to the number of variables.',
+      tryIt: () => setup({ prob: 'many', meth: 'lasso', n: { many: 50, curve: 30 } }) },
+    { type: 'predict', q: 'Floor area and number of rooms are strongly correlated. Compared with ridge, the lasso will tend to...',
+      options: ['keep both with equal coefficients', 'keep one of them and shrink the other more, possibly to zero', 'drop both'], answer: 1,
+      explain: 'For the lasso, splitting an effect between two correlated variables costs more penalty than putting it on one, so it tends to pick one. Ridge prefers to share the effect.' },
+    { type: 'task', q: 'Flats: find a λ where the lasso keeps all 7 useful variables and drops every useless one.', hint: 'Start from the best λ by CV and move λ slowly to the right, watching the table.',
+      check: () => S.prob === 'many' && S.meth === 'lasso' && CUR && CUR.lam > 0 && CUR.relKept === 7 && CUR.irrKept === 0 },
+    { type: 'task', q: 'Make OLS impossible and show that the lasso still works: more coefficients than flats in the training set.', hint: 'Lower the number of flats and add many useless variables, then set λ above 0.',
+      check: () => S.prob === 'many' && D && !D.olsOK && S.meth === 'lasso' && CUR && CUR.lam > 0 },
+    { type: 'task', q: 'Ridge: use the best λ by CV and check whether it beats OLS on the test (hold-out) set.', hint: 'Choose Ridge and press "Best λ by CV".',
+      check: () => S.meth === 'ridge' && P && CUR && Math.abs(CUR.lam - bestLam()) <= 1e-9 + 0.05 * bestLam() }
+  ]);
+
+  /* ------------------------------------------------------------------
+     state
+     ------------------------------------------------------------------ */
+  MLS.moduleBar({ id: META.id, title: META.title, section: META.sectionTitle, level: META.level },
+    { tabs: [{ id: 'sim', label: 'Simulation' }, { id: 'lesson', label: 'Lesson' }, { id: 'challenges', label: 'Challenges' }, { id: 'real', label: 'On real data' }] });
+  MLS.state.init({
+    id: META.id,
+    get: () => ({ adv: S.adv, prob: S.prob, n: S.n, irr: S.irr, noise: S.noise, seed: S.seed, meth: S.meth, alpha: S.alpha, lamPos: S.lamPos }),
+    set: o => {
+      if (typeof o.adv === 'boolean') S.adv = o.adv;
+      if (['many', 'curve'].includes(o.prob)) S.prob = o.prob;
+      if (['ridge', 'lasso', 'enet'].includes(o.meth)) S.meth = o.meth;
+      ['irr', 'noise', 'seed', 'alpha'].forEach(k => { if (Number.isFinite(o[k])) S[k] = o[k]; });
+      if (o.n) ['many', 'curve'].forEach(k => { if (Number.isFinite(o.n[k])) S.n[k] = o.n[k]; });
+      if (o.lamPos) ['ridge', 'lasso', 'enet'].forEach(k => { if (Number.isFinite(o.lamPos[k])) S.lamPos[k] = o.lamPos[k]; });
+    }
+  });
+  $('fourCast').href = MLS.APP.fourCastUrl;
+  window.__mls = { S, get D() { return D; }, get P() { return P; }, get CUR() { return CUR; } };
+  document.addEventListener('mls:theme', () => { light(); drawGeo(); });
+  refresh(); drawGeo();
+})();
+</script>
+</body>
+</html>

@@ -1,0 +1,314 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Naive Bayes | 4MLSim</title>
+  <meta name="theme-color" content="#1B2340">
+  <link rel="manifest" href="../manifest.json">
+  <link rel="icon" type="image/svg+xml" href="../assets/img/icon.svg">
+  <link rel="apple-touch-icon" href="../assets/img/apple-touch-icon.png">
+  <link rel="stylesheet" href="../assets/vendor/temml.css">
+  <link rel="stylesheet" href="../assets/css/4mlsim.css">
+  <script src="../assets/vendor/temml.min.js"></script>
+  <script src="../assets/js/core.js"></script>
+  <script src="../assets/js/stats.js"></script>
+  <script src="../assets/js/plot.js"></script>
+  <script src="../assets/js/modules.js"></script>
+  <script src="../assets/js/core-ml.js"></script>
+  <script src="../assets/js/classify-ui.js"></script>
+</head>
+<body>
+<div class="page">
+  <header id="mlsHeader" data-variant="compact"></header>
+  <div class="mod-top" id="mlsTop"><div id="mlsModBar"></div><div id="mlsTabs"></div></div>
+
+  <div class="intro-box" id="mlsIntro">
+    <h3>What this module shows</h3>
+    <div class="intro-cols">
+      <div>
+        <p><b>Naive Bayes</b> classifies with <b>Bayes' rule</b>: start from how common each class is (the <b>prior</b>), multiply by how likely the observed inputs are in that class (the <b>likelihoods</b>), and compare.</p>
+        <p>It is "naive" because it treats the inputs as <b>independent within each class</b>, so the likelihood of all inputs is simply the product of one bell curve per input. Often wrong, yet the classifications are often good.</p>
+      </div>
+      <div>
+        <p><b>How to use it</b></p>
+        <ol>
+          <li>Click on the chart to place a new observation (the star) and follow Bayes' rule in the table.</li>
+          <li>See the bell curve of each input for each class in the two small charts.</li>
+          <li>Switch to the correlated firm data: the naive assumption breaks, compare with the logit.</li>
+          <li>Click any <b>?</b> for help, then try the <b>Challenges</b>.</li>
+        </ol>
+      </div>
+    </div>
+  </div>
+
+  <!-- ===================== SIMULATION ===================== -->
+  <section data-panel="sim">
+    <div class="mod-grid">
+      <aside class="side" aria-label="Controls">
+        <div class="card">
+          <div class="card-head"><h3>1. Data<button type="button" class="help" data-help="data">?</button></h3></div>
+          <select id="ds" aria-label="Data set">
+            <option value="banks">Bank failures (2 classes)</option>
+            <option value="cycle">Recession / normal / growth (3 classes)</option>
+            <option value="firms">Firms: two related ratios (2 classes)</option>
+          </select>
+          <div class="field-row"><label for="n">Observations<button type="button" class="help" data-help="n">?</button></label><output id="nVal"></output></div>
+          <input type="range" id="n" min="40" max="400" step="20" value="200">
+          <div class="field-row"><label for="seed">Random seed<button type="button" class="help" data-help="seed">?</button></label></div>
+          <div class="inline-inputs"><input type="number" id="seed" min="1" max="99999" step="1" value="1" aria-label="Random seed"><button type="button" class="btn-ghost btn-icon" id="newSeed" title="New random data" style="flex:0 0 auto">&#127922;</button></div>
+          <p class="note">Click on the chart to move the star (a new observation).</p>
+        </div>
+        <div class="card">
+          <div class="card-head"><h3>2. Priors<button type="button" class="help" data-help="priors">?</button></h3></div>
+          <div class="seg full" role="group" aria-label="Priors"><button type="button" data-prior="data">From the training set</button><button type="button" data-prior="equal">Equal</button></div>
+          <p class="note" id="priorNote"></p>
+        </div>
+      </aside>
+
+      <main class="main">
+        <div class="story" id="story"></div>
+        <div class="stat-grid" id="stats" style="margin-top:12px"></div>
+        <div id="statusLine" class="status-line" style="margin:10px 0"></div>
+        <div class="fig-grid">
+          <div id="figMap" class="fig-wide"></div>
+          <div class="card fig-wide" id="bayesCard"></div>
+          <div id="figX1"></div>
+          <div id="figX2"></div>
+        </div>
+      </main>
+    </div>
+  </section>
+
+  <!-- ===================== LESSON ===================== -->
+  <section data-panel="lesson" class="card lesson" hidden>
+    <div id="mlsMathCtl"></div>
+    <p class="lvl-only-intuition note" style="margin-bottom:8px">Showing the intuition only. Choose <b>Formulas</b> or <b>Deep dive</b> above to add the mathematics.</p>
+
+    <h4>Bayes' rule in words</h4>
+    <p>Before looking at a bank's ratios, how likely is it to fail? About 30% of the banks in the training set failed: that is the <b>prior</b>. Then we look at the evidence: how typical are this bank's ratios for failed banks, and for healthy banks? Those are the <b>likelihoods</b>. Bayes' rule combines them:</p>
+    <p style="text-align:center"><b>posterior &prop; prior &times; likelihood</b></p>
+    <p>For each class, multiply the prior by the likelihoods, then divide by the sum over the classes so that the posteriors add up to 1. The class with the largest posterior wins.</p>
+    <div class="math-block lvl-math"><div class="mb-title">Bayes' rule with the naive assumption</div>
+      <div class="tex-block">P(c \mid x_1, x_2) = \frac{P(c)\; p(x_1 \mid c)\; p(x_2 \mid c)}{\sum_{c'} P(c')\; p(x_1 \mid c')\; p(x_2 \mid c')}</div>
+      <div class="tex-block">p(x_j \mid c) = \frac{1}{\sqrt{2\pi\sigma_{jc}^2}}\, \exp\!\Bigl(-\frac{(x_j - \mu_{jc})^2}{2\sigma_{jc}^2}\Bigr) \qquad \text{(Gaussian naive Bayes)}</div>
+      <p class="note">μ<sub>jc</sub> and σ²<sub>jc</sub>: the mean and the variance of input j among the training observations of class c.</p>
+    </div>
+
+    <h4>Why "naive"?</h4>
+    <p>The correct likelihood of both inputs together would need their joint distribution, including how they move together. Naive Bayes assumes the inputs are <b>independent within each class</b>, so it simply multiplies one bell curve per input. On the chart this shows as ellipses that are never tilted. When the inputs are related (profit margin and return on assets), the same evidence is counted twice and the probabilities become too extreme, too close to 0 or 1.</p>
+
+    <h4>Why it still works</h4>
+    <p>To classify we only need the <b>largest</b> posterior, not its exact value. Even when the probabilities are too extreme, the ranking of the classes is often right, so the accuracy stays close to that of better models such as the logit. Naive Bayes is also very fast, needs little data and copes with many inputs: the classic spam filter is a naive Bayes over thousands of words.</p>
+
+    <h4>The priors</h4>
+    <p>With priors from the training set, a rare class needs strong evidence to win. With <b>equal priors</b> every class starts at the same level, so the rare class (failed banks) is predicted more often: more failures found, more false alarms.</p>
+
+    <div class="math-block deep lvl-deep"><div class="mb-title">Deep dive</div>
+      <p><b>Discriminative and generative.</b> The logit models P(class | x) directly (discriminative). Naive Bayes models how the inputs are generated in each class, p(x | class), and the priors (generative). With few observations naive Bayes often wins; with many, the logit catches up (Ng and Jordan, 2002).</p>
+      <p><b>Variance floor.</b> As in scikit-learn's GaussianNB, a tiny amount (10<sup>−9</sup> &times; the largest variance of the inputs) is added to each variance, to avoid dividing by zero.</p>
+      <p><b>Categorical inputs.</b> For words or categories, the likelihood is a share in the training data. A category never seen in a class would give a likelihood of 0 and wipe out all other evidence; Laplace smoothing (add 1 to every count) prevents this.</p>
+      <p class="note">References: Ng and Jordan (2002), "On discriminative vs. generative classifiers: a comparison of logistic regression and naive Bayes", <i>NIPS</i> 14; Domingos and Pazzani (1997), "On the optimality of the simple Bayesian classifier under zero-one loss", <i>Machine Learning</i> 29; Hastie, Tibshirani and Friedman (2009), <i>The Elements of Statistical Learning</i>, §6.6.3.</p>
+    </div>
+  </section>
+
+  <!-- ===================== CHALLENGES ===================== -->
+  <section data-panel="challenges" class="card" hidden>
+    <div class="card-head"><h3>Challenges</h3><span class="card-sub">Answer the "predict first" questions before testing them in the Simulation tab.</span></div>
+    <div id="challenges"></div>
+  </section>
+
+  <!-- ===================== REAL DATA ===================== -->
+  <section data-panel="real" class="card lesson" hidden>
+    <h4>From the simulation to real data</h4>
+    <ul>
+      <li><b>Text</b>: classifying news, central-bank statements or customer complaints by their words (multinomial naive Bayes); spam filters.</li>
+      <li><b>A quick baseline</b>: naive Bayes trains in an instant; if a complex model cannot beat it, the complex model is not worth it.</li>
+      <li>Do not trust its probabilities when the inputs are related: use it to rank or classify, or calibrate the probabilities first (see the ROC, PR &amp; Calibration module).</li>
+      <li>Set the priors deliberately: the share of failed banks in a sample can differ from the share in the population.</li>
+    </ul>
+    <div class="crosslink"><span>&#10140;</span><span><a id="fourCast" target="_blank" rel="noopener"><b>4Cast Lab</b></a> lets you compare classifiers on your own data with the same training and test split.</span></div>
+  </section>
+
+  <footer id="mlsFooter"></footer>
+</div>
+
+<script>
+(function () {
+  'use strict';
+  const MLS = window.MLS, ML = MLS.ml, CL = MLS.cls;
+  const META = MLS.moduleMeta('naive-bayes');
+  const $ = id => document.getElementById(id);
+  const F = MLS.fmt, pct = CL.pct;
+  const DSN = { banks: { n: 200, unit: 'banks', one: 'bank', label: 'Bank failures' }, cycle: { n: 150, unit: 'months', one: 'month', label: 'Recession / normal / growth' }, firms: { n: 200, unit: 'firms', one: 'firm', label: 'Firms: two related ratios' } };
+
+  const S = { ds: 'banks', n: {}, seed: 1, prior: 'data', q: {} };
+  let D = null, R = null;
+  const nObs = () => S.n[S.ds] || DSN[S.ds].n, w = () => DSN[S.ds].unit;
+
+  function makeData() {
+    const g = ML.DATA[S.ds].gen(ML.rng(S.seed), nObs()), test = ML.split(g.X.length, S.seed);
+    const pts = g.X.map((x, i) => ({ x, y: g.y[i], te: test[i], id: i }));
+    D = { pts, names: g.names, classes: g.classes, K: g.classes.length, dom: CL.domain(pts) };
+  }
+  const trainPts = () => D.pts.filter(p => !p.te), testPts = () => D.pts.filter(p => p.te);
+  const argmax = p => { let b = 0; for (let k = 1; k < p.length; k++) if (p[k] > p[b]) b = k; return b; };
+  function compute() {
+    const tr = trainPts(), K = D.K;
+    R = { nb: ML.gnb(tr.map(p => p.x), tr.map(p => p.y), K, { equalPriors: S.prior === 'equal' }) };
+    const sc = ML.scaler(tr.map(p => p.x)), lg = ML.CLS.logit(tr.map(p => sc.t(p.x)), tr.map(p => p.y), K, { degree: 1 });
+    const acc = (f, pts) => pts.filter(p => argmax(f(p.x)) === p.y).length / pts.length;
+    R.accTr = acc(R.nb.proba, tr); R.accTe = acc(R.nb.proba, testPts());
+    R.logTe = acc(x => lg.proba(sc.t(x)), testPts());
+    R.conf = MLS.mean(testPts().map(p => Math.max(...R.nb.proba(p.x))));
+    R.grid = CL.regionGrid(D.dom, R.nb.proba, 90, 66);
+  }
+  const query = () => S.q[S.ds + ':' + S.seed] || (() => { const m = R.nb.mu; return [(m[0][0] + m[1][0]) / 2, (m[0][1] + m[1][1]) / 2]; })();
+
+  function updateText() {
+    const nTr = trainPts().length, nTe = testPts().length, d = DSN[S.ds];
+    const note = { banks: 'Banks described by the debt-to-equity ratio and the Tier 1 capital ratio; about 30% failed.', cycle: 'Months of an economy described by the PMI and the change in unemployment; three classes.', firms: 'Firms described by the profit margin and the return on assets. The two ratios move together within each group, which breaks the naive assumption.' }[S.ds];
+    $('story').innerHTML = '<h3>Data: ' + d.label + '</h3><p>' + note + ' <b>' + nTr + ' ' + w() + ' in the training set (filled), ' + nTe + ' in the test set (rings).</b></p>';
+    const card = MLS.statCard, lastC = D.K - 1;
+    $('stats').innerHTML =
+      card('Accuracy, training set', pct(R.accTr), nTr + ' ' + w(), '', 'st_tr') +
+      card('Accuracy, test set', pct(R.accTe), nTe + ' new ' + w(), '', 'st_te') +
+      card('Accuracy, test set: logit', pct(R.logTe), 'the same data, for comparison', '', 'st_logit') +
+      card('Prior, ' + MLS.esc(D.classes[S.ds === 'cycle' ? 0 : 1]), pct(R.nb.prior[S.ds === 'cycle' ? 0 : 1]), S.prior === 'equal' ? 'equal priors' : 'share in the training set', '', 'priors');
+    let msg, cls = 'status-line';
+    if (S.ds === 'firms') { msg = 'The two ratios are related, so the naive assumption is wrong. Naive Bayes is on average ' + pct(R.conf) + ' sure of its test predictions but right ' + pct(R.accTe) + ' of the time: its probabilities are too extreme. The classifications are still ' + (Math.abs(R.accTe - R.logTe) <= 0.05 ? 'about as good as the logit\'s (' + pct(R.logTe) + ').' : 'different from the logit\'s (' + pct(R.logTe) + ').'); cls += ' bad'; }
+    else { msg = 'Test accuracy ' + pct(R.accTe) + ' (logit ' + pct(R.logTe) + '). On average naive Bayes is ' + pct(R.conf) + ' sure of its test predictions.'; cls += ' ok'; }
+    $('statusLine').textContent = msg; $('statusLine').className = cls;
+    $('priorNote').innerHTML = D.classes.map((c, k) => MLS.esc(c) + ' ' + pct(R.nb.prior[k])).join(', ') + '.';
+  }
+
+  /* main chart */
+  const figMap = MLS.figure($('figMap'), {
+    title: 'The data, the predicted classes and one new observation', help: 'figmap', file: 'naive-bayes-map',
+    plot: { aspect: 0.6, margin: { l: 66, b: 50 }, x: { label: () => D.names[0] }, y: { label: () => D.names[1] }, onClick: (x, y) => { S.q[S.ds + ':' + S.seed] = [+x.toFixed(3), +y.toFixed(3)]; refresh(false); } },
+    data: () => ({ cols: [D.names[0], D.names[1], 'Actual class', 'Predicted class'].concat(D.classes.map(c => 'Posterior ' + c)).concat(['Set']), rows: D.pts.map(p => { const po = R.nb.proba(p.x); return [p.x[0], p.x[1], D.classes[p.y], D.classes[argmax(po)]].concat(po).concat([p.te ? 'test' : 'training']); }) })
+  });
+  function drawMap() {
+    const P = figMap.plot, ink = MLS.color('chart-ink'), mu = MLS.color('chart-muted'), q = query(), nb = R.nb, post = nb.proba(q);
+    P.setX(D.dom.x[0], D.dom.x[1]); P.setY(D.dom.y[0], D.dom.y[1]);
+    P.draw(P => {
+      CL.drawRegions(P, R.grid, D.dom, D.K, null);
+      /* the bell curves of each class seen from above: axis-aligned ellipses at 1 and 2 standard deviations */
+      for (let k = 0; k < D.K; k++) [1, 2].forEach(m => { const pts = []; for (let t = 0; t <= 100; t++) { const a = 2 * Math.PI * t / 100; pts.push([nb.mu[k][0] + m * Math.sqrt(nb.va[k][0]) * Math.cos(a), nb.mu[k][1] + m * Math.sqrt(nb.va[k][1]) * Math.sin(a)]); } P.line(pts, { color: CL.color(k), width: m === 1 ? 2 : 1.3, dash: m === 1 ? null : '5 4', opacity: 0.95 }); });
+      const tip = p => { const po = nb.proba(p.x); return '<b>' + (p.te ? 'Test set' : 'Training set') + '</b><br>' + D.names[0] + ': ' + F(p.x[0], 2) + '<br>' + D.names[1] + ': ' + F(p.x[1], 2) + '<br>Actual: <b>' + MLS.esc(D.classes[p.y]) + '</b><br>' + D.classes.map((c, k) => 'P(' + MLS.esc(c) + ') = ' + F(po[k], 3)).join('<br>'); };
+      P.points(trainPts(), { x: p => p.x[0], y: p => p.x[1], color: p => CL.color(p.y), r: 4.4, opacity: 0.9, tip });
+      P.points(testPts(), { x: p => p.x[0], y: p => p.x[1], color: p => CL.color(p.y), r: 5, hollow: true, tip });
+      P.points(D.classes.map((c, k) => ({ x: nb.mu[k][0], y: nb.mu[k][1], k })), { color: d => CL.color(d.k), shape: 'cross', r: 7, ringColor: ink, tip: d => 'Mean of ' + MLS.esc(D.classes[d.k]) + '<br>' + D.names[0] + ' ' + F(d.x, 2) + '<br>' + D.names[1] + ' ' + F(d.y, 2) });
+      P.points([{ x: q[0], y: q[1] }], { color: CL.color(argmax(post)), shape: 'star', r: 10, ringColor: ink, tip: () => '<b>New observation</b><br>' + D.classes.map((c, k) => 'P(' + MLS.esc(c) + ') = ' + F(post[k], 3)).join('<br>') });
+    });
+    figMap.legend(D.classes.map((c, k) => { const a = D.pts.filter(p => p.y === k); return { label: MLS.esc(c) + ' (' + a.filter(p => !p.te).length + ' training, ' + a.filter(p => p.te).length + ' test)', color: CL.color(k) }; })
+      .concat([{ label: 'filled = training set, ring = test set', color: 'transparent', stroke: mu }, { label: 'Class mean', color: mu, shape: 'cross' }, { label: '1 and 2 standard deviations', color: mu, line: true }, { label: 'New observation (click to move)', color: mu, shape: 'star' }]));
+    figMap.caption('The ellipses show each class\'s two bell curves seen from above. They are never tilted: naive Bayes assumes the inputs are unrelated within each class.' + (S.ds === 'firms' ? ' Here the points clearly form tilted clouds: the assumption is wrong.' : '') + ' Background: the class with the largest posterior.');
+  }
+  /* Bayes' rule for the star, step by step */
+  function drawBayes() {
+    const q = query(), pa = R.nb.parts(q), nb = R.nb, tot = pa.joint.reduce((a, b) => a + b, 0), sci = v => (v === 0 ? '0' : v < 1e-3 ? v.toExponential(2) : F(v, 4));
+    const win = argmax(pa.post);
+    $('bayesCard').innerHTML = '<div class="card-head"><h3>Bayes\' rule for the star' + MLS.helpBtn('bayes') + '</h3><span class="card-sub">' + MLS.esc(D.names[0]) + ' = ' + F(q[0], 2) + ', ' + MLS.esc(D.names[1]) + ' = ' + F(q[1], 2) + '</span></div>' +
+      '<div class="fig-table" style="max-height:none"><table class="tbl"><thead><tr><th>Class</th><th>Prior</th><th>Likelihood of ' + MLS.esc(D.names[0].replace(/ \(.*\)/, '')) + '</th><th>Likelihood of ' + MLS.esc(D.names[1].replace(/ \(.*\)/, '')) + '</th><th>Prior &times; likelihoods</th><th>Posterior</th></tr></thead><tbody>' +
+      D.classes.map((c, k) => '<tr' + (k === win ? ' style="font-weight:800"' : '') + '><td style="white-space:nowrap"><span style="display:inline-block;width:9px;height:9px;border-radius:50%;margin-right:5px;background:' + CL.color(k) + '"></span>' + MLS.esc(c) + '</td><td>' + F(nb.prior[k], 3) + '</td><td>' + sci(pa.like[k][0]) + '</td><td>' + sci(pa.like[k][1]) + '</td><td>' + sci(pa.joint[k]) + '</td><td>' + pct(pa.post[k]) + '</td></tr>').join('') +
+      '</tbody></table></div><p class="note">Posterior = (prior &times; likelihoods) / (sum over the classes' + (tot > 0 ? ' = ' + sci(tot) : '') + '). The class with the largest posterior wins: <b>' + MLS.esc(D.classes[win]) + '</b>. Likelihoods are heights of the bell curves in the two charts below, not probabilities, so they can be larger than 1.</p>';
+  }
+  /* bell curves of one input */
+  function makeFig(j) {
+    return MLS.figure($('figX' + (j + 1)), { title: '&nbsp;', help: 'figx', file: 'naive-bayes-input-' + (j + 1),
+      plot: { aspect: 0.66, margin: { l: 58, b: 50 }, x: { label: () => D.names[j] }, y: { label: 'Height of the bell curve' } },
+      data: () => ({ cols: ['Class', 'Mean', 'Standard deviation'], rows: D.classes.map((c, k) => [c, R.nb.mu[k][j], Math.sqrt(R.nb.va[k][j])]) }) });
+  }
+  const figX = [makeFig(0), makeFig(1)];
+  function drawX(j) {
+    const f = figX[j], P = f.plot, nb = R.nb, q = query(), dom = j === 0 ? D.dom.x : D.dom.y, ink = MLS.color('chart-ink');
+    $('figX' + (j + 1)).querySelector('.figure-title').firstChild.textContent = 'Input ' + (j + 1) + ': ' + D.names[j].replace(/ \(.*\)/, '') + ', one bell curve per class';
+    let top = 0; const curves = D.classes.map((c, k) => { const pts = []; for (let t = 0; t <= 200; t++) { const x = dom[0] + (dom[1] - dom[0]) * t / 200, v = nb.dens(k, j, x); top = Math.max(top, v); pts.push([x, v]); } return pts; });
+    /* histogram of the training observations of each class, scaled to the curve */
+    const B = 16, bw = (dom[1] - dom[0]) / B, tr = trainPts();
+    const hist = D.classes.map((c, k) => { const a = tr.filter(p => p.y === k), h = new Array(B).fill(0); a.forEach(p => { const b = Math.min(B - 1, Math.max(0, Math.floor((p.x[j] - dom[0]) / bw))); h[b] += 1 / (a.length * bw); }); return h; });
+    top = Math.max(top, ...hist.flat());
+    P.setX(dom[0], dom[1]); P.setY(0, top * 1.12);
+    P.draw(P => {
+      hist.forEach((h, k) => h.forEach((v, b) => { if (v) P.rect(dom[0] + b * bw, 0, dom[0] + (b + 1) * bw, v, { fill: MLS.rgba(CL.color(k), 0.18) }); }));
+      curves.forEach((pts, k) => P.line(pts, { color: CL.color(k), width: 2.4 }));
+      P.vline(q[j], { color: ink, width: 1.5, dash: '5 4' });
+      P.points(D.classes.map((c, k) => ({ x: q[j], y: nb.dens(k, j, q[j]), k })), { color: d => CL.color(d.k), r: 5.5, ringColor: ink, tip: d => 'Likelihood of ' + D.names[j] + ' = ' + F(q[j], 2) + '<br>for ' + MLS.esc(D.classes[d.k]) + ': <b>' + F(d.y, 4) + '</b>' });
+      P.crosshair(curves.map((pts, k) => ({ name: D.classes[k], color: CL.color(k), pts })), v => D.names[j].replace(/ \(.*\)/, '') + ' ' + F(v, 2), v => F(v, 4));
+    });
+    f.legend(D.classes.map((c, k) => ({ label: MLS.esc(c) + ': mean ' + F(nb.mu[k][j], 2) + ', st. dev. ' + F(Math.sqrt(nb.va[k][j]), 2), color: CL.color(k), line: true })).concat([{ label: 'Value of the star', color: ink, line: true, dash: '5 4' }]));
+    f.caption('Bars: the training observations of each class. Curves: the normal (bell) curves with the same mean and standard deviation. Their heights at the star are the likelihoods in the table.');
+  }
+
+  function syncUI() {
+    $('ds').value = S.ds; $('n').value = nObs(); $('nVal').textContent = nObs(); $('seed').value = S.seed;
+    MLS.$$('[data-prior]').forEach(b => b.setAttribute('aria-pressed', String(b.dataset.prior === S.prior)));
+  }
+  function refresh(re) { if (re !== false) compute(); syncUI(); updateText(); drawMap(); drawBayes(); drawX(0); drawX(1); figMap.refreshTable(); if (ch) ch.check(); MLS.state.save(); }
+  const full = () => { makeData(); refresh(); };
+  $('ds').onchange = e => { S.ds = e.target.value; full(); };
+  $('n').addEventListener('input', e => ($('nVal').textContent = e.target.value));
+  $('n').onchange = e => { S.n[S.ds] = +e.target.value; full(); };
+  $('seed').onchange = e => { S.seed = Math.max(1, Math.round(+e.target.value) || 1); full(); };
+  $('newSeed').onclick = () => { S.seed = MLS.newSeed(); full(); };
+  MLS.$$('[data-prior]').forEach(b => (b.onclick = () => { S.prior = b.dataset.prior; refresh(); }));
+
+  MLS.registerHelp({
+    data: { title: 'Data', html: '<b>Bank failures</b>: two ratios, failed or healthy. <b>Recession / normal / growth</b>: PMI and change in unemployment, 3 classes. <b>Firms</b>: profit margin and return on assets, which move together within each group, so the naive assumption is wrong. Simulated data; a new seed gives a new sample.' },
+    n: { title: 'Observations', html: '80% form the training set (used to estimate the priors, means and standard deviations), 20% the test set.' },
+    priors: { title: 'Priors', html: 'How likely each class is before looking at the inputs. <b>From the training set</b>: the share of each class (e.g. 30% failed banks). <b>Equal</b>: every class starts equal, so a rare class is predicted more often.' },
+    st_tr: { title: 'Accuracy, training set', html: 'Share of training observations given the correct class by naive Bayes.' },
+    st_te: { title: 'Accuracy, test set', html: 'Share of the test observations (new data) given the correct class.' },
+    st_logit: { title: 'Logit, for comparison', html: 'The test accuracy of a logistic regression on the same training set (multinomial logit for 3 classes). The logit does not assume independent inputs.' },
+    figmap: { title: 'The data and the predicted classes', html: 'Points: the observations (filled = training set, ring = test set). Crosses: the class means. Ellipses: 1 and 2 standard deviations of each class, axis-aligned because of the naive assumption. Background: the class with the largest posterior. Click to move the star.' },
+    bayes: { title: 'Bayes\' rule for the star', html: 'For each class: the prior, the likelihood of each input (the height of its bell curve at the star\'s value), their product, and the posterior (the product divided by the sum over the classes).' },
+    figx: { title: 'One bell curve per class', html: 'For one input: the training observations of each class (bars, scaled to the same area) and the normal curve with their mean and standard deviation. The dashed line is the star\'s value; the dots are the likelihoods used in Bayes\' rule.' }
+  });
+
+  function setup(o) { Object.assign(S, o); MLS.pickTab('sim'); full(); window.scrollTo({ top: 0, behavior: 'smooth' }); }
+  const post1 = () => R && D.K === 2 ? R.nb.proba(query())[1] : NaN;
+  const ch = MLS.challenges($('challenges'), META.id, [
+    { type: 'predict', q: 'Bank failures: you switch from priors from the training set (30% failed) to equal priors (50/50). The model will...',
+      options: ['predict failure for more banks: more failures found, more false alarms', 'predict failure for fewer banks', 'not change'], answer: 0,
+      explain: 'With equal priors the failed class no longer starts at a disadvantage, so weaker evidence is enough. The boundary moves into the healthy cloud.',
+      tryIt: () => setup({ ds: 'banks', prior: 'equal' }) },
+    { type: 'predict', q: 'Prior: failed 0.3, healthy 0.7. For a bank, likelihoods (product of both inputs): 0.02 if failed, 0.01 if healthy. Which class wins?',
+      options: ['Failed: its likelihood is twice as large', 'Healthy: 0.7 × 0.01 = 0.007 beats 0.3 × 0.02 = 0.006', 'A tie'], answer: 1,
+      explain: 'Posterior ∝ prior × likelihood: failed 0.006, healthy 0.007, so P(failed) = 0.006 / 0.013 = 46%. The prior outweighs the evidence here.',
+      tryIt: () => setup({ ds: 'banks', prior: 'data' }) },
+    { type: 'predict', q: 'What exactly is "naive" in naive Bayes?',
+      options: ['It ignores the priors', 'It uses only one input', 'It treats the inputs as independent within each class'], answer: 2,
+      explain: 'The likelihood of all inputs is taken as the product of one curve per input. That is only right if the inputs are unrelated within each class.',
+      tryIt: () => setup({ ds: 'firms' }) },
+    { type: 'predict', q: 'Firms: profit margin and return on assets move together. Naive Bayes counts the same evidence twice. Its probabilities will be...',
+      options: ['too extreme: it is more sure than it should be', 'too close to 50%', 'exactly right'], answer: 0,
+      explain: 'Two related inputs carry much the same information, but naive Bayes multiplies both likelihoods as if they were separate evidence. The status line compares how sure it is with how often it is right.',
+      tryIt: () => setup({ ds: 'firms', prior: 'data' }) },
+    { type: 'task', q: 'Firms data: find a seed where naive Bayes has a test accuracy within 3 points of the logit, despite the wrong assumption.', hint: 'Use the dice or type seeds; compare the second and third tiles.',
+      check: () => R && S.ds === 'firms' && Math.abs(R.accTe - R.logTe) <= 0.03 },
+    { type: 'task', q: 'Bank failures: move the star to a bank for which naive Bayes gives a probability of failure between 40% and 60%.', hint: 'Click between the two clouds; read the posterior in the table.',
+      check: () => S.ds === 'banks' && post1() >= 0.4 && post1() <= 0.6 && !!S.q[S.ds + ':' + S.seed] }
+  ]);
+
+  MLS.moduleBar({ id: META.id, title: META.title, section: META.sectionTitle, level: META.level },
+    { tabs: [{ id: 'sim', label: 'Simulation' }, { id: 'lesson', label: 'Lesson' }, { id: 'challenges', label: 'Challenges' }, { id: 'real', label: 'On real data' }] });
+  MLS.state.init({
+    id: META.id,
+    get: () => ({ ds: S.ds, n: S.n, seed: S.seed, prior: S.prior, q: S.q }),
+    set: o => {
+      if (DSN[o.ds]) S.ds = o.ds;
+      if (o.n) Object.keys(o.n).forEach(k => { if (DSN[k] && Number.isFinite(o.n[k])) S.n[k] = Math.max(40, Math.min(400, o.n[k])); });
+      if (Number.isFinite(o.seed)) S.seed = o.seed;
+      if (o.prior === 'data' || o.prior === 'equal') S.prior = o.prior;
+      if (o.q && typeof o.q === 'object') S.q = o.q;
+    }
+  });
+  $('fourCast').href = MLS.APP.fourCastUrl;
+  window.__mls = { S, get R() { return R; }, get D() { return D; } };
+  document.addEventListener('mls:theme', () => refresh(false));
+  full();
+})();
+</script>
+</body>
+</html>

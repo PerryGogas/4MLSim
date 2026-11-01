@@ -1,0 +1,316 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Confusion Matrix &amp; Metrics | 4MLSim</title>
+  <meta name="theme-color" content="#1B2340">
+  <link rel="manifest" href="../manifest.json">
+  <link rel="icon" type="image/svg+xml" href="../assets/img/icon.svg">
+  <link rel="apple-touch-icon" href="../assets/img/apple-touch-icon.png">
+  <link rel="stylesheet" href="../assets/vendor/temml.css">
+  <link rel="stylesheet" href="../assets/css/4mlsim.css">
+  <script src="../assets/vendor/temml.min.js"></script>
+  <script src="../assets/js/core.js"></script>
+  <script src="../assets/js/stats.js"></script>
+  <script src="../assets/js/plot.js"></script>
+  <script src="../assets/js/modules.js"></script>
+  <script src="../assets/js/core-ml.js"></script>
+  <script src="../assets/js/classify-ui.js"></script>
+</head>
+<body>
+<div class="page">
+  <header id="mlsHeader" data-variant="compact"></header>
+  <div class="mod-top" id="mlsTop"><div id="mlsModBar"></div><div id="mlsTabs"></div></div>
+
+  <div class="intro-box" id="mlsIntro">
+    <h3>What this module shows</h3>
+    <div class="intro-cols">
+      <div>
+        <p>A model that predicts bank failures gives each bank a <b>probability of failure</b>. With a <b>threshold T</b> each bank is called failed or healthy. Comparing these predictions with what actually happened gives the <b>confusion matrix</b>: true positives, false negatives, false positives and true negatives.</p>
+        <p>From these four numbers come accuracy, sensitivity, specificity, precision and F1. Which one matters <b>depends on the target</b>.</p>
+      </div>
+      <div>
+        <p><b>How to use it</b></p>
+        <ol>
+          <li>Move the threshold T and watch banks move between the four cells.</li>
+          <li>Make failures rare with the "share of failed banks" slider: is accuracy that important?</li>
+          <li>Compare the logit with the two naive models ("all healthy", "all failed").</li>
+          <li>Click any <b>?</b> for help, then try the <b>Challenges</b>.</li>
+        </ol>
+      </div>
+    </div>
+  </div>
+
+  <!-- ===================== SIMULATION ===================== -->
+  <section data-panel="sim">
+    <div class="mod-grid">
+      <aside class="side" aria-label="Controls">
+        <div class="card">
+          <div class="card-head"><h3>1. Data: bank failures<button type="button" class="help" data-help="data">?</button></h3></div>
+          <div class="field-row"><label for="share">Share of failed banks<button type="button" class="help" data-help="share">?</button></label><output id="shareVal"></output></div>
+          <input type="range" id="share" min="0.01" max="0.5" step="0.01" value="0.3">
+          <div class="field-row"><label for="n">Banks<button type="button" class="help" data-help="n">?</button></label><output id="nVal"></output></div>
+          <input type="range" id="n" min="100" max="2000" step="100" value="500">
+          <div class="field-row"><label for="seed">Random seed<button type="button" class="help" data-help="seed">?</button></label></div>
+          <div class="inline-inputs"><input type="number" id="seed" min="1" max="99999" step="1" value="1" aria-label="Random seed"><button type="button" class="btn-ghost btn-icon" id="newSeed" title="New random data" style="flex:0 0 auto">&#127922;</button></div>
+        </div>
+        <div class="card">
+          <div class="card-head"><h3>2. Model<button type="button" class="help" data-help="model">?</button></h3></div>
+          <div class="seg full" role="group" aria-label="Model" style="flex-wrap:wrap">
+            <button type="button" data-model="logit" style="flex:1 1 100%">Logit (two ratios)</button>
+            <button type="button" data-model="healthy">Naive: all healthy</button>
+            <button type="button" data-model="failed">Naive: all failed</button>
+          </div>
+        </div>
+        <div class="card" id="thrCard">
+          <div class="card-head"><h3>3. Threshold<button type="button" class="help" data-help="thr">?</button></h3></div>
+          <div class="field-row"><label for="thr">Threshold T</label><output id="thrVal"></output></div>
+          <input type="range" id="thr" min="0.01" max="0.99" step="0.01" value="0.5">
+          <p class="note">A bank is called <b>failed</b> when its probability of failure is at least T.</p>
+        </div>
+      </aside>
+
+      <main class="main">
+        <div class="story" id="story"></div>
+        <div class="stat-grid" id="stats" style="margin-top:12px"></div>
+        <div id="statusLine" class="status-line" style="margin:10px 0"></div>
+        <div class="fig-grid">
+          <div id="figStrip" class="fig-wide"></div>
+          <div class="card fig-wide" id="cmCard"></div>
+          <div class="card fig-wide" id="metCard"></div>
+          <div id="figT" class="fig-wide"></div>
+        </div>
+      </main>
+    </div>
+  </section>
+
+  <!-- ===================== LESSON ===================== -->
+  <section data-panel="lesson" class="card lesson" hidden>
+    <div id="mlsMathCtl"></div>
+    <p class="lvl-only-intuition note" style="margin-bottom:8px">Showing the intuition only. Choose <b>Formulas</b> or <b>Deep dive</b> above to add the mathematics.</p>
+
+    <h4>The confusion matrix</h4>
+    <p>Extremely important in evaluating classification models. For every observation, the model predicts 1 (failed bank) or 0 (healthy), and we know the actual class. If the model predicts 1, it is either right (<b>true positive, TP</b>) or wrong (<b>false positive, FP</b>: a false alarm, a type I error). If it predicts 0, it is either right (<b>true negative, TN</b>) or wrong (<b>false negative, FN</b>: a missed case, a type II error). Counting them gives a 2 &times; 2 table, in numbers or in percentages of each actual class.</p>
+
+    <h4>The metrics</h4>
+    <ul>
+      <li><b>Accuracy</b> = (TP + TN) / all: how good is the model overall? <b>Misclassification rate</b> = (FP + FN) / all: how bad?</li>
+      <li><b>Sensitivity (recall)</b> = TP / (TP + FN): what share of the failed banks is found?</li>
+      <li><b>Specificity</b> = TN / (TN + FP): what share of the healthy banks is recognised? <b>False alarms</b> = 1 &minus; specificity = FP / (TN + FP).</li>
+      <li><b>Precision</b> = TP / (TP + FP): of the banks we called failed, how many really failed?</li>
+      <li><b>F1</b> = 2 &times; precision &times; sensitivity / (precision + sensitivity): one number that balances the two. F0.5 favours precision, F2 sensitivity.</li>
+    </ul>
+    <div class="math-block lvl-math"><div class="mb-title">With P actual 1s and N actual 0s</div>
+      <div class="tex-block">\text{Accuracy} = \frac{TP + TN}{P + N}, \quad \text{Sensitivity} = \frac{TP}{P}, \quad \text{Specificity} = \frac{TN}{N}, \quad \text{Precision} = \frac{TP}{TP + FP}</div>
+      <div class="tex-block">F_\beta = (1 + \beta^2)\,\frac{\text{Precision} \times \text{Sensitivity}}{\beta^2\,\text{Precision} + \text{Sensitivity}} \qquad (F_1:\ \beta = 1)</div>
+    </div>
+
+    <h4>Is accuracy that important? Not always</h4>
+    <p>With 99 healthy banks and 1 failed bank, a model that calls every bank healthy has 99% accuracy, 100% specificity, and 0% sensitivity: it finds no failed bank. The naive model "all failed" does the opposite: it detects every failed bank (100% sensitivity) but gives 100% false alarms. When one class is rare, look at sensitivity, specificity and precision, not only at accuracy.</p>
+
+    <h4>Changing the threshold</h4>
+    <p>Models give a probability; by default an observation is classified as 1 when it is at least 0.5. Lowering T finds more 1s: banks move from "predicted healthy" to "predicted failed", in the same row of the matrix. A failed bank moves from FN to TP: sensitivity rises and precision usually rises. A healthy bank moves from TN to FP: specificity falls, false alarms rise and precision falls. There is a trade-off; which side we prefer depends on the cost of each error (see the ROC, PR &amp; Calibration module).</p>
+
+    <h4>Training set and test set</h4>
+    <p>The matrix can be computed on the training set and on the test set. The test set (new banks) is the honest one; a much better training matrix means overfitting.</p>
+
+    <div class="math-block deep lvl-deep"><div class="mb-title">Deep dive</div>
+      <p><b>Prevalence and precision.</b> Sensitivity and specificity do not depend on how common failures are; precision does. With prevalence π, precision = sens·π / (sens·π + (1 − spec)(1 − π)). With π = 1% even 95% sensitivity and 95% specificity give a precision of only 16%: most alarms are false.</p>
+      <p><b>More than two classes.</b> The matrix becomes K &times; K; sensitivity and precision are computed per class (one class against the rest) and can be averaged (macro or weighted averages).</p>
+      <p><b>Balanced accuracy</b> = (sensitivity + specificity) / 2 is not fooled by rare classes: the "all healthy" model gets 50%.</p>
+      <p class="note">References: Fawcett (2006), "An introduction to ROC analysis", <i>Pattern Recognition Letters</i> 27(8); Sokolova and Lapalme (2009), "A systematic analysis of performance measures for classification tasks", <i>Information Processing &amp; Management</i> 45(4).</p>
+    </div>
+  </section>
+
+  <!-- ===================== CHALLENGES ===================== -->
+  <section data-panel="challenges" class="card" hidden>
+    <div class="card-head"><h3>Challenges</h3><span class="card-sub">Answer the "predict first" questions before testing them in the Simulation tab.</span></div>
+    <div id="challenges"></div>
+  </section>
+
+  <!-- ===================== REAL DATA ===================== -->
+  <section data-panel="real" class="card lesson" hidden>
+    <h4>From the simulation to real data</h4>
+    <ul>
+      <li>Bank failures, fraud, defaults and crises are rare: report sensitivity, specificity and precision next to accuracy, and say how rare the 1s are.</li>
+      <li>Choose the metric from the decision: a supervisor who must not miss a failing bank wants high sensitivity; a fraud team with few investigators wants high precision.</li>
+      <li>Always show the confusion matrix of the test set, not only of the training set.</li>
+      <li>Example from the lecture: a linear SVM on US bank failures (115 insolvent, 1,164 solvent banks) reached 99% accuracy while the naive "all insolvent" model detected every failure with 100% false alarms.</li>
+    </ul>
+    <div class="crosslink"><span>&#10140;</span><span><a id="fourCast" target="_blank" rel="noopener"><b>4Cast Lab</b></a> reports the confusion matrix and all these metrics for the training and the test set of your own models.</span></div>
+  </section>
+
+  <footer id="mlsFooter"></footer>
+</div>
+
+<script>
+(function () {
+  'use strict';
+  const MLS = window.MLS, ML = MLS.ml, CL = MLS.cls;
+  const META = MLS.moduleMeta('confusion-matrix');
+  const $ = id => document.getElementById(id);
+  const F = MLS.fmt, pct = CL.pct;
+  const CLASSES = ['Healthy', 'Failed'];
+
+  const S = { share: 0.3, n: 500, seed: 1, model: 'logit', T: 0.5, cmPct: false };
+  let D = null, R = null;
+
+  function makeData() {
+    const d = CL.banks(S.seed, S.n, S.share);
+    D = d;
+    const tr = d.pts.filter(p => !p.te);
+    R = { fit: ML.logitNewton(tr.map(p => p.x), tr.map(p => p.y), 30) };
+    d.pts.forEach(p => { p.p = R.fit.prob(p.x); p.jit = ML.rng(p.id * 131 + S.seed).random(); });
+  }
+  const trainPts = () => D.pts.filter(p => !p.te), testPts = () => D.pts.filter(p => p.te);
+  const probOf = p => (S.model === 'logit' ? p.p : S.model === 'failed' ? 1 : 0);
+  const pred = p => (probOf(p) >= S.T ? 1 : 0);
+  const evalSet = pts => CL.evalBinary(pts, probOf, S.T);
+
+  function updateText() {
+    const mTe = evalSet(testPts()), mTr = evalSet(trainPts());
+    R.mTe = mTe; R.mTr = mTr;
+    const mName = { logit: 'a logit with the debt-to-equity ratio and the Tier 1 capital ratio, estimated on the training set', healthy: 'the naive model that calls every bank healthy', failed: 'the naive model that calls every bank failed' }[S.model];
+    $('story').innerHTML = '<h3>Data: ' + S.n + ' banks, ' + Math.round(100 * S.share) + '% of them failed</h3><p>Model: ' + mName + '. <b>' + trainPts().length + ' banks in the training set, ' + testPts().length + ' in the test set.</b> Failed = 1 (positive), healthy = 0.</p>';
+    const card = MLS.statCard;
+    $('stats').innerHTML =
+      card('Accuracy, test set', pct(mTe.acc), 'correct: ' + (mTe.TP + mTe.TN) + ' of ' + mTe.n, '', 'm_acc') +
+      card('Sensitivity, test set', pct(mTe.sens), 'failed found: ' + mTe.TP + ' of ' + (mTe.TP + mTe.FN), '', 'm_sens') +
+      card('Specificity, test set', pct(mTe.spec), 'healthy recognised: ' + mTe.TN + ' of ' + (mTe.TN + mTe.FP), '', 'm_spec') +
+      card('Precision, test set', pct(mTe.prec), (mTe.TP + mTe.FP) ? 'called failed and really failed: ' + mTe.TP + ' of ' + (mTe.TP + mTe.FP) : 'no bank called failed', '', 'm_prec');
+    let msg, cls = 'status-line';
+    if (S.model === 'healthy') { msg = 'The naive model "all healthy" reaches ' + pct(mTe.acc) + ' accuracy just because ' + pct(1 - S.share) + ' of the banks are healthy, but it finds none of the failed banks (sensitivity 0%). Accuracy alone is misleading.'; cls += ' bad'; }
+    else if (S.model === 'failed') { msg = 'The naive model "all failed" detects every failed bank (sensitivity 100%) but flags every healthy bank too (false alarms 100%). Not a good model.'; cls += ' bad'; }
+    else if (mTe.acc >= 0.85 && mTe.sens < mTe.acc - 0.2) { msg = 'Accuracy looks high (' + pct(mTe.acc) + '), but the model finds only ' + pct(mTe.sens) + ' of the failed banks. With few failures, accuracy hides the missed cases: look at sensitivity, or lower T.'; cls += ' bad'; }
+    else { msg = 'At T = ' + F(S.T, 2) + ': ' + mTe.TP + ' failed banks found, ' + mTe.FN + ' missed, ' + mTe.FP + ' false alarms in the test set. Move T to trade missed failures against false alarms.'; cls += ' ok'; }
+    $('statusLine').textContent = msg; $('statusLine').className = cls;
+  }
+
+  /* every test bank by its probability: the confusion matrix laid out on a line */
+  const figStrip = MLS.figure($('figStrip'), {
+    title: 'Every test bank by its probability of failure', help: 'figstrip', file: 'confusion-strip',
+    plot: { aspect: 0.36, margin: { l: 108, b: 50 }, x: { label: 'Probability of failure given by the model', fmt: v => F(v, 1) }, y: { ticks: false } },
+    data: () => ({ cols: ['Bank', 'Debt-to-equity', 'Tier 1 capital (%)', 'Actual', 'Probability', 'Predicted', 'Cell'], rows: testPts().map(p => { const k = pred(p); return [p.id + 1, p.x[0], p.x[1], CLASSES[p.y], probOf(p), CLASSES[k], p.y ? (k ? 'TP' : 'FN') : (k ? 'FP' : 'TN')]; }) })
+  });
+  function drawStrip() {
+    const P = figStrip.plot, ink = MLS.color('chart-ink'), mu = MLS.color('chart-muted'), te = testPts(), m = R.mTe;
+    P.setX(-0.02, 1.02); P.setY(0, 2);
+    P.draw(P => {
+      P.rect(S.T, 1, 1.02, 2, { fill: MLS.rgba(MLS.color('series-3'), 0.1) }); P.rect(-0.02, 0, S.T, 1, { fill: MLS.rgba(MLS.color('series-3'), 0.1) });
+      P.rect(-0.02, 1, S.T, 2, { fill: MLS.rgba(MLS.color('series-8'), 0.1) }); P.rect(S.T, 0, 1.02, 1, { fill: MLS.rgba(MLS.color('series-8'), 0.1) });
+      P.hline(1, { color: mu, width: 1 });
+      P.vline(S.T, { color: ink, width: 2 });
+      P.text(S.T, 2, 'T = ' + F(S.T, 2), { anchor: 'middle', dy: -4, size: 12, weight: 800 });
+      P.text(-0.02, 1.5, 'Actually failed', { anchor: 'end', dx: -8, dy: 4, size: 12, weight: 700, halo: false, color: CL.color(1) });
+      P.text(-0.02, 0.5, 'Actually healthy', { anchor: 'end', dx: -8, dy: 4, size: 12, weight: 700, halo: false, color: CL.color(0) });
+      const lab = (x, y, t, anchor) => P.text(x, y, t, { anchor, dy: 16, size: 12.5, weight: 800 });
+      lab(1.0, 1.95, 'TP = ' + m.TP, 'end'); lab(0.0, 1.95, 'FN = ' + m.FN + ' (missed)', 'start'); lab(1.0, 0.95, 'FP = ' + m.FP + ' (false alarms)', 'end'); lab(0.0, 0.95, 'TN = ' + m.TN, 'start');
+      const tip = p => '<b>Bank ' + (p.id + 1) + '</b> (test set)<br>Debt-to-equity ' + F(p.x[0], 2) + ', Tier 1 ' + F(p.x[1], 1) + '%<br>Actual: <b>' + CLASSES[p.y] + '</b><br>Probability of failure ' + F(probOf(p), 3) + ' → ' + CLASSES[pred(p)] + (pred(p) === p.y ? ' (correct)' : ' (wrong)');
+      const jx = p => Math.min(1.015, Math.max(-0.015, probOf(p) + (S.model === 'logit' ? 0 : (p.jit - 0.5) * 0.03)));
+      P.points(te.map(p => ({ x: jx(p), y: p.y + 0.18 + 0.64 * p.jit, p })), { color: d => CL.color(d.p.y), shape: d => (pred(d.p) === d.p.y ? 'circle' : 'cross'), r: d => (pred(d.p) === d.p.y ? 4.2 : 5.5), opacity: 0.9, tip: d => tip(d.p) });
+    });
+    figStrip.legend([{ label: 'Failed bank (' + (m.TP + m.FN) + ')', color: CL.color(1) }, { label: 'Healthy bank (' + (m.TN + m.FP) + ')', color: CL.color(0) }, { label: 'cross = misclassified', color: MLS.color('chart-muted'), shape: 'cross' }, { label: 'Threshold T', color: ink, line: true }]);
+    figStrip.caption('Each point is one test bank, placed at its probability of failure. Banks right of T are called failed, left of T healthy. Top row: banks that actually failed (TP right, FN left). Bottom row: healthy banks (FP right, TN left). The four counts are the confusion matrix.' + (S.model !== 'logit' ? ' A naive model gives every bank the same probability, so all banks sit on one side.' : ''));
+  }
+  function drawCM() {
+    $('cmCard').innerHTML = '<div class="card-head"><h3>Confusion matrix at T = ' + F(S.T, 2) + MLS.helpBtn('cm') + '</h3><div class="seg" role="group" aria-label="Counts or percentages"><button type="button" data-cm="0" aria-pressed="' + !S.cmPct + '">Counts</button><button type="button" data-cm="1" aria-pressed="' + S.cmPct + '">% of actual</button></div></div>' +
+      '<div class="cm-wrap">' + CL.cmTable(R.mTr.M, CLASSES, { title: 'Training set', pct: S.cmPct }) + CL.cmTable(R.mTe.M, CLASSES, { title: 'Test set', pct: S.cmPct }) + '</div>' + CL.cmNote(CLASSES, S.cmPct);
+    MLS.$$('[data-cm]', $('cmCard')).forEach(b => (b.onclick = () => { S.cmPct = b.dataset.cm === '1'; drawCM(); MLS.state.save(); }));
+  }
+  function drawMet() {
+    $('metCard').innerHTML = '<div class="card-head"><h3>Metrics' + MLS.helpBtn('metrics') + '</h3><span class="card-sub">1 = failed</span></div>' + CL.metricsTable(R.mTr, R.mTe, { numbers: true });
+  }
+  /* metrics for every threshold (test set) */
+  const figT = MLS.figure($('figT'), { title: 'The metrics for every threshold (test set)', help: 'figt', file: 'metrics-by-threshold',
+    plot: { aspect: 0.36, margin: { l: 62, b: 50 }, x: { label: 'Threshold T', fmt: v => F(v, 1) }, y: { label: 'Value', fmt: v => (100 * v).toFixed(0) + '%' } },
+    data: () => ({ cols: ['T', 'Accuracy', 'Sensitivity', 'Specificity', 'Precision', 'F1'], rows: curveT().map(c => [c.T, c.acc, c.sens, c.spec, c.prec, c.f1]) }) });
+  function curveT() { const te = testPts(), out = []; for (let t = 1; t <= 99; t++) { const m = CL.evalBinary(te, probOf, t / 100); out.push({ T: t / 100, acc: m.acc, sens: m.sens, spec: m.spec, prec: m.prec, f1: m.f1 }); } return out; }
+  function drawT() {
+    const P = figT.plot, c = curveT(), mu = MLS.color('chart-muted');
+    const ser = [['acc', 'Accuracy', 'chart-ink', null], ['sens', 'Sensitivity', 'series-2', null], ['spec', 'Specificity', 'series-1', null], ['prec', 'Precision', 'series-7', '6 3'], ['f1', 'F1', 'series-3', '2 3']];
+    P.setX(0, 1); P.setY(0, 1.02);
+    P.draw(P => {
+      P.vline(S.T, { color: mu, width: 1.5, dash: '4 3' });
+      ser.forEach(s => P.line(c.map(q => [q.T, q[s[0]]]), { color: MLS.color(s[2]), width: s[0] === 'acc' ? 2.6 : 2, dash: s[3] }));
+      P.crosshair(ser.map(s => ({ name: s[1], color: MLS.color(s[2]), pts: c.map(q => [q.T, q[s[0]]]) })), v => 'T = ' + F(v, 2), v => pct(v));
+    });
+    figT.legend(ser.map(s => ({ label: s[1], color: MLS.color(s[2]), line: true, dash: s[3] })).concat([{ label: 'Current T', color: mu, line: true, dash: '4 3' }]));
+    figT.caption('Lower T: more banks called failed, so sensitivity rises and specificity falls. Precision is not defined when no bank is called failed (the line stops).');
+  }
+
+  function syncUI() {
+    $('share').value = S.share; $('shareVal').textContent = Math.round(100 * S.share) + '%'; $('n').value = S.n; $('nVal').textContent = S.n; $('seed').value = S.seed;
+    $('thr').value = S.T; $('thrVal').textContent = F(S.T, 2);
+    MLS.$$('[data-model]').forEach(b => b.setAttribute('aria-pressed', String(b.dataset.model === S.model)));
+  }
+  function refresh(re) { if (re) makeData(); syncUI(); updateText(); drawStrip(); drawCM(); drawMet(); drawT(); figStrip.refreshTable(); if (ch) ch.check(); MLS.state.save(); }
+  $('share').addEventListener('input', e => ($('shareVal').textContent = Math.round(100 * e.target.value) + '%'));
+  $('share').onchange = e => { S.share = +e.target.value; refresh(true); };
+  $('n').addEventListener('input', e => ($('nVal').textContent = e.target.value));
+  $('n').onchange = e => { S.n = +e.target.value; refresh(true); };
+  $('seed').onchange = e => { S.seed = Math.max(1, Math.round(+e.target.value) || 1); refresh(true); };
+  $('newSeed').onclick = () => { S.seed = MLS.newSeed(); refresh(true); };
+  MLS.$$('[data-model]').forEach(b => (b.onclick = () => { S.model = b.dataset.model; refresh(false); }));
+  $('thr').addEventListener('input', e => { S.T = +e.target.value; refresh(false); });
+
+  MLS.registerHelp({
+    data: { title: 'Data', html: 'Simulated banks described by the debt-to-equity ratio and the Tier 1 capital ratio (as in the other classification modules). 80% form the training set, on which the logit is estimated; 20% the test set.' },
+    share: { title: 'Share of failed banks', html: 'How common failures are. Real failures are rare: in the lecture example 115 of 1,279 banks (9%). At 1% you can rebuild the "99% accuracy, 0% sensitivity" example.' },
+    n: { title: 'Banks', html: 'How many banks are simulated. More banks give a larger test set and more stable metrics.' },
+    model: { title: 'Model', html: '<b>Logit</b>: logistic regression with both ratios, estimated on the training set (as in the Logistic Regression module); each bank gets its own probability. <b>Naive: all healthy</b>: every bank gets probability 0. <b>Naive: all failed</b>: every bank gets probability 1. The naive models are benchmarks: a useful model must beat them on the metric that matters.' },
+    thr: { title: 'Threshold T', html: 'A bank is called failed when its probability of failure is at least T. Default 0.5. Lower T: more banks called failed (sensitivity up, false alarms up).' },
+    figstrip: { title: 'Every test bank by its probability', html: 'The confusion matrix laid out on a line. Horizontal: the probability of failure given by the model. Top row: banks that actually failed; bottom row: healthy banks. The vertical line is T. Crosses are misclassified banks. Hover over a bank for its values.' },
+    figt: { title: 'Metrics by threshold', html: 'Accuracy, sensitivity, specificity, precision and F1 on the test set for every threshold from 0.01 to 0.99. The dashed line is the current T.' }
+  });
+
+  function setup(o) { Object.assign(S, o); MLS.pickTab('sim'); refresh(true); window.scrollTo({ top: 0, behavior: 'smooth' }); }
+  const ch = MLS.challenges($('challenges'), META.id, [
+    { type: 'predict', q: '100 banks: 99 healthy, 1 failed. A model calls every bank healthy. Its accuracy and sensitivity are...',
+      options: ['50% and 50%', '1% and 100%', '99% and 0%: very accurate, and useless for finding failures'], answer: 2,
+      explain: 'Accuracy = (TP + TN) / all = (0 + 99) / 100 = 99%. Sensitivity = TP / (TP + FN) = 0 / 1 = 0%. Set the share of failed banks to 1% and choose "all healthy" to see it.',
+      tryIt: () => setup({ share: 0.01, model: 'healthy' }) },
+    { type: 'predict', q: 'The naive model "all failed" (all insolvent). Sensitivity and false alarms?',
+      options: ['Sensitivity 100%, false alarms 100%', 'Sensitivity 0%, false alarms 0%', 'Sensitivity 100%, false alarms 0%'], answer: 0,
+      explain: 'Every failed bank is called failed (sensitivity 100%), and so is every healthy bank (specificity 0%, false alarms 100%). In the lecture example: 115/115 insolvent banks detected, accuracy 8.9%.',
+      tryIt: () => setup({ model: 'failed', share: 0.1 }) },
+    { type: 'predict', q: 'Logit: you lower T from 0.5 to 0.2. What happens?',
+      options: ['Sensitivity falls, false alarms fall', 'Sensitivity rises (or stays), and false alarms rise (or stay)', 'Nothing changes'], answer: 1,
+      explain: 'Banks move from "predicted healthy" to "predicted failed" in the same row. Failed banks move from FN to TP (sensitivity up); healthy banks move from TN to FP (specificity down, false alarms up).',
+      tryIt: () => setup({ model: 'logit', share: 0.3, T: 0.2 }) },
+    { type: 'predict', q: 'Precision answers which question?',
+      options: ['What share of the failed banks did we find?', 'What share of all banks did we classify correctly?', 'Of the banks we called failed, how many really failed?'], answer: 2,
+      explain: 'Precision = TP / (TP + FP). The first question is sensitivity, the second accuracy.',
+      tryIt: () => setup({ model: 'logit' }) },
+    { type: 'predict', q: 'Precision is 100% and sensitivity is 50%. F1 is about...',
+      options: ['75%', '67%', '50%'], answer: 1,
+      explain: 'F1 = 2 × 1 × 0.5 / (1 + 0.5) = 0.667. F1 is pulled towards the weaker of the two, unlike their simple average (75%).',
+      tryIt: () => setup({ model: 'logit', T: 0.85 }) },
+    { type: 'task', q: 'Logit, 30% failed banks: find a T with sensitivity of at least 90% and false alarms of at most 20% on the test set.', hint: 'Lower T step by step and watch the two tiles and the strip chart.',
+      check: () => R && R.mTe && S.model === 'logit' && R.mTe.sens >= 0.9 && R.mTe.fa <= 0.2 },
+    { type: 'task', q: 'Make failures rare: set the share of failed banks to 5% or less with the logit, and compare accuracy with sensitivity.', hint: 'Section 1. Accuracy stays high; does sensitivity?',
+      check: () => S.share <= 0.05 && S.model === 'logit' }
+  ]);
+
+  MLS.moduleBar({ id: META.id, title: META.title, section: META.sectionTitle, level: META.level },
+    { tabs: [{ id: 'sim', label: 'Simulation' }, { id: 'lesson', label: 'Lesson' }, { id: 'challenges', label: 'Challenges' }, { id: 'real', label: 'On real data' }] });
+  MLS.state.init({
+    id: META.id,
+    get: () => ({ share: S.share, n: S.n, seed: S.seed, model: S.model, T: S.T, cmPct: S.cmPct }),
+    set: o => {
+      if (Number.isFinite(o.share)) S.share = Math.max(0.01, Math.min(0.5, o.share));
+      if (Number.isFinite(o.n)) S.n = Math.max(100, Math.min(2000, o.n));
+      if (Number.isFinite(o.seed)) S.seed = o.seed;
+      if (['logit', 'healthy', 'failed'].includes(o.model)) S.model = o.model;
+      if (Number.isFinite(o.T)) S.T = Math.max(0.01, Math.min(0.99, o.T));
+      if (typeof o.cmPct === 'boolean') S.cmPct = o.cmPct;
+    }
+  });
+  $('fourCast').href = MLS.APP.fourCastUrl;
+  window.__mls = { S, get R() { return R; }, get D() { return D; } };
+  document.addEventListener('mls:theme', () => refresh(false));
+  refresh(true);
+})();
+</script>
+</body>
+</html>

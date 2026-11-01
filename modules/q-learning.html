@@ -1,0 +1,300 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Q-Learning in a Gridworld | 4MLSim</title>
+  <meta name="theme-color" content="#1B2340">
+  <link rel="manifest" href="../manifest.json">
+  <link rel="icon" type="image/svg+xml" href="../assets/img/icon.svg">
+  <link rel="apple-touch-icon" href="../assets/img/apple-touch-icon.png">
+  <link rel="stylesheet" href="../assets/vendor/temml.css">
+  <link rel="stylesheet" href="../assets/css/4mlsim.css">
+  <script src="../assets/vendor/temml.min.js"></script>
+  <script src="../assets/js/core.js"></script>
+  <script src="../assets/js/stats.js"></script>
+  <script src="../assets/js/plot.js"></script>
+  <script src="../assets/js/modules.js"></script>
+  <script src="../assets/js/core-ml.js"></script>
+  <script src="../assets/js/classify-ui.js"></script>
+</head>
+<body>
+<div class="page">
+  <header id="mlsHeader" data-variant="compact"></header>
+  <div class="mod-top" id="mlsTop"><div id="mlsModBar"></div><div id="mlsTabs"></div></div>
+
+  <div class="intro-box" id="mlsIntro">
+    <h3>What this module shows</h3>
+    <div class="intro-cols">
+      <div>
+        <p>In <b>reinforcement learning</b> nobody gives the right answers. An <b>agent</b> acts, receives <b>rewards</b> or penalties, and learns from experience which action is best in each situation (a <b>policy</b>).</p>
+        <p><b>Q-learning</b> keeps a table Q(state, action): the total future reward it expects from taking that action there and acting well afterwards. After every move it nudges the table towards what it just experienced. Here the agent walks on a grid towards a goal, avoiding traps; every move costs a little.</p>
+      </div>
+      <div>
+        <p><b>How to use it</b></p>
+        <ol>
+          <li>Press <b>Play</b>: watch the values spread back from the goal and the arrows (the policy) settle.</li>
+          <li>Compare with the exact optimal policy (value iteration).</li>
+          <li>Change the discount γ on the two-exit map, the exploration ε, and make the ground slippery on the cliff.</li>
+        </ol>
+      </div>
+    </div>
+  </div>
+
+  <!-- ===================== SIMULATION ===================== -->
+  <section data-panel="sim">
+    <div class="mod-grid">
+      <aside class="side" aria-label="Controls">
+        <div class="card">
+          <div class="card-head"><h3>1. The world<button type="button" class="help" data-help="world">?</button></h3></div>
+          <select id="map" aria-label="Map"><option value="cliff">Cliff walk</option><option value="two">Two exits: near and small, far and big</option><option value="maze">Maze with a trap</option></select>
+          <div class="field-row"><label for="slip">Slippery ground (chance of a side step)<button type="button" class="help" data-help="slip">?</button></label><output id="slipVal"></output></div>
+          <input type="range" id="slip" min="0" max="3" step="1" value="0">
+          <div class="field-row"><label for="seed">Random seed<button type="button" class="help" data-help="seed">?</button></label></div>
+          <div class="inline-inputs"><input type="number" id="seed" min="1" max="99999" step="1" value="1" aria-label="Random seed"><button type="button" class="btn-ghost btn-icon" id="newSeed" title="New random run" style="flex:0 0 auto">&#127922;</button></div>
+        </div>
+        <div class="card">
+          <div class="card-head"><h3>2. The agent<button type="button" class="help" data-help="agent">?</button></h3></div>
+          <div class="field-row"><label for="alpha">Learning rate α<button type="button" class="help" data-help="alpha">?</button></label><output id="alphaVal"></output></div>
+          <input type="range" id="alpha" min="0" max="4" step="1" value="2">
+          <div class="field-row"><label for="gamma">Discount γ<button type="button" class="help" data-help="gamma">?</button></label><output id="gammaVal"></output></div>
+          <input type="range" id="gamma" min="0" max="5" step="1" value="4">
+          <div class="field-row"><label for="eps">Exploration ε<button type="button" class="help" data-help="eps">?</button></label><output id="epsVal"></output></div>
+          <input type="range" id="eps" min="0" max="4" step="1" value="2">
+          <label class="check"><input type="checkbox" id="opt" checked> Optimistic start (Q = 5)<button type="button" class="help" data-help="opt">?</button></label>
+        </div>
+        <div class="card">
+          <div class="card-head"><h3>3. Learn<button type="button" class="help" data-help="run">?</button></h3></div>
+          <div id="stepper"></div>
+          <p class="note" id="stepNote"></p>
+          <div id="pseudo"></div>
+        </div>
+      </aside>
+
+      <main class="main">
+        <div class="story" id="story"></div>
+        <div class="stat-grid" id="stats" style="margin-top:12px"></div>
+        <div id="statusLine" class="status-line" style="margin:10px 0"></div>
+        <div class="fig-grid">
+          <div id="figGrid" class="fig-wide"></div>
+          <div id="figRew"></div>
+          <div class="card" id="qCard"></div>
+          <div id="figOpt" class="fig-wide"></div>
+        </div>
+      </main>
+    </div>
+  </section>
+
+  <!-- ===================== LESSON ===================== -->
+  <section data-panel="lesson" class="card lesson" hidden>
+    <div id="mlsMathCtl"></div>
+    <p class="lvl-only-intuition note" style="margin-bottom:8px">Showing the intuition only. Choose <b>Formulas</b> or <b>Deep dive</b> above to add the mathematics.</p>
+
+    <h4>Learning from rewards</h4>
+    <p>Supervised learning learns from examples with the right answer. Reinforcement learning learns from <b>consequences</b>: the agent is in a <b>state</b>, chooses an <b>action</b>, gets a <b>reward</b> and moves to a new state. Its aim is the largest total reward over time, not the largest immediate one: a costly step now can lead to a big reward later.</p>
+    <ul>
+      <li>The <b>discount</b> γ (between 0 and 1) says how much a reward one step later is worth today: γ = 0.9 makes a reward 10 steps away worth 0.9<sup>10</sup> ≈ 35% of its size. Economists know it as the discount factor.</li>
+      <li>The <b>policy</b> tells the agent what to do in each state: here, the arrows.</li>
+    </ul>
+
+    <h4>Q-learning</h4>
+    <p>Q(s, a) estimates the total discounted reward of taking action a in state s and acting well afterwards. After each move from s to s′ with reward r, the estimate is moved towards the reward plus the discounted value of the best action in s′:</p>
+    <p style="text-align:center"><b>new Q = old Q + α × (r + γ × best Q in s′ − old Q)</b></p>
+    <p>The value of the goal spreads backwards, one step at a time, through the grid. The agent needs no map of the world: it learns from experience only (<b>model-free</b>).</p>
+
+    <h4>Exploration versus exploitation</h4>
+    <p>If the agent always takes the best-looking action, it may never discover a better route. With probability ε it takes a random action instead (ε-greedy). An <b>optimistic start</b> (all Q values high) also pushes it to try everything once. Too much exploration wastes moves and, on the cliff, makes the agent fall in often while learning.</p>
+
+    <div class="math-block lvl-math"><div class="mb-title">The Bellman equation and the update</div>
+      <div class="tex-block">Q^*(s, a) = \mathbb{E}\bigl[r + \gamma \max_{a'} Q^*(s', a') \mid s, a\bigr]</div>
+      <div class="tex-block">Q(s, a) \leftarrow Q(s, a) + \alpha \bigl[r + \gamma \max_{a'} Q(s', a') - Q(s, a)\bigr]</div>
+      <p class="note">Value iteration solves the Bellman equation directly when the rules of the world (the move probabilities) are known; it gives the optimal Q* shown at the bottom. Q-learning approaches Q* from experience alone.</p>
+    </div>
+    <div class="math-block deep lvl-deep"><div class="mb-title">Deep dive</div>
+      <p><b>Convergence.</b> Q-learning converges to Q* if every state-action pair is tried infinitely often and the learning rate shrinks suitably (Watkins and Dayan, 1992). With a fixed α the estimates keep fluctuating around Q*.</p>
+      <p><b>Off-policy.</b> The update uses the best action in s′, not the one the exploring agent will actually take. So Q-learning learns the optimal path along the cliff edge even while its random steps make it fall; SARSA, which uses the action actually taken, learns a safer path.</p>
+      <p><b>Economics.</b> The Bellman equation is the same as in dynamic programming models of consumption, investment and search. Deep Q-networks replace the table with a neural network for huge state spaces.</p>
+      <p class="note">References: Bellman (1957), <i>Dynamic Programming</i>; Watkins and Dayan (1992), "Q-learning", <i>Machine Learning</i>; Sutton and Barto (2018), <i>Reinforcement Learning: An Introduction</i>, ch. 6.</p>
+    </div>
+  </section>
+
+  <!-- ===================== CHALLENGES ===================== -->
+  <section data-panel="challenges" class="card" hidden>
+    <div class="card-head"><h3>Challenges</h3><span class="card-sub">Answer the "predict first" questions before testing them in the Simulation tab.</span></div>
+    <div id="challenges"></div>
+  </section>
+
+  <!-- ===================== REAL DATA ===================== -->
+  <section data-panel="real" class="card lesson" hidden>
+    <h4>From the simulation to real data</h4>
+    <ul>
+      <li>Uses in economics and finance: optimal execution of large trades, dynamic pricing, inventory management, market making, and solving dynamic models with many states.</li>
+      <li>Real problems have huge state spaces: the Q table is replaced by a function approximator (deep Q-networks). Libraries: Gymnasium for environments, Stable-Baselines3 for agents.</li>
+    </ul>
+    <div class="crosslink"><span>&#10140;</span><span><a id="fourCast" target="_blank" rel="noopener"><b>4Cast Lab</b></a> applies machine learning to your own data.</span></div>
+  </section>
+
+  <footer id="mlsFooter"></footer>
+</div>
+
+<script>
+(function () {
+  'use strict';
+  const MLS = window.MLS, ML = MLS.ml, CL = MLS.cls;
+  const META = MLS.moduleMeta('q-learning');
+  const $ = id => document.getElementById(id);
+  const F = MLS.fmt, pct = CL.pct;
+
+  const MAPS = { cliff: ['.......', '.......', '.......', 'STTTTTG'], two: ['g......', '.......', '.......', 'S.....G'], maze: ['S..#...', '.#.#.#.', '.#...#.', '.####T.', '......G'] };
+  const ALS = [0.05, 0.1, 0.3, 0.6, 1], GAS = [0.5, 0.6, 0.7, 0.8, 0.95, 0.99], EPS = [0, 0.05, 0.1, 0.2, 0.4], SLS = [0, 0.1, 0.2, 0.3], EMAX = 3000;
+  const S = { map: 'cliff', slip: 0, seed: 1, alpha: 0.3, gamma: 0.95, eps: 0.1, opt: true, ep: 5, sel: null };
+  let D = null, R = null;
+  const AR = ['up', 'right', 'down', 'left'];
+  function build() {
+    const env = ML.Grid(MAPS[S.map], S.slip), q0 = S.opt ? 5 : 0;
+    D = { env, Qs: ML.valueIteration(env, S.gamma) };
+    R = { Q: Array.from({ length: env.nS }, () => [q0, q0, q0, q0]), r: ML.rng(S.seed * 97 + 3), ep: 0, hist: [], last: null };
+    D.opt = ML.greedyPath(env, D.Qs);
+  }
+  function trainTo(ep) { while (R.ep < ep) { const e = ML.qEpisode(D.env, R.Q, { alpha: S.alpha, gamma: S.gamma, eps: S.eps }, R.r); R.hist.push(e.total); R.last = e; R.ep++; } }
+  const isOpt = s => { const q = R.Q[s], a = q.indexOf(Math.max(...q)), qs = D.Qs[s]; return qs[a] >= Math.max(...qs) - 1e-6; };
+  const pseudo = MLS.pseudo($('pseudo'), ['**for** every episode: start at S', '  choose an action: random with chance ε, else the best Q', '  move, get the reward r, see the new state s\'', '  Q(s,a) = Q(s,a) + α (r + γ max Q(s\',·) - Q(s,a))', '  **until** a goal or a trap is reached']);
+  function updateText() {
+    const card = MLS.statCard, env = D.env, gp = ML.greedyPath(env, R.Q), cells = []; for (let s = 0; s < env.nS; s++) if (!env.terminal(s) && env.kind(s) !== '#') cells.push(s);
+    const nOpt = cells.filter(isOpt).length, last = R.hist.slice(-50), avg = last.length ? last.reduce((a, b) => a + b, 0) / last.length : NaN;
+    R.gp = gp;
+    const mapTxt = { cliff: 'Walk from S to the goal G (+10) along a cliff: stepping on the cliff (T) costs 10 and ends the episode.', two: 'Two exits: a small reward (+3) three steps away, a big one (+10) six steps away.', maze: 'A maze with walls, a trap (−10) and the goal (+10).' }[S.map];
+    $('story').innerHTML = '<h3>' + $('map').selectedOptions[0].textContent + '</h3><p>' + mapTxt + ' Every move costs 0.1.' + (S.slip ? ' The ground is slippery: with chance ' + S.slip + ' the agent slides to a side instead.' : '') + ' Learning rate α = ' + S.alpha + ', discount γ = ' + S.gamma + ', exploration ε = ' + S.eps + '.</p>';
+    $('stats').innerHTML =
+      card('Episodes', String(R.ep), 'runs from S to the end', '', 'st_ep') +
+      card('Average reward, last 50', last.length ? F(avg, 2) : 'n/a', 'per episode, with exploration', '', 'st_avg') +
+      card('Greedy path', gp.done ? gp.path.length - 1 + ' steps to ' + (gp.end === 'G' ? 'the goal' : gp.end === 'g' ? 'the small reward' : 'the trap') : 'no goal yet', 'optimal: ' + (D.opt.path.length - 1) + ' steps to ' + (D.opt.end === 'G' ? 'the goal' : 'the small reward'), '', 'st_path') +
+      card('Optimal actions', nOpt + ' of ' + cells.length, 'cells where the arrow matches value iteration', '', 'st_opt');
+    pseudo.hl([2, 3, 4]);
+    $('stepNote').innerHTML = 'Each <b>Step</b> is one episode.' + (R.ep >= EMAX ? ' Maximum of ' + EMAX + ' episodes reached.' : '');
+    let msg, cls = 'status-line';
+    const optEnd = D.opt.end, same = gp.done && gp.end === optEnd && gp.path.length === D.opt.path.length;
+    if (R.ep === 0) msg = 'Not trained yet: press Step or Play.';
+    else if (same) { msg = 'The greedy path is optimal: ' + (gp.path.length - 1) + ' steps to ' + (optEnd === 'G' ? 'the goal' : 'the small reward') + '.' + (S.map === 'two' ? ' With γ = ' + S.gamma + ' the ' + (optEnd === 'G' ? 'far, big reward is worth the extra steps.' : 'near, small reward is worth more than the far one.') : ''); cls += ' ok'; }
+    else if (gp.done && gp.end !== optEnd) { msg = 'The agent has settled on ' + (gp.end === 'g' ? 'the small reward' : gp.end === 'T' ? 'the trap' : 'the goal') + ', but the optimal choice is ' + (optEnd === 'G' ? 'the big goal' : 'the small reward') + '. More exploration (larger ε, optimistic start) would help it discover the better exit.'; cls += ' bad'; }
+    else msg = 'Still learning: the greedy path ' + (gp.done ? 'reaches the goal in ' + (gp.path.length - 1) + ' steps, not yet the shortest (' + (D.opt.path.length - 1) + ').' : 'does not reach a goal yet.');
+    $('statusLine').textContent = msg; $('statusLine').className = cls;
+  }
+  function drawWorld(fig, Q, title, showPath) {
+    const P = fig.plot, env = D.env, H = env.H, W = env.W, seq = MLS.seqScale(), ink = MLS.color('chart-ink');
+    const V = Array.from({ length: env.nS }, (_, s) => Math.max(...Q[s])), free = V.filter((v, s) => !env.terminal(s) && env.kind(s) !== '#'), lo = Math.min(...free), hi = Math.max(...free);
+    P.setX(0, W); P.setY(0, H);
+    P.draw(P => {
+      for (let s = 0; s < env.nS; s++) {
+        const r = Math.floor(s / W), c = s % W, k = env.kind(s), y0 = H - r - 1;
+        let fill; if (k === '#') fill = MLS.color('chart-ink'); else if (k === 'T') fill = MLS.rgba(MLS.color('series-8'), 0.75); else if (k === 'G' || k === 'g') fill = MLS.rgba(MLS.color('series-3'), k === 'G' ? 0.85 : 0.55); else { const cc = seq(hi > lo ? (V[s] - lo) / (hi - lo) * 0.8 : 0.4); fill = 'rgb(' + cc.map(Math.round).join(',') + ')'; }
+        const el = P.rect(c, y0, c + 1, y0 + 1, { fill, stroke: s === S.sel ? MLS.color('series-2') : MLS.color('chart-surface'), width: s === S.sel ? 3 : 1.5 });
+        if (k !== '#') { el.setAttribute('data-tip', P.tips.length); P.tips.push(() => '<b>Cell ' + (r + 1) + ', ' + (c + 1) + '</b>' + (env.terminal(s) ? '<br>' + ({ G: 'Goal +10', g: 'Small reward +3', T: 'Trap −10' })[k] : '<br>best Q = ' + F(V[s], 2) + '<br>' + Q[s].map((q, a) => AR[a] + ': ' + F(q, 2)).join('<br>')) + '<br><i>Click for the Q values</i>'); }
+        if (k === 'S') P.text(c + 0.08, y0 + 0.92, 'S', { dy: 10, size: 13, weight: 800 }); else if ('GgT'.includes(k)) P.text(c + 0.5, y0 + 0.5, k === 'T' ? 'trap −10' : k === 'G' ? 'goal +10' : '+3', { anchor: 'middle', dy: 5, size: 12, weight: 800 });
+        if (!env.terminal(s) && k !== '#') { const a = Q[s].indexOf(Math.max(...Q[s])), dx = [0, 0.3, 0, -0.3][a], dy = [0.3, 0, -0.3, 0][a]; P.arrow(c + 0.5 - dx * 0.6, y0 + 0.5 - dy * 0.6, c + 0.5 + dx * 0.6, y0 + 0.5 + dy * 0.6, { color: ink, width: 2.2, head: 10 }); }
+      }
+      if (showPath && R.last) P.line(R.last.path.map(s => [(s % W) + 0.5 + 0.12, H - Math.floor(s / W) - 0.5 + 0.12]), { color: MLS.color('series-2'), width: 2.2, dash: '5 3', opacity: 0.85 });
+    });
+  }
+  const figGrid = MLS.figure($('figGrid'), { title: 'What the agent has learned', help: 'figgrid', file: 'q-learning-grid', plot: { aspect: 0.5, margin: { l: 16, r: 16, t: 10, b: 16 }, x: { label: '', ticks: false }, y: { label: '', ticks: false }, onClick: (x, y) => { const c = Math.floor(x), r = D.env.H - 1 - Math.floor(y); if (c >= 0 && c < D.env.W && r >= 0 && r < D.env.H) { S.sel = r * D.env.W + c; render(); } } } });
+  const figOpt = MLS.figure($('figOpt'), { title: 'The exact optimal policy (value iteration)', help: 'figopt', file: 'q-learning-optimal', plot: { aspect: 0.5, margin: { l: 16, r: 16, t: 10, b: 16 }, x: { label: '', ticks: false }, y: { label: '', ticks: false } } });
+  function drawGrids() {
+    drawWorld(figGrid, R.Q, '', true);
+    figGrid.legend([{ label: 'Light: low best Q, dark: high', color: 'transparent' }, { label: 'Arrow: the best action (the policy)', color: MLS.color('chart-ink'), line: true }, { label: 'Last episode, with its random steps', color: MLS.color('series-2'), line: true, dash: '5 3' }]);
+    figGrid.caption('Each cell is coloured by the value of its best action. Click a cell to see its four Q values.');
+    drawWorld(figOpt, D.Qs, '', false);
+    figOpt.caption('Computed from the known rules of the world (Bellman equation). Q-learning has to discover this from experience. With γ = ' + S.gamma + (S.slip ? ' and slippery ground' : '') + ' the best route is ' + (D.opt.path.length - 1) + ' steps to ' + (D.opt.end === 'G' ? 'the goal' : 'the small reward') + '.');
+  }
+  const figRew = MLS.figure($('figRew'), { title: 'Reward per episode', help: 'figrew', file: 'q-learning-rewards', plot: { aspect: 0.75, margin: { l: 56, b: 48 }, x: { label: 'Episode' }, y: { label: 'Total reward' } } });
+  function drawRew() {
+    const P = figRew.plot, h = R.hist, c1 = MLS.color('series-1'), c2 = MLS.color('series-2'), ma = h.map((_, i) => { const a = h.slice(Math.max(0, i - 19), i + 1); return a.reduce((x, y) => x + y, 0) / a.length; });
+    P.setX(0, Math.max(20, h.length)); P.setY(h.length ? Math.max(-25, Math.min(...h)) - 1 : -12, 12);
+    P.draw(P => { if (!h.length) { P.note('Press Step'); return; } P.points(h.map((v, i) => ({ x: i + 1, y: Math.max(-25, v) })), { color: MLS.rgba(c1, 0.35), r: 2, ring: false }); P.line(ma.map((v, i) => [i + 1, v]), { color: c2, width: 2.2 }); P.hline(Math.max(...D.Qs[D.env.start]), { color: MLS.color('chart-muted'), width: 1.2, dash: '5 4' }); });
+    figRew.legend([{ label: 'Each episode', color: c1 }, { label: 'Average of the last 20', color: c2, line: true }, { label: 'Optimal value at S (discounted)', color: MLS.color('chart-muted'), line: true, dash: '5 4' }]);
+    figRew.caption('The total (undiscounted) reward of each episode. Exploration keeps some episodes poor even after learning.');
+  }
+  function drawQ() {
+    const env = D.env; let s = S.sel; if (s === null || env.terminal(s) || env.kind(s) === '#') s = env.start;
+    const q = R.Q[s], qs = D.Qs[s], r = Math.floor(s / env.W), c = s % env.W;
+    $('qCard').innerHTML = '<div class="card-head"><h3>Q values of cell ' + (r + 1) + ', ' + (c + 1) + (s === env.start ? ' (the start)' : '') + MLS.helpBtn('qtable') + '</h3></div><div style="overflow-x:auto"><table class="tbl"><thead><tr><th>Action</th><th>Learned Q</th><th>Optimal Q*</th></tr></thead><tbody>' +
+      AR.map((a, k) => '<tr' + (q[k] === Math.max(...q) ? ' style="font-weight:800;background:var(--tint)"' : '') + '><td>' + a + '</td><td>' + F(q[k], 3) + '</td><td>' + F(qs[k], 3) + '</td></tr>').join('') + '</tbody></table></div><p class="note">Bold: the action the agent now prefers. Click any cell on the grid.</p>';
+  }
+  function syncUI() {
+    $('map').value = S.map; $('seed').value = S.seed;
+    [['slip', SLS], ['alpha', ALS], ['gamma', GAS], ['eps', EPS]].forEach(([k, L]) => { $(k).value = L.indexOf(S[k]); $(k + 'Val').textContent = S[k]; });
+    $('opt').checked = S.opt;
+  }
+  function render() { syncUI(); updateText(); drawGrids(); drawRew(); drawQ(); if (ch) ch.check(); MLS.state.save(); }
+  function refresh() { build(); trainTo(S.ep); render(); }
+  MLS.stepper($('stepper'), { speed: 15, runMax: EMAX,
+    step: () => { if (R.ep >= EMAX) return false; S.ep = R.ep + 1; trainTo(S.ep); return true; },
+    reset: () => { S.ep = 0; build(); }, after: () => render() });
+  $('map').onchange = e => { S.map = e.target.value; S.sel = null; S.ep = 0; refresh(); };
+  $('seed').onchange = e => { S.seed = Math.max(1, Math.round(+e.target.value) || 1); refresh(); };
+  $('newSeed').onclick = () => { S.seed = MLS.newSeed(); refresh(); };
+  [['slip', SLS], ['alpha', ALS], ['gamma', GAS], ['eps', EPS]].forEach(([k, L]) => { $(k).addEventListener('input', e => ($(k + 'Val').textContent = L[+e.target.value])); $(k).onchange = e => { S[k] = L[+e.target.value]; refresh(); }; });
+  $('opt').onchange = e => { S.opt = e.target.checked; refresh(); };
+
+  MLS.registerHelp({
+    world: { title: 'The world', html: '<b>Cliff walk</b>: the shortest route runs along the edge of a cliff. <b>Two exits</b>: a near small reward or a far big one. <b>Maze</b>: walls and a trap.' },
+    slip: { title: 'Slippery ground', html: 'With this chance, a move goes to one of the two sides instead of the chosen direction. Risky routes near traps become worse.' },
+    seed: { title: 'Random seed', html: 'Fixes the random choices of the agent and the slips.' },
+    agent: { title: 'The agent', html: 'A Q-learning agent with a table of Q values, one per cell and action.' },
+    alpha: { title: 'Learning rate α', html: 'How far each update moves Q towards the new experience. Large: fast but noisy; small: slow but steady.' },
+    gamma: { title: 'Discount γ', html: 'How much future rewards count: a reward k steps ahead is worth γ<sup>k</sup> of its size today.' },
+    eps: { title: 'Exploration ε', html: 'The chance of a random action instead of the best one. 0: no exploration.' },
+    opt: { title: 'Optimistic start', html: 'Start every Q value at 5 instead of 0: untried actions look attractive, so the agent tries everything at least once.' },
+    run: { title: 'Learn', html: '<b>Step</b>: one episode. <b>Play</b>: keep going. <b>End</b>: up to 3000 episodes. <b>Reset</b>: forget everything (episode 0).' },
+    st_ep: { title: 'Episodes', html: 'Runs from the start until a goal or a trap (at most 200 moves).' },
+    st_avg: { title: 'Average reward', html: 'The total reward per episode, averaged over the last 50. It includes the cost of exploring.' },
+    st_path: { title: 'Greedy path', html: 'Where the agent goes from S if it always takes its best action (no exploration, no slipping), compared with the optimal route.' },
+    st_opt: { title: 'Optimal actions', html: 'In how many free cells the agent\'s best action is also optimal according to value iteration.' },
+    figgrid: { title: 'The learned table', html: 'Colours: the best Q value of each cell; arrows: the best action; dashed: the path of the last episode.' },
+    figrew: { title: 'Rewards', html: 'The total reward of every episode and a moving average.' },
+    qtable: { title: 'Q values', html: 'The four learned Q values of the chosen cell, next to the optimal ones from value iteration.' },
+    figopt: { title: 'Optimal policy', html: 'The exact solution of the Bellman equation for the same world and discount. Q-learning should approach it.' }
+  });
+
+  function setup(o) { Object.assign(S, { sel: null }, o); MLS.pickTab('sim'); refresh(); window.scrollTo({ top: 0, behavior: 'smooth' }); }
+  const ch = MLS.challenges($('challenges'), META.id, [
+    { type: 'predict', q: 'Q(s, a) is...',
+      options: ['the reward of the next move only', 'the total discounted reward expected from taking a in s and acting well afterwards', 'how often the agent visited s'], answer: 1,
+      explain: 'Q looks ahead: it includes all future rewards, discounted by γ per step. That is why the goal\'s value spreads back over the grid.',
+      tryIt: () => setup({ map: 'cliff', ep: 0 }) },
+    { type: 'predict', q: 'Two exits with γ = 0.6. The best policy goes to...',
+      options: ['the near, small reward: future rewards count little', 'the far, big reward', 'nowhere'], answer: 0,
+      explain: 'With γ = 0.6, +10 six steps away is worth about 10 × 0.6⁵ ≈ 0.8 today, less than +3 three steps away (3 × 0.6² ≈ 1.1).',
+      tryIt: () => setup({ map: 'two', gamma: 0.6, ep: 300 }) },
+    { type: 'task', q: 'Cliff walk: train until the greedy path is optimal (the shortest route to the goal).', hint: 'Press Play and watch the "Greedy path" tile; ε = 0.1 and the optimistic start help.',
+      check: () => R && S.map === 'cliff' && R.gp && R.gp.done && R.gp.end === 'G' && R.gp.path.length === D.opt.path.length },
+    { type: 'predict', q: 'You set ε = 0 and switch off the optimistic start. The agent...',
+      options: ['always learns fastest', 'explores more', 'may stick to the first route it finds and never discover a better one'], answer: 2,
+      explain: 'Without exploration it only learns about the actions it already likes. On the two-exit map it typically settles on the small reward.',
+      tryIt: () => setup({ map: 'two', eps: 0, opt: false, gamma: 0.95, ep: 300 }) },
+    { type: 'task', q: 'Two exits: train the agent so that its greedy path goes to the big, far reward.', hint: 'A high discount (0.95), some exploration and the optimistic start; then Play.',
+      check: () => R && S.map === 'two' && R.gp && R.gp.end === 'G' },
+    { type: 'predict', q: 'Cliff walk on slippery ground (chance 0.2). The optimal route...',
+      options: ['keeps a distance from the cliff: longer but safer', 'hugs the cliff edge as before', 'does not exist'], answer: 0,
+      explain: 'A side step next to the cliff costs 10. Value iteration (bottom chart) moves the route up, away from the edge.',
+      tryIt: () => setup({ map: 'cliff', slip: 0.2, ep: 0 }) }
+  ]);
+  const STATE = {
+    get: () => ({ map: S.map, slip: S.slip, seed: S.seed, alpha: S.alpha, gamma: S.gamma, eps: S.eps, opt: S.opt, ep: S.ep }),
+    set: o => {
+      if (MAPS[o.map]) S.map = o.map; if (SLS.includes(o.slip)) S.slip = o.slip; if (Number.isFinite(o.seed)) S.seed = o.seed;
+      if (ALS.includes(o.alpha)) S.alpha = o.alpha; if (GAS.includes(o.gamma)) S.gamma = o.gamma; if (EPS.includes(o.eps)) S.eps = o.eps;
+      if (typeof o.opt === 'boolean') S.opt = o.opt; if (Number.isFinite(o.ep)) S.ep = Math.max(0, Math.min(EMAX, o.ep));
+    }
+  };
+  const start = refresh;
+  MLS.moduleBar({ id: META.id, title: META.title, section: META.sectionTitle, level: META.level },
+    { tabs: [{ id: 'sim', label: 'Simulation' }, { id: 'lesson', label: 'Lesson' }, { id: 'challenges', label: 'Challenges' }, { id: 'real', label: 'On real data' }] });
+  MLS.state.init({ id: META.id, get: STATE.get, set: STATE.set });
+  const fc = $('fourCast'); if (fc) fc.href = MLS.APP.fourCastUrl;
+  window.__mls = { S, get R() { return R; }, get D() { return D; } };
+  document.addEventListener('mls:theme', () => refresh());
+  start();
+})();
+</script>
+</body>
+</html>

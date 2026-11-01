@@ -1,0 +1,298 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Explainability: Importance, PDP & SHAP | 4MLSim</title>
+  <meta name="theme-color" content="#1B2340">
+  <link rel="manifest" href="../manifest.json">
+  <link rel="icon" type="image/svg+xml" href="../assets/img/icon.svg">
+  <link rel="apple-touch-icon" href="../assets/img/apple-touch-icon.png">
+  <link rel="stylesheet" href="../assets/vendor/temml.css">
+  <link rel="stylesheet" href="../assets/css/4mlsim.css">
+  <script src="../assets/vendor/temml.min.js"></script>
+  <script src="../assets/js/core.js"></script>
+  <script src="../assets/js/stats.js"></script>
+  <script src="../assets/js/plot.js"></script>
+  <script src="../assets/js/modules.js"></script>
+  <script src="../assets/js/core-ml.js"></script>
+  <script src="../assets/js/classify-ui.js"></script>
+</head>
+<body>
+<div class="page">
+  <header id="mlsHeader" data-variant="compact"></header>
+  <div class="mod-top" id="mlsTop"><div id="mlsModBar"></div><div id="mlsTabs"></div></div>
+
+  <div class="intro-box" id="mlsIntro">
+    <h3>What this module shows</h3>
+    <div class="intro-cols">
+      <div>
+        <p>A gradient-boosting model can predict house prices well, but it is a sum of hundreds of trees: <b>why</b> does it predict what it predicts? <b>Explainability</b> methods open the black box:</p>
+        <ul>
+          <li><b>Permutation importance</b>: how much worse the predictions get when one input is scrambled.</li>
+          <li><b>Partial dependence</b> (and ICE curves): how the prediction changes as one input changes.</li>
+          <li><b>SHAP values</b>: how much each input pushed one particular prediction up or down.</li>
+        </ul>
+      </div>
+      <div>
+        <p><b>How to use it</b></p>
+        <ol>
+          <li>Read which inputs matter. Is the street number important?</li>
+          <li>Choose an input for the partial dependence chart: is the effect straight, curved, the same for every house?</li>
+          <li>Pick a house and read its SHAP waterfall; compare with the linear regression.</li>
+        </ol>
+      </div>
+    </div>
+  </div>
+
+  <!-- ===================== SIMULATION ===================== -->
+  <section data-panel="sim">
+    <div class="mod-grid">
+      <aside class="side" aria-label="Controls">
+        <div class="card">
+          <div class="card-head"><h3>1. Data<button type="button" class="help" data-help="data">?</button></h3></div>
+          <div class="field-row"><label for="n">Houses<button type="button" class="help" data-help="n">?</button></label><output id="nVal"></output></div>
+          <input type="range" id="n" min="100" max="600" step="50" value="300">
+          <div class="field-row"><label for="seed">Random seed<button type="button" class="help" data-help="seed">?</button></label></div>
+          <div class="inline-inputs"><input type="number" id="seed" min="1" max="99999" step="1" value="1" aria-label="Random seed"><button type="button" class="btn-ghost btn-icon" id="newSeed" title="New random data" style="flex:0 0 auto">&#127922;</button></div>
+        </div>
+        <div class="card">
+          <div class="card-head"><h3>2. The model<button type="button" class="help" data-help="model">?</button></h3></div>
+          <div class="field-row"><label>Model<button type="button" class="help" data-help="model">?</button></label></div>
+          <div class="seg full" role="group" aria-label="Model"><button type="button" data-model="gbm">Gradient boosting</button><button type="button" data-model="ols">Linear regression</button></div>
+        </div>
+        <div class="card">
+          <div class="card-head"><h3>3. What to explain<button type="button" class="help" data-help="what">?</button></h3></div>
+          <div class="field-row"><label for="feat">Input for the partial dependence<button type="button" class="help" data-help="feat">?</button></label></div>
+          <select id="feat" aria-label="Input"></select>
+          <div class="field-row"><label for="obs">House to explain (test set)<button type="button" class="help" data-help="obs">?</button></label><output id="obsVal"></output></div>
+          <input type="range" id="obs" min="1" max="60" step="1" value="1">
+        </div>
+      </aside>
+
+      <main class="main">
+        <div class="story" id="story"></div>
+        <div class="stat-grid" id="stats" style="margin-top:12px"></div>
+        <div id="statusLine" class="status-line" style="margin:10px 0"></div>
+        <div class="fig-grid">
+          <div id="figImp"></div>
+          <div id="figPdp"></div>
+          <div id="figShap"></div>
+          <div id="figBee"></div>
+        </div>
+      </main>
+    </div>
+  </section>
+
+  <!-- ===================== LESSON ===================== -->
+  <section data-panel="lesson" class="card lesson" hidden>
+    <div id="mlsMathCtl"></div>
+    <p class="lvl-only-intuition note" style="margin-bottom:8px">Showing the intuition only. Choose <b>Formulas</b> or <b>Deep dive</b> above to add the mathematics.</p>
+
+    <h4>Why explain?</h4>
+    <p>Regulators, managers and clients ask why a loan was refused or a price was set. Explanations also catch errors: a model that relies on an input that should not matter (an ID, a street number, information from the future) is probably wrong. Explainability methods work for <b>any</b> model, because they only look at how the predictions respond to the inputs.</p>
+
+    <h4>Permutation importance</h4>
+    <p>Shuffle one input's column in the test set (so it no longer matches the other inputs and the price) and measure how much the error grows. A large increase: the model relies on that input. About zero: it does not. Caution: when two inputs are strongly related (size and rooms), the model can use either, so each one alone may look less important than the pair; and shuffling creates unrealistic houses (200 m² with 1 room).</p>
+
+    <h4>Partial dependence and ICE</h4>
+    <p>Set one input to a value for <b>every</b> house, predict, and average: repeat across the input's range. The curve (<b>partial dependence</b>) shows the average effect: straight, curved, with thresholds. The thin lines (<b>ICE</b>, individual conditional expectation) show the same for single houses: when they are not parallel, the effect depends on other inputs, an <b>interaction</b> (a square metre is worth more near the centre).</p>
+
+    <h4>SHAP values</h4>
+    <p>For one prediction, SHAP splits the difference between that prediction and the average prediction into a contribution of each input, fairly: each input gets its average marginal contribution over all orders in which inputs could be added (the <b>Shapley value</b> from cooperative game theory). The contributions <b>add up</b> exactly to the prediction minus the average. For a linear regression, the SHAP value of an input is simply coefficient × (value − average value).</p>
+
+    <div class="math-block lvl-math"><div class="mb-title">Definitions</div>
+      <div class="tex-block">\text{PI}_j = \text{RMSE}\bigl(f, X^{(j \text{ shuffled})}\bigr) - \text{RMSE}(f, X), \qquad \text{PD}_j(v) = \frac{1}{n} \sum_i f(x_{i,-j}, x_j = v)</div>
+      <div class="tex-block">\phi_j(x) = \sum_{S \subseteq F \setminus \{j\}} \frac{|S|!\,(p - |S| - 1)!}{p!} \bigl[v(S \cup \{j\}) - v(S)\bigr], \qquad v(S) = \frac{1}{|B|} \sum_{b \in B} f(x_S, b_{-S})</div>
+      <div class="tex-block">f(x) = v(\varnothing) + \sum_{j=1}^{p} \phi_j(x)</div>
+      <p class="note">Here the SHAP values are computed exactly over all 2<sup>5</sup> = 32 coalitions of inputs, with 50 training houses as the background B (interventional SHAP). The additivity, and the linear-model formula, are checked in the module's tests.</p>
+    </div>
+    <div class="math-block deep lvl-deep"><div class="mb-title">Deep dive</div>
+      <p><b>Exact versus approximate.</b> With p inputs there are 2<sup>p</sup> coalitions: fine for 5, impossible for 100. The shap package uses TreeSHAP (exact and fast for trees) and KernelSHAP (sampling) for other models.</p>
+      <p><b>Correlated inputs.</b> Interventional SHAP and partial dependence evaluate the model at combinations of inputs that may never occur together. Accumulated local effects (ALE) plots and conditional SHAP variants address this.</p>
+      <p><b>Explanations are not causes.</b> They describe the model, not the world. A large SHAP value for an input says the model uses it, not that changing it would change the outcome.</p>
+      <p class="note">References: Breiman (2001), "Random forests", <i>Machine Learning</i> (permutation importance); Friedman (2001), "Greedy function approximation: a gradient boosting machine", <i>Annals of Statistics</i> (partial dependence); Goldstein et al. (2015), "Peeking inside the black box" (ICE); Lundberg and Lee (2017), "A unified approach to interpreting model predictions", <i>NeurIPS</i>; Molnar (2022), <i>Interpretable Machine Learning</i>.</p>
+    </div>
+  </section>
+
+  <!-- ===================== CHALLENGES ===================== -->
+  <section data-panel="challenges" class="card" hidden>
+    <div class="card-head"><h3>Challenges</h3><span class="card-sub">Answer the "predict first" questions before testing them in the Simulation tab.</span></div>
+    <div id="challenges"></div>
+  </section>
+
+  <!-- ===================== REAL DATA ===================== -->
+  <section data-panel="real" class="card lesson" hidden>
+    <h4>From the simulation to real data</h4>
+    <ul>
+      <li>Credit scoring (reasons for a refusal), pricing, forecasting models for policy: report importance, partial dependence and SHAP for key predictions.</li>
+      <li>In Python: <code>sklearn.inspection.permutation_importance</code>, <code>PartialDependenceDisplay</code> (with <code>kind="both"</code> for ICE), and the <code>shap</code> package (<code>TreeExplainer</code> for tree ensembles).</li>
+    </ul>
+    <div class="crosslink"><span>&#10140;</span><span><a id="fourCast" target="_blank" rel="noopener"><b>4Cast Lab</b></a> shows the feature importance of its models on your own data.</span></div>
+  </section>
+
+  <footer id="mlsFooter"></footer>
+</div>
+
+<script>
+(function () {
+  'use strict';
+  const MLS = window.MLS, ML = MLS.ml, CL = MLS.cls;
+  const META = MLS.moduleMeta('explainability');
+  const $ = id => document.getElementById(id);
+  const F = MLS.fmt, pct = CL.pct;
+
+  const S = { n: 300, seed: 1, model: 'gbm', feat: 2, obs: 1 };
+  let D = null, R = null;
+  const SH = ['Size', 'Rooms', 'Distance', 'Age', 'Street digit'];
+  function makeData() {
+    const g = ML.DATA.houses.gen(ML.rng(S.seed), S.n), te = ML.split(g.X.length, S.seed);
+    D = { names: g.names, target: g.target, Xtr: [], ytr: [], Xte: [], yte: [] };
+    g.X.forEach((x, i) => { if (te[i]) { D.Xte.push(x); D.yte.push(g.y[i]); } else { D.Xtr.push(x); D.ytr.push(g.y[i]); } });
+    D.bg = D.Xtr.slice(0, 50);
+    D.gbm = ML.gbm(D.Xtr, D.ytr, { rounds: 200, eta: 0.1, depth: 3 }); D.ols = ML.ols(D.Xtr, D.ytr);
+  }
+  const f = () => (S.model === 'gbm' ? x => D.gbm.predict(x) : D.ols.predict);
+  function compute() {
+    const fn = f(), rm = (X, y) => Math.sqrt(X.reduce((s, x, i) => s + (fn(x) - y[i]) ** 2, 0) / y.length);
+    const my = D.yte.reduce((a, b) => a + b, 0) / D.yte.length, sst = D.yte.reduce((s, v) => s + (v - my) ** 2, 0);
+    R = { rmTe: rm(D.Xte, D.yte), rmTr: rm(D.Xtr, D.ytr) }; R.r2 = 1 - R.rmTe ** 2 * D.yte.length / sst;
+    R.other = (S.model === 'gbm' ? x => D.ols.predict(x) : x => D.gbm.predict(x)); R.rmOther = Math.sqrt(D.Xte.reduce((s, x, i) => s + (R.other(x) - D.yte[i]) ** 2, 0) / D.yte.length);
+    R.pi = ML.permImportance(fn, D.Xte, D.yte, 5, S.seed);
+    R.shapAll = D.Xte.map(x => ML.shapExact(fn, x, D.bg));
+  }
+  const oi = () => Math.min(S.obs, D.Xte.length) - 1;
+  function updateText() {
+    const card = MLS.statCard, top = R.pi.imp.indexOf(Math.max(...R.pi.imp)), sh = R.shapAll[oi()], x = D.Xte[oi()];
+    $('story').innerHTML = '<h3>Data: house prices</h3><p>' + ML.DATA.houses.note + ' <b>' + D.Xtr.length + ' houses in the training set, ' + D.Xte.length + ' in the test set.</b> Model: ' + (S.model === 'gbm' ? 'gradient boosting (200 trees of depth 3, learning rate 0.1)' : 'linear regression (least squares)') + '. House ' + (oi() + 1) + ' of the test set: ' + D.names.map((nm, j) => nm.replace(/ \(.*\)/, '').toLowerCase() + ' ' + x[j]).join(', ') + '; actual price ' + F(D.yte[oi()], 1) + '.</p>';
+    $('stats').innerHTML =
+      card('RMSE, test set', F(R.rmTe, 1), (S.model === 'gbm' ? 'linear regression: ' : 'gradient boosting: ') + F(R.rmOther, 1), '', 'st_rmse') +
+      card('R², test set', F(R.r2, 3), 'share of price variation explained', '', 'st_r2') +
+      card('Most important input', SH[top], 'RMSE rises by ' + F(R.pi.imp[top], 1) + ' when shuffled', '', 'st_top') +
+      card('Prediction for house ' + (oi() + 1), F(sh.pred, 1), 'average prediction ' + F(sh.base, 1) + ' + SHAP values', '', 'st_pred');
+    const dig = R.pi.imp[4], cls = 'status-line ok';
+    $('statusLine').textContent = 'The street-number digit raises the test RMSE by only ' + F(dig, 2) + ' when shuffled: the model ' + (dig < 1 ? 'hardly uses it' : 'uses it a little, a sign of fitting noise') + '. Size and rooms are closely related, so the model can lean on either.';
+    $('statusLine').className = cls;
+  }
+  const figImp = MLS.figure($('figImp'), { title: 'Permutation importance (test set)', help: 'figimp', file: 'permutation-importance', plot: { aspect: 0.8, margin: { l: 96, b: 48 }, x: { label: 'Increase in RMSE when shuffled' }, y: { label: '', ticks: false } } });
+  function drawImp() {
+    const P = figImp.plot, imp = R.pi.imp, order = imp.map((v, j) => j).sort((a, b) => imp[a] - imp[b]), c1 = MLS.color('series-1');
+    P.setX(Math.min(0, ...imp) * 1.1, Math.max(...imp) * 1.18 || 1); P.setY(0.4, order.length + 0.6);
+    P.draw(P => { order.forEach((j, r) => { P.rect(0, r + 1 - 0.32, imp[j], r + 1 + 0.32, { fill: MLS.rgba(c1, j === S.feat ? 1 : 0.6) }); P.text(P.xd[0], r + 1, SH[j], { anchor: 'end', dx: -6, dy: 4, size: 12, weight: 700 }); P.text(imp[j], r + 1, F(imp[j], 1), { dx: 5, dy: 4, size: 11.5 }); }); });
+    figImp.caption('Test RMSE ' + F(R.pi.base, 1) + '. Each input shuffled 5 times; the bar is the average increase in RMSE.');
+  }
+  const figPdp = MLS.figure($('figPdp'), { title: 'Partial dependence and ICE', help: 'figpdp', file: 'partial-dependence', plot: { aspect: 0.8, margin: { l: 60, b: 48 }, x: { label: () => D.names[S.feat] }, y: { label: () => 'Predicted ' + D.target.toLowerCase() } } });
+  function drawPdp() {
+    const P = figPdp.plot, j = S.feat, fn = f(), X = D.Xtr, vals = X.map(x => x[j]), lo = Math.min(...vals), hi = Math.max(...vals), G = j === 1 || j === 4 ? Array.from({ length: hi - lo + 1 }, (_, k) => lo + k) : Array.from({ length: 30 }, (_, k) => lo + (hi - lo) * k / 29);
+    const ice = X.slice(0, 40).map(x => G.map(v => { const z = x.slice(); z[j] = v; return fn(z); })), pd = G.map((v, k) => X.reduce((s, x) => { const z = x.slice(); z[j] = v; return s + fn(z); }, 0) / X.length);
+    const all = ice.flat().concat(pd), c2 = MLS.color('series-2'), mu = MLS.color('chart-muted'), xo = D.Xte[oi()][j];
+    P.setX(lo, hi); P.setY(...MLS.niceDomain(Math.min(...all), Math.max(...all), 0.06));
+    P.draw(P => {
+      ice.forEach(c => P.line(G.map((v, k) => [v, c[k]]), { color: MLS.rgba(mu, 0.35), width: 1 }));
+      P.line(G.map((v, k) => [v, pd[k]]), { color: c2, width: 3 });
+      P.vline(xo, { color: MLS.color('chart-ink'), width: 1.2, dash: '4 4' });
+      P.crosshair([{ name: 'Partial dependence', color: c2, pts: G.map((v, k) => [v, pd[k]]) }], v => D.names[j].replace(/ \(.*\)/, '') + ' ' + F(v, 1), v => F(v, 1));
+    });
+    figPdp.legend([{ label: 'Partial dependence (average)', color: c2, line: true }, { label: 'ICE: 40 single houses', color: mu, line: true }, { label: 'Value of the house explained', color: MLS.color('chart-ink'), line: true, dash: '4 4' }]);
+    figPdp.caption(S.model === 'ols' ? 'A linear regression can only draw straight, parallel lines.' : 'Steps come from the trees. When the thin lines are not parallel, the effect depends on other inputs (an interaction).');
+  }
+  const figShap = MLS.figure($('figShap'), { title: 'SHAP waterfall for one house', help: 'figshap', file: 'shap-waterfall', plot: { aspect: 0.8, margin: { l: 128, b: 48 }, x: { label: () => 'Predicted ' + D.target.toLowerCase() }, y: { label: '', ticks: false } } });
+  function drawShap() {
+    const P = figShap.plot, sh = R.shapAll[oi()], x = D.Xte[oi()], order = sh.phi.map((v, j) => j).sort((a, b) => Math.abs(sh.phi[a]) - Math.abs(sh.phi[b])), c1 = MLS.color('series-1'), c2 = MLS.color('series-2'), ink = MLS.color('chart-ink');
+    let cur = sh.base; const steps = order.slice().reverse().map(j => { const a = cur; cur += sh.phi[j]; return { j, a, b: cur }; });
+    const xs = steps.flatMap(s => [s.a, s.b]); P.setX(...MLS.niceDomain(Math.min(...xs), Math.max(...xs), 0.12)); P.setY(0, steps.length + 1);
+    P.draw(P => {
+      steps.forEach((s, r) => { const y = steps.length - r; P.rect(Math.min(s.a, s.b), y - 0.32, Math.max(s.a, s.b), y + 0.32, { fill: sh.phi[s.j] >= 0 ? c2 : c1 }); P.text(P.xd[0], y, SH[s.j] + ' = ' + x[s.j], { anchor: 'end', dx: -6, dy: 4, size: 11.5, weight: 700 }); P.text(Math.max(s.a, s.b), y, (sh.phi[s.j] >= 0 ? '+' : '') + F(sh.phi[s.j], 1), { dx: 5, dy: 4, size: 11.5 }); });
+      P.vline(sh.base, { color: MLS.color('chart-muted'), width: 1.2, dash: '4 4' }); P.vline(sh.pred, { color: ink, width: 1.6 });
+      P.text(sh.base, 0, 'average ' + F(sh.base, 1), { anchor: 'middle', dy: -4, size: 11 }); P.text(sh.pred, steps.length + 1, 'prediction ' + F(sh.pred, 1), { anchor: 'middle', dy: 12, size: 11.5, weight: 800 });
+    });
+    figShap.legend([{ label: 'Pushes the price up', color: c2 }, { label: 'Pushes the price down', color: c1 }]);
+    figShap.caption('From the average prediction (' + F(sh.base, 1) + ') to this house\'s prediction (' + F(sh.pred, 1) + '): the bars add up exactly. Actual price: ' + F(D.yte[oi()], 1) + '.');
+  }
+  const figBee = MLS.figure($('figBee'), { title: 'SHAP values of all test houses', help: 'figbee', file: 'shap-summary', plot: { aspect: 0.8, margin: { l: 96, b: 48 }, x: { label: 'SHAP value (effect on the predicted price)' }, y: { label: '', ticks: false } } });
+  function drawBee() {
+    const P = figBee.plot, A = R.shapAll, p = 5, seq = MLS.seqScale(), mean = Array.from({ length: p }, (_, j) => A.reduce((s, a) => s + Math.abs(a.phi[j]), 0) / A.length), order = mean.map((v, j) => j).sort((a, b) => mean[a] - mean[b]);
+    const all = A.flatMap(a => a.phi); P.setX(...MLS.niceDomain(Math.min(...all), Math.max(...all), 0.06)); P.setY(0.4, p + 0.6);
+    P.draw(P => {
+      P.vline(0, { color: MLS.color('chart-axis'), width: 1 });
+      order.forEach((j, r) => {
+        const vals = D.Xte.map(x => x[j]), lo = Math.min(...vals), hi = Math.max(...vals);
+        P.text(P.xd[0], r + 1, SH[j], { anchor: 'end', dx: -6, dy: 4, size: 12, weight: 700 });
+        P.points(A.map((a, i) => ({ x: a.phi[j], y: r + 1 + (ML.rng(i * 31 + j).random() - 0.5) * 0.5, v: D.Xte[i][j], i })), { color: d => { const c = seq((d.v - lo) / Math.max(1e-9, hi - lo) * 0.85 + 0.1); return 'rgb(' + c.map(Math.round).join(',') + ')'; }, r: d => (d.i === oi() ? 6 : 3.4), ring: false, tip: d => 'House ' + (d.i + 1) + '<br>' + SH[j] + ' = ' + d.v + '<br>SHAP ' + F(d.x, 1), highlight: d => d.i === oi() });
+      });
+    });
+    figBee.caption('Each dot is a test house; colour: the input\'s value (light = low, dark = high). Inputs ordered by mean |SHAP|. Circled: the house explained.');
+  }
+  function syncUI() {
+    $('n').value = S.n; $('nVal').textContent = S.n; $('seed').value = S.seed;
+    MLS.$$('[data-model]').forEach(b => b.setAttribute('aria-pressed', String(b.dataset.model === S.model)));
+    $('feat').innerHTML = D.names.map((nm, j) => '<option value="' + j + '"' + (j === S.feat ? ' selected' : '') + '>' + nm + '</option>').join('');
+    $('obs').max = D.Xte.length; S.obs = Math.min(S.obs, D.Xte.length); $('obs').value = S.obs; $('obsVal').textContent = S.obs;
+  }
+  function render() { syncUI(); updateText(); drawImp(); drawPdp(); drawShap(); drawBee(); if (ch) ch.check(); MLS.state.save(); }
+  function refresh() { compute(); render(); }
+  const full = () => { makeData(); refresh(); };
+  $('n').addEventListener('input', e => ($('nVal').textContent = e.target.value)); $('n').onchange = e => { S.n = +e.target.value; full(); };
+  $('seed').onchange = e => { S.seed = Math.max(1, Math.round(+e.target.value) || 1); full(); };
+  $('newSeed').onclick = () => { S.seed = MLS.newSeed(); full(); };
+  MLS.$$('[data-model]').forEach(b => (b.onclick = () => { S.model = b.dataset.model; refresh(); }));
+  $('feat').onchange = e => { S.feat = +e.target.value; render(); };
+  $('obs').addEventListener('input', e => { S.obs = +e.target.value; render(); });
+
+  MLS.registerHelp({
+    data: { title: 'Data', html: 'Simulated house sales. The true price rises with size, more so near the centre (an interaction); falls with distance; is U-shaped in age (new and historic houses cost more); rooms add a little; the street-number digit has no effect. 80% training set, 20% test set.' },
+    n: { title: 'Houses', html: 'How many houses are simulated.' },
+    seed: { title: 'Random seed', html: 'Fixes the houses and the shuffles.' },
+    model: { title: 'Model', html: '<b>Gradient boosting</b>: 200 small trees (see the Gradient Boosting module). <b>Linear regression</b>: one coefficient per input, straight-line effects.' },
+    what: { title: 'What to explain', html: 'Choose the input for the partial dependence chart and the test-set house for the SHAP waterfall.' },
+    feat: { title: 'Input', html: 'The input whose effect is shown in the partial dependence chart.' },
+    obs: { title: 'House', html: 'Which test-set house is explained in the waterfall (it is circled in the SHAP summary).' },
+    st_rmse: { title: 'Test RMSE', html: 'Root mean squared error of the price predictions on the test set, in thousand €.' },
+    st_r2: { title: 'R²', html: 'Share of the variation of test-set prices explained by the model.' },
+    st_top: { title: 'Most important input', html: 'The input whose shuffling raises the test RMSE the most.' },
+    st_pred: { title: 'Prediction', html: 'The model\'s price for the chosen house = the average prediction + the sum of its SHAP values.' },
+    figimp: { title: 'Permutation importance', html: 'How much the test RMSE grows when each input is shuffled. Longer bar: the model relies more on that input. Highlighted: the input of the partial dependence chart.' },
+    figpdp: { title: 'Partial dependence', html: 'The average prediction when every training house is given the same value of the input (thick line), and the same for 40 single houses (thin lines).' },
+    figshap: { title: 'SHAP waterfall', html: 'The contribution of each input to this house\'s prediction, starting from the average prediction.' },
+    figbee: { title: 'SHAP summary', html: 'All SHAP values of all test houses: the spread of each row shows how much the input moves predictions, the colours in which direction.' }
+  });
+
+  function setup(o) { Object.assign(S, o); MLS.pickTab('sim'); full(); window.scrollTo({ top: 0, behavior: 'smooth' }); }
+  const ch = MLS.challenges($('challenges'), META.id, [
+    { type: 'predict', q: 'The street-number digit has nothing to do with the price. Its permutation importance will be...',
+      options: ['the largest', 'about zero: shuffling it does not hurt the predictions', 'the same as size'], answer: 1,
+      explain: 'If the model does not rely on an input, scrambling it changes nothing. A large importance for such an input would be a warning sign.',
+      tryIt: () => setup({ model: 'gbm' }) },
+    { type: 'predict', q: 'The SHAP values of one house add up to...',
+      options: ['the R²', 'zero', 'its prediction minus the average prediction'], answer: 2,
+      explain: 'This "additivity" is what makes SHAP a fair split of one prediction among the inputs.',
+      tryIt: () => setup({ obs: 5 }) },
+    { type: 'task', q: 'Gradient boosting: find a test house whose largest SHAP contribution comes from the distance to the centre, pushing the price down.', hint: 'Move the "House to explain" slider and watch the waterfall: the longest bar should be a blue "Distance" bar.',
+      check: () => R && S.model === 'gbm' && (() => { const p = R.shapAll[oi()].phi, k = p.map(Math.abs).indexOf(Math.max(...p.map(Math.abs))); return k === 2 && p[2] < 0; })() },
+    { type: 'predict', q: 'In the partial dependence chart for size, the thin ICE lines fan out: steep for some houses, flat for others. This means...',
+      options: ['the effect of size depends on other inputs (here: distance), an interaction', 'the model is broken', 'size has no effect'], answer: 0,
+      explain: 'A square metre near the centre is worth more than one far away. Parallel ICE lines would mean the same effect for every house.',
+      tryIt: () => setup({ model: 'gbm', feat: 0 }) },
+    { type: 'task', q: 'Show how the linear regression misses the U shape: choose the linear model and the partial dependence of age.', hint: 'Model: Linear regression; input: Age. Then compare with gradient boosting.',
+      check: () => R && S.model === 'ols' && S.feat === 3 },
+    { type: 'predict', q: 'Size and rooms are closely related. Their permutation importance...',
+      options: ['can understate each one, because the model can rely on either; and shuffling one creates unrealistic houses', 'is always exactly equal', 'is unaffected by the relation'], answer: 0,
+      explain: 'Importance is shared between related inputs. Look at the pair together, or use grouped importance.',
+      tryIt: () => setup({ model: 'gbm', feat: 1 }) }
+  ]);
+  const STATE = {
+    get: () => ({ n: S.n, seed: S.seed, model: S.model, feat: S.feat, obs: S.obs }),
+    set: o => { if (Number.isFinite(o.n)) S.n = Math.max(100, Math.min(600, o.n)); if (Number.isFinite(o.seed)) S.seed = o.seed; if (['gbm', 'ols'].includes(o.model)) S.model = o.model; if ([0, 1, 2, 3, 4].includes(o.feat)) S.feat = o.feat; if (Number.isFinite(o.obs)) S.obs = Math.max(1, o.obs); }
+  };
+  const start = full;
+  MLS.moduleBar({ id: META.id, title: META.title, section: META.sectionTitle, level: META.level },
+    { tabs: [{ id: 'sim', label: 'Simulation' }, { id: 'lesson', label: 'Lesson' }, { id: 'challenges', label: 'Challenges' }, { id: 'real', label: 'On real data' }] });
+  MLS.state.init({ id: META.id, get: STATE.get, set: STATE.set });
+  const fc = $('fourCast'); if (fc) fc.href = MLS.APP.fourCastUrl;
+  window.__mls = { S, get R() { return R; }, get D() { return D; } };
+  document.addEventListener('mls:theme', () => refresh());
+  start();
+})();
+</script>
+</body>
+</html>

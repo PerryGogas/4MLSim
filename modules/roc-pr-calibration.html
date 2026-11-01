@@ -1,0 +1,360 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>ROC, Precision-Recall &amp; Calibration | 4MLSim</title>
+  <meta name="theme-color" content="#1B2340">
+  <link rel="manifest" href="../manifest.json">
+  <link rel="icon" type="image/svg+xml" href="../assets/img/icon.svg">
+  <link rel="apple-touch-icon" href="../assets/img/apple-touch-icon.png">
+  <link rel="stylesheet" href="../assets/vendor/temml.css">
+  <link rel="stylesheet" href="../assets/css/4mlsim.css">
+  <script src="../assets/vendor/temml.min.js"></script>
+  <script src="../assets/js/core.js"></script>
+  <script src="../assets/js/stats.js"></script>
+  <script src="../assets/js/plot.js"></script>
+  <script src="../assets/js/modules.js"></script>
+  <script src="../assets/js/core-ml.js"></script>
+  <script src="../assets/js/classify-ui.js"></script>
+</head>
+<body>
+<div class="page">
+  <header id="mlsHeader" data-variant="compact"></header>
+  <div class="mod-top" id="mlsTop"><div id="mlsModBar"></div><div id="mlsTabs"></div></div>
+
+  <div class="intro-box" id="mlsIntro">
+    <h3>What this module shows</h3>
+    <div class="intro-cols">
+      <div>
+        <p>A threshold T turns probabilities into classes, and every T gives a different confusion matrix. The <b>ROC curve</b> and the <b>precision-recall curve</b> show all thresholds at once; their areas (<b>AUC</b>, <b>average precision</b>) score the model without choosing T.</p>
+        <p>The <b>costs</b> of the two errors then choose T. Finally, <b>calibration</b> asks whether the probabilities themselves can be trusted: do 30% of the banks with probability 0.3 fail?</p>
+      </div>
+      <div>
+        <p><b>How to use it</b></p>
+        <ol>
+          <li>Move T and follow the diamonds along the ROC and precision-recall curves.</li>
+          <li>Make failures rare: the ROC curve hardly moves, the precision-recall curve drops.</li>
+          <li>Enter the cost of a missed failure and of a false alarm, and use the lowest-cost T.</li>
+          <li>Compare the calibration of the logit, naive Bayes and KNN.</li>
+        </ol>
+      </div>
+    </div>
+  </div>
+
+  <!-- ===================== SIMULATION ===================== -->
+  <section data-panel="sim">
+    <div class="mod-grid">
+      <aside class="side" aria-label="Controls">
+        <div class="card">
+          <div class="card-head"><h3>1. Data: bank failures<button type="button" class="help" data-help="data">?</button></h3></div>
+          <div class="field-row"><label for="share">Share of failed banks<button type="button" class="help" data-help="share">?</button></label><output id="shareVal"></output></div>
+          <input type="range" id="share" min="0.01" max="0.5" step="0.01" value="0.3">
+          <div class="field-row"><label for="n">Banks<button type="button" class="help" data-help="n">?</button></label><output id="nVal"></output></div>
+          <input type="range" id="n" min="200" max="5000" step="100" value="2000">
+          <div class="field-row"><label for="seed">Random seed<button type="button" class="help" data-help="seed">?</button></label></div>
+          <div class="inline-inputs"><input type="number" id="seed" min="1" max="99999" step="1" value="1" aria-label="Random seed"><button type="button" class="btn-ghost btn-icon" id="newSeed" title="New random data" style="flex:0 0 auto">&#127922;</button></div>
+        </div>
+        <div class="card">
+          <div class="card-head"><h3>2. Model<button type="button" class="help" data-help="model">?</button></h3></div>
+          <div class="seg full" role="group" aria-label="Model"><button type="button" data-model="logit">Logit</button><button type="button" data-model="nb">Naive Bayes</button><button type="button" data-model="knn">KNN</button></div>
+        </div>
+        <div class="card">
+          <div class="card-head"><h3>3. Threshold and costs<button type="button" class="help" data-help="cost">?</button></h3></div>
+          <div class="field-row"><label for="thr">Threshold T</label><output id="thrVal"></output></div>
+          <input type="range" id="thr" min="0.01" max="0.99" step="0.01" value="0.5">
+          <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:10px">
+            <div><label for="cFN" class="note" style="margin:0;display:block">Cost of a missed failure (FN)</label><input type="number" id="cFN" min="0" step="1" value="5"></div>
+            <div><label for="cFP" class="note" style="margin:0;display:block">Cost of a false alarm (FP)</label><input type="number" id="cFP" min="0" step="1" value="1"></div>
+          </div>
+          <button type="button" class="btn-secondary" id="useBest" style="width:100%;margin-top:10px">Use the lowest-cost T</button>
+          <p class="note" id="costNote"></p>
+        </div>
+      </aside>
+
+      <main class="main">
+        <div class="story" id="story"></div>
+        <div class="stat-grid" id="stats" style="margin-top:12px"></div>
+        <div id="statusLine" class="status-line" style="margin:10px 0"></div>
+        <div class="fig-grid">
+          <div id="figROC"></div>
+          <div id="figPR"></div>
+          <div id="figCost"></div>
+          <div id="figCal"></div>
+        </div>
+      </main>
+    </div>
+  </section>
+
+  <!-- ===================== LESSON ===================== -->
+  <section data-panel="lesson" class="card lesson" hidden>
+    <div id="mlsMathCtl"></div>
+    <p class="lvl-only-intuition note" style="margin-bottom:8px">Showing the intuition only. Choose <b>Formulas</b> or <b>Deep dive</b> above to add the mathematics.</p>
+
+    <h4>The ROC curve</h4>
+    <p>The ROC curve (receiver operating characteristic) is a fundamental graphical tool to evaluate binary classifiers. It shows the trade-off between the <b>true positive rate</b> (sensitivity) and the <b>false positive rate</b> (false alarms, 1 &minus; specificity) across all thresholds. It starts at (0, 0) with T = 1 (nothing is called failed) and ends at (1, 1) with T = 0 (everything is called failed); each point in between is one threshold. This lets us pick the point that is optimal for the problem at hand.</p>
+    <p><b>AUC</b>, the area under the ROC curve: 1.0 = perfect, around 0.8 = good, 0.5 = random (the diagonal). Intuitively: if we pick at random one failed bank and one healthy bank, AUC is the probability that the model gives the failed bank the higher probability.</p>
+
+    <h4>The precision-recall curve</h4>
+    <p>The precision-recall (PR) curve plots precision (of the banks called failed, how many failed?) against recall (sensitivity) for every threshold. A useless model has a precision equal to the share of failed banks, so the baseline is low when failures are rare. Its area is the <b>average precision (AP)</b>.</p>
+    <p><b>Why both?</b> Sensitivity and false alarms are shares within each actual class, so the ROC curve barely changes when failures become rare. Precision mixes the two classes: with rare failures, even a few percent of false alarms outnumber the true alarms, and the PR curve drops. When the 1s are rare and the alarms matter, read the PR curve.</p>
+
+    <h4>Choosing T with the costs of the errors</h4>
+    <p>A misclassification has a cost, and the costs are usually not symmetric: a missed bank failure (FN) costs the deposit insurance far more than an extra inspection after a false alarm (FP). With a cost per FN and per FP, the total cost of a threshold is cost<sub>FN</sub> &times; FN + cost<sub>FP</sub> &times; FP. We choose the T with the lowest total cost <b>on the training set</b>, and check it once on the test set. The more expensive a missed failure, the lower the best T.</p>
+    <div class="math-block lvl-math"><div class="mb-title">Total cost and the best threshold</div>
+      <div class="tex-block">\text{Cost}(T) = c_{FN}\, FN(T) + c_{FP}\, FP(T), \qquad T^* = \arg\min_T \text{Cost}(T)</div>
+      <p class="note">If the probabilities are well calibrated, the best threshold is close to T* = c<sub>FP</sub> / (c<sub>FP</sub> + c<sub>FN</sub>): with c<sub>FN</sub> = 5 and c<sub>FP</sub> = 1, T* ≈ 1/6 ≈ 0.17.</p>
+    </div>
+
+    <h4>Calibration</h4>
+    <p>A model can rank the banks well (high AUC) and still give probabilities that are too high or too low. A model is <b>calibrated</b> if, among the banks it gives a probability of about 0.3, about 30% fail. The <b>reliability diagram</b> groups the test banks into 10 bins by predicted probability and plots the share that actually failed: a calibrated model lies on the diagonal. The <b>Brier score</b>, the average of (probability &minus; outcome)², measures accuracy and calibration together (0 = perfect).</p>
+    <ul>
+      <li>The <b>logit</b> is usually well calibrated: maximum likelihood fits the probabilities themselves.</li>
+      <li><b>Naive Bayes</b> tends to be too extreme when the inputs are related (see its module).</li>
+      <li><b>KNN</b> gives coarse probabilities (shares of 15 votes) and can be off in thin regions.</li>
+    </ul>
+    <div class="math-block lvl-math"><div class="mb-title">Brier score</div>
+      <div class="tex-block">\text{Brier} = \frac{1}{n}\sum_{i=1}^{n} (p_i - y_i)^2</div>
+    </div>
+
+    <div class="math-block deep lvl-deep"><div class="mb-title">Deep dive</div>
+      <p><b>AUC and the Mann-Whitney statistic.</b> AUC equals the Mann-Whitney U statistic divided by (number of 1s &times; number of 0s): the share of all (failed, healthy) pairs ranked correctly, with ties counted as half.</p>
+      <p><b>Average precision.</b> AP = Σ (R<sub>n</sub> − R<sub>n−1</sub>) P<sub>n</sub> over the thresholds, as in scikit-learn; it does not interpolate between points, which would be too optimistic.</p>
+      <p><b>Recalibration.</b> Platt scaling (a logit on the model's score) or isotonic regression, fitted on validation data, repair poor calibration without changing the ranking (AUC stays the same).</p>
+      <p class="note">References: Fawcett (2006), "An introduction to ROC analysis", <i>Pattern Recognition Letters</i> 27(8); Saito and Rehmsmeier (2015), "The precision-recall plot is more informative than the ROC plot when evaluating binary classifiers on imbalanced datasets", <i>PLoS ONE</i> 10(3); Niculescu-Mizil and Caruana (2005), "Predicting good probabilities with supervised learning", <i>ICML</i>; Elkan (2001), "The foundations of cost-sensitive learning", <i>IJCAI</i>.</p>
+    </div>
+  </section>
+
+  <!-- ===================== CHALLENGES ===================== -->
+  <section data-panel="challenges" class="card" hidden>
+    <div class="card-head"><h3>Challenges</h3><span class="card-sub">Answer the "predict first" questions before testing them in the Simulation tab.</span></div>
+    <div id="challenges"></div>
+  </section>
+
+  <!-- ===================== REAL DATA ===================== -->
+  <section data-panel="real" class="card lesson" hidden>
+    <h4>From the simulation to real data</h4>
+    <ul>
+      <li>Report AUC, and with rare events (failures, fraud, crises) also the precision-recall curve and AP: an AUC of 0.95 can come with a precision of 20%.</li>
+      <li>Agree on the costs of the two errors with the decision maker, then choose T on the training (or validation) data, never on the test set.</li>
+      <li>If the probabilities are used as probabilities (pricing loans, provisions, early-warning dashboards), check the reliability diagram and the Brier score, and recalibrate when needed.</li>
+      <li>In the lecture example, choosing between points A, B and C of the ROC curve is exactly this cost decision.</li>
+    </ul>
+    <div class="crosslink"><span>&#10140;</span><span><a id="fourCast" target="_blank" rel="noopener"><b>4Cast Lab</b></a> draws the ROC curve and reports AUC for your own classification models.</span></div>
+  </section>
+
+  <footer id="mlsFooter"></footer>
+</div>
+
+<script>
+(function () {
+  'use strict';
+  const MLS = window.MLS, ML = MLS.ml, CL = MLS.cls;
+  const META = MLS.moduleMeta('roc-pr-calibration');
+  const $ = id => document.getElementById(id);
+  const F = MLS.fmt, pct = CL.pct;
+  const MODELS = { logit: 'Logit', nb: 'Naive Bayes', knn: 'KNN (k = 15)' };
+
+  const S = { share: 0.3, n: 2000, seed: 1, model: 'logit', T: 0.5, cFN: 5, cFP: 1 };
+  let D = null, R = null;
+
+  /* ==================================================================
+     data and the three models (all estimated on the training set)
+     ================================================================== */
+  function makeData() {
+    D = CL.banks(S.seed, S.n, S.share);
+    const tr = D.pts.filter(p => !p.te), X = tr.map(p => p.x), y = tr.map(p => p.y);
+    const lg = ML.logitNewton(X, y, 30), nb = ML.gnb(X, y, 2), sc = ML.scaler(X), Z = X.map(sc.t);
+    const kn = x => { const nbh = ML.nearest(Z, sc.t(x), 15); return nbh.filter(i => y[i] === 1).length / nbh.length; };
+    D.pts.forEach(p => { p.pr = { logit: lg.prob(p.x), nb: nb.proba(p.x)[1], knn: kn(p.x) }; });
+    D.brier = {}; Object.keys(MODELS).forEach(m => { const te = D.pts.filter(p => p.te); D.brier[m] = ML.brier(te.map(p => p.pr[m]), te.map(p => p.y)); });
+  }
+  const trainPts = () => D.pts.filter(p => !p.te), testPts = () => D.pts.filter(p => p.te);
+  const prob = p => p.pr[S.model];
+  function compute() {
+    const tr = trainPts(), te = testPts();
+    R = {
+      rocTr: ML.roc(tr.map(prob), tr.map(p => p.y === 1)), rocTe: ML.roc(te.map(prob), te.map(p => p.y === 1)),
+      prTe: ML.pr(te.map(prob), te.map(p => p.y === 1)), cal: ML.calibration(te.map(prob), te.map(p => p.y), 10), brier: ML.brier(te.map(prob), te.map(p => p.y))
+    };
+    R.mTr = CL.evalBinary(tr, prob, S.T); R.mTe = CL.evalBinary(te, prob, S.T);
+    /* total cost by threshold, training and test set */
+    R.cost = [];
+    for (let t = 1; t <= 99; t++) { const T = t / 100, a = CL.evalBinary(tr, prob, T), b = CL.evalBinary(te, prob, T); R.cost.push({ T, tr: S.cFN * a.FN + S.cFP * a.FP, te: S.cFN * b.FN + S.cFP * b.FP, a, b }); }
+    let best = R.cost[0]; R.cost.forEach(c => { if (c.tr < best.tr - 1e-12) best = c; });
+    R.best = best;
+  }
+
+  function updateText() {
+    const te = testPts(), nF = te.filter(p => p.y).length;
+    $('story').innerHTML = '<h3>Data: ' + S.n + ' banks, ' + Math.round(100 * S.share) + '% of them failed</h3><p>Model: <b>' + MODELS[S.model] + '</b>, estimated on the training set (' + trainPts().length + ' banks) with the debt-to-equity ratio and the Tier 1 capital ratio. All curves and scores below are for the <b>test set</b> (' + te.length + ' banks, ' + nF + ' failed) unless stated.</p>';
+    const card = MLS.statCard;
+    $('stats').innerHTML =
+      card('AUC, test set', F(R.rocTe.auc, 3), 'area under the ROC curve; 0.5 = coin toss', '', 'm_auc') +
+      card('Average precision, test set', F(R.prTe.ap, 3), 'area under the PR curve; baseline ' + F(R.prTe.base, 3), '', 'st_ap') +
+      card('Brier score, test set', F(R.brier, 4), 'average (probability − outcome)²; 0 = perfect', '', 'st_brier') +
+      card('Lowest-cost T, training set', F(R.best.T, 2), 'cost ' + F(R.best.tr, 0) + ' (FN ' + S.cFN + ', FP ' + S.cFP + ')', '', 'st_best');
+    let msg, cls = 'status-line';
+    if (S.share <= 0.1) { msg = 'Failures are rare (' + Math.round(100 * S.share) + '%): AUC is still ' + F(R.rocTe.auc, 3) + ', but average precision is ' + F(R.prTe.ap, 3) + '. At T = ' + F(S.T, 2) + ', ' + R.mTe.FP + ' false alarms against ' + R.mTe.TP + ' true alarms: the ROC curve hides this, the precision-recall curve shows it.'; cls += ' bad'; }
+    else { msg = 'At T = ' + F(S.T, 2) + ' on the test set: sensitivity ' + pct(R.mTe.sens) + ', false alarms ' + pct(R.mTe.fa) + ', precision ' + pct(R.mTe.prec) + '. Total cost ' + F(S.cFN * R.mTe.FN + S.cFP * R.mTe.FP, 0) + ' (lowest-cost T on the training set: ' + F(R.best.T, 2) + ').'; cls += ' ok'; }
+    $('statusLine').textContent = msg; $('statusLine').className = cls;
+    $('costNote').innerHTML = 'Total cost = ' + S.cFN + ' &times; FN + ' + S.cFP + ' &times; FP. Lowest on the training set at <b>T = ' + F(R.best.T, 2) + '</b>; on the test set this T costs ' + F(R.best.te, 0) + '.';
+  }
+
+  /* ==================================================================
+     charts
+     ================================================================== */
+  const c1 = () => MLS.color('series-1'), c2 = () => MLS.color('series-2'), mu = () => MLS.color('chart-muted'), ink = () => MLS.color('chart-ink');
+  const figROC = MLS.figure($('figROC'), { title: 'ROC curve', help: 'figroc', file: 'roc-curve',
+    plot: { aspect: 0.86, margin: { l: 58, b: 50 }, x: { label: 'False alarm rate (1 − specificity)', fmt: v => F(v, 1) }, y: { label: 'Sensitivity (true positive rate)', fmt: v => F(v, 1) } },
+    data: () => ({ cols: ['Threshold', 'False alarm rate (test)', 'Sensitivity (test)'], rows: R.rocTe.pts.slice(1).map(p => [p[2], p[0], p[1]]) }) });
+  function drawROC() {
+    const P = figROC.plot;
+    P.setX(0, 1); P.setY(0, 1);
+    P.draw(P => {
+      P.line([[0, 0], [1, 1]], { color: mu(), dash: '4 4', width: 1.2 }); P.text(0.6, 0.53, 'coin toss (0.5)', { color: mu(), size: 11.5 });
+      P.line(R.rocTr.pts.map(p => [p[0], p[1]]), { color: c1(), width: 1.8, dash: '6 3' });
+      P.line(R.rocTe.pts.map(p => [p[0], p[1]]), { color: c2(), width: 2.6 });
+      const b = R.best.b;
+      P.points([{ x: R.mTe.fa, y: R.mTe.sens }], { color: c2(), shape: 'diamond', r: 7, ringColor: ink(), tip: () => 'Current T = ' + F(S.T, 2) + ' (test set)<br>False alarms ' + pct(R.mTe.fa) + '<br>Sensitivity ' + pct(R.mTe.sens) });
+      P.points([{ x: b.fa, y: b.sens }], { color: MLS.color('series-3'), shape: 'star', r: 8, ringColor: ink(), tip: () => 'Lowest-cost T = ' + F(R.best.T, 2) + ' (chosen on the training set), on the test set<br>False alarms ' + pct(b.fa) + '<br>Sensitivity ' + pct(b.sens) });
+      P.text(0.02, 0.02, 'T = 1', { dy: -6, size: 11, color: mu() }); P.text(0.98, 0.98, 'T = 0', { anchor: 'end', dy: 14, size: 11, color: mu() });
+      P.crosshair([{ name: 'Test set', color: c2(), pts: R.rocTe.pts.map(p => [p[0], p[1]]) }], v => 'False alarms ' + F(v, 2), v => F(v, 3));
+    });
+    figROC.legend([{ label: 'Test set, AUC ' + F(R.rocTe.auc, 3), color: c2(), line: true }, { label: 'Training set, AUC ' + F(R.rocTr.auc, 3), color: c1(), line: true, dash: '6 3' }, { label: 'Current T', color: mu(), shape: 'diamond' }, { label: 'Lowest-cost T', color: MLS.color('series-3'), shape: 'star' }]);
+    figROC.caption('Each point is one threshold. The closer the curve to the top-left corner, the better; the diagonal is a coin toss.');
+  }
+  const figPR = MLS.figure($('figPR'), { title: 'Precision-recall curve (test set)', help: 'figpr', file: 'precision-recall-curve',
+    plot: { aspect: 0.86, margin: { l: 58, b: 50 }, x: { label: 'Recall (sensitivity)', fmt: v => F(v, 1) }, y: { label: 'Precision', fmt: v => F(v, 1) } },
+    data: () => ({ cols: ['Threshold', 'Recall', 'Precision'], rows: R.prTe.pts.map(p => [p[2], p[0], p[1]]) }) });
+  function drawPR() {
+    const P = figPR.plot, pts = [[0, 1]].concat(R.prTe.pts.map(p => [p[0], p[1]]));
+    P.setX(0, 1); P.setY(0, 1.02);
+    P.draw(P => {
+      P.hline(R.prTe.base, { color: mu(), dash: '4 4', width: 1.2 }); P.text(0.98, R.prTe.base, 'useless model: ' + F(R.prTe.base, 2), { anchor: 'end', dy: -5, size: 11.5, color: mu() });
+      P.line(pts, { color: MLS.color('series-7'), width: 2.6 });
+      if (Number.isFinite(R.mTe.prec)) P.points([{ x: R.mTe.sens, y: R.mTe.prec }], { color: MLS.color('series-7'), shape: 'diamond', r: 7, ringColor: ink(), tip: () => 'Current T = ' + F(S.T, 2) + '<br>Recall ' + pct(R.mTe.sens) + '<br>Precision ' + pct(R.mTe.prec) });
+      P.crosshair([{ name: 'Precision', color: MLS.color('series-7'), pts }], v => 'Recall ' + F(v, 2), v => F(v, 3));
+    });
+    figPR.legend([{ label: 'Test set, average precision ' + F(R.prTe.ap, 3), color: MLS.color('series-7'), line: true }, { label: 'Share of failed banks (baseline)', color: mu(), line: true, dash: '4 4' }, { label: 'Current T', color: mu(), shape: 'diamond' }]);
+    figPR.caption('Moving right finds more failed banks (lower T), usually at the price of precision. The dashed line is what a useless model achieves: the share of failed banks.');
+  }
+  const figCost = MLS.figure($('figCost'), { title: 'Total cost of the errors by threshold', help: 'figcost', file: 'cost-by-threshold',
+    plot: { aspect: 0.86, margin: { l: 62, b: 50 }, x: { label: 'Threshold T', fmt: v => F(v, 1) }, y: { label: 'Total cost' } },
+    data: () => ({ cols: ['T', 'Cost, training set', 'Cost, test set'], rows: R.cost.map(c => [c.T, c.tr, c.te]) }) });
+  function drawCost() {
+    const P = figCost.plot, mx = Math.max(...R.cost.map(c => c.tr));
+    P.setX(0, 1); P.setY(0, mx * 1.08);
+    P.draw(P => {
+      P.vline(S.T, { color: mu(), width: 1.4, dash: '4 3' });
+      P.line(R.cost.map(c => [c.T, c.tr]), { color: c1(), width: 2.4 });
+      P.line(R.cost.map(c => [c.T, c.te]), { color: c2(), width: 2, dash: '6 3' });
+      P.points([{ x: R.best.T, y: R.best.tr }], { color: MLS.color('series-3'), shape: 'star', r: 8, ringColor: ink(), tip: () => 'Lowest cost on the training set<br>T = ' + F(R.best.T, 2) + ', cost ' + F(R.best.tr, 0) });
+      P.crosshair([{ name: 'Training set', color: c1(), pts: R.cost.map(c => [c.T, c.tr]) }, { name: 'Test set', color: c2(), pts: R.cost.map(c => [c.T, c.te]) }], v => 'T = ' + F(v, 2), v => F(v, 0));
+    });
+    figCost.legend([{ label: 'Training set (' + trainPts().length + ' banks)', color: c1(), line: true }, { label: 'Test set (' + testPts().length + ' banks)', color: c2(), line: true, dash: '6 3' }, { label: 'Lowest cost, T = ' + F(R.best.T, 2), color: MLS.color('series-3'), shape: 'star' }, { label: 'Current T', color: mu(), line: true, dash: '4 3' }]);
+    figCost.caption('Total cost = ' + S.cFN + ' × missed failures + ' + S.cFP + ' × false alarms. T is chosen where the training cost is lowest (the star); the test cost is shown to check it.');
+  }
+  const figCal = MLS.figure($('figCal'), { title: 'Calibration: reliability diagram (test set)', help: 'figcal', file: 'calibration',
+    plot: { aspect: 0.86, margin: { l: 58, b: 50 }, x: { label: 'Predicted probability of failure (bin average)', fmt: v => F(v, 1) }, y: { label: 'Share that actually failed', fmt: v => F(v, 1) } },
+    data: () => ({ cols: ['Bin from', 'Bin to', 'Banks', 'Average predicted probability', 'Share that failed'], rows: R.cal.map(c => [c.lo, c.hi, c.n, c.meanP, c.frac]) }) });
+  function drawCal() {
+    const P = figCal.plot, n = testPts().length, mxN = Math.max(...R.cal.map(c => c.n)), col = MLS.color('series-6');
+    P.setX(0, 1); P.setY(0, 1);
+    P.draw(P => {
+      R.cal.forEach(c => P.rect(c.lo + 0.005, 0, c.hi - 0.005, 0.18 * c.n / mxN, { fill: MLS.rgba(mu(), 0.25) }));
+      P.line([[0, 0], [1, 1]], { color: mu(), dash: '4 4', width: 1.2 }); P.text(0.62, 0.55, 'perfectly calibrated', { color: mu(), size: 11.5 });
+      P.line(R.cal.map(c => [c.meanP, c.frac]), { color: col, width: 2.2 });
+      P.points(R.cal.map(c => ({ x: c.meanP, y: c.frac, c })), { color: col, r: d => 3.5 + 5 * Math.sqrt(d.c.n / mxN), tip: d => 'Bin ' + F(d.c.lo, 1) + ' to ' + F(d.c.hi, 1) + ': ' + d.c.n + ' banks<br>Average predicted probability ' + F(d.c.meanP, 3) + '<br>Share that failed ' + F(d.c.frac, 3) });
+    });
+    figCal.legend([{ label: MODELS[S.model] + ', Brier score ' + F(R.brier, 4), color: col }, { label: 'Number of banks in each bin (bars)', color: MLS.rgba(mu(), 0.5), box: true }, { label: 'Perfect calibration', color: mu(), line: true, dash: '4 4' }]);
+    figCal.caption('The ' + n + ' test banks grouped into 10 bins by their predicted probability. Points below the diagonal: the model predicts more failures than happen (too high); above: too low. Bigger points hold more banks; bins with only a few banks jump around by chance. Brier scores: logit ' + F(D.brier.logit, 4) + ', naive Bayes ' + F(D.brier.nb, 4) + ', KNN ' + F(D.brier.knn, 4) + '.');
+  }
+
+  /* ==================================================================
+     controls
+     ================================================================== */
+  function syncUI() {
+    $('share').value = S.share; $('shareVal').textContent = Math.round(100 * S.share) + '%'; $('n').value = S.n; $('nVal').textContent = S.n; $('seed').value = S.seed;
+    $('thr').value = S.T; $('thrVal').textContent = F(S.T, 2); $('cFN').value = S.cFN; $('cFP').value = S.cFP;
+    MLS.$$('[data-model]').forEach(b => b.setAttribute('aria-pressed', String(b.dataset.model === S.model)));
+  }
+  function refresh(re) { if (re) makeData(); compute(); syncUI(); updateText(); drawROC(); drawPR(); drawCost(); drawCal(); figROC.refreshTable(); if (ch) ch.check(); MLS.state.save(); }
+  $('share').addEventListener('input', e => ($('shareVal').textContent = Math.round(100 * e.target.value) + '%'));
+  $('share').onchange = e => { S.share = +e.target.value; refresh(true); };
+  $('n').addEventListener('input', e => ($('nVal').textContent = e.target.value));
+  $('n').onchange = e => { S.n = +e.target.value; refresh(true); };
+  $('seed').onchange = e => { S.seed = Math.max(1, Math.round(+e.target.value) || 1); refresh(true); };
+  $('newSeed').onclick = () => { S.seed = MLS.newSeed(); refresh(true); };
+  MLS.$$('[data-model]').forEach(b => (b.onclick = () => { S.model = b.dataset.model; refresh(false); }));
+  $('thr').addEventListener('input', e => { S.T = +e.target.value; refresh(false); });
+  $('cFN').onchange = e => { S.cFN = Math.max(0, +e.target.value || 0); refresh(false); };
+  $('cFP').onchange = e => { S.cFP = Math.max(0, +e.target.value || 0); refresh(false); };
+  $('useBest').onclick = () => { S.T = R.best.T; refresh(false); };
+
+  MLS.registerHelp({
+    data: { title: 'Data', html: 'Simulated banks described by the debt-to-equity ratio and the Tier 1 capital ratio, as in the other classification modules. 80% form the training set (the models are estimated there, and the lowest-cost T is chosen there); 20% the test set.' },
+    share: { title: 'Share of failed banks', html: 'How common failures are. Watch the ROC curve (hardly changes) and the precision-recall curve (drops) as failures become rare.' },
+    n: { title: 'Banks', html: 'More banks give a larger test set, smoother curves and a more reliable calibration diagram.' },
+    model: { title: 'Model', html: '<b>Logit</b>: logistic regression with both ratios (maximum likelihood). <b>Naive Bayes</b>: Gaussian naive Bayes. <b>KNN</b>: the share of failed banks among the 15 nearest training banks (standardized inputs). All three are estimated on the same training set.' },
+    cost: { title: 'Threshold and costs', html: 'A bank is called failed when its probability is at least T. Enter the cost of a missed failure (FN) and of a false alarm (FP); the module finds the T with the lowest total cost on the training set. The button sets T to it.' },
+    st_ap: { title: 'Average precision', html: 'The area under the precision-recall curve, as computed by scikit-learn (no interpolation). A useless model scores about the share of failed banks; 1 = perfect.' },
+    st_brier: { title: 'Brier score', html: 'The average of (predicted probability − actual outcome)², with outcome 1 for failed and 0 for healthy. 0 = perfect; it rewards both good ranking and good calibration. Lower is better.' },
+    st_best: { title: 'Lowest-cost threshold', html: 'The threshold with the lowest total cost on the training set, cost<sub>FN</sub> &times; FN + cost<sub>FP</sub> &times; FP. Chosen on the training set; its cost on the test set is shown in the note and on the cost chart.' },
+    figroc: { title: 'ROC curve', html: 'Sensitivity against the false alarm rate for every threshold, from T = 1 (bottom left) to T = 0 (top right). Test set (solid) and training set (dashed). Diamond: the current T. Star: the lowest-cost T. AUC is the area under the curve.' },
+    figpr: { title: 'Precision-recall curve', html: 'Precision against recall (sensitivity) for every threshold, on the test set. The dashed line is the share of failed banks: what a useless model achieves. Average precision is the area under the curve.' },
+    figcost: { title: 'Total cost by threshold', html: 'The total cost of the errors for every threshold, on the training set (solid) and the test set (dashed). The star is the lowest training cost.' },
+    figcal: { title: 'Reliability diagram', html: 'The test banks grouped into 10 equal-width bins of predicted probability (as scikit-learn calibration_curve). For each bin: the average predicted probability (horizontal) and the share that actually failed (vertical). On the diagonal the probabilities can be taken at face value. Bars: how many banks fall in each bin.' }
+  });
+
+  function setup(o) { const re = o.share !== undefined || o.seed !== undefined || o.n !== undefined; Object.assign(S, o); MLS.pickTab('sim'); refresh(re); window.scrollTo({ top: 0, behavior: 'smooth' }); }
+  const ch = MLS.challenges($('challenges'), META.id, [
+    { type: 'predict', q: 'A model has AUC = 0.5. What does it mean?',
+      options: ['It is right half of the time at T = 0.5', 'It ranks a failed bank above a healthy one only half of the time: a coin toss', 'Half of the banks failed'], answer: 1,
+      explain: 'AUC is the probability that a randomly chosen failed bank gets a higher probability than a randomly chosen healthy bank. 0.5 means no better than chance: the ROC curve lies on the diagonal.',
+      tryIt: () => setup({ model: 'logit' }) },
+    { type: 'predict', q: 'You lower the share of failed banks from 30% to 5%. The ROC curve and the precision-recall curve will...',
+      options: ['both drop a lot', 'both stay the same', 'ROC about the same; precision-recall drops'], answer: 2,
+      explain: 'Sensitivity and false alarms are shares within each class, so the ROC curve hardly changes. Precision compares true alarms with false alarms: when healthy banks are 95%, even a few percent of false alarms outnumber the true ones.',
+      tryIt: () => setup({ share: 0.05, model: 'logit' }) },
+    { type: 'predict', q: 'A missed failure costs 10, a false alarm costs 1. Compared with T = 0.5, the lowest-cost threshold will be...',
+      options: ['lower: we accept more false alarms to miss fewer failures', 'higher', 'exactly 0.5'], answer: 0,
+      explain: 'Missing a failure is ten times as costly, so more banks should be flagged: a lower T. With calibrated probabilities the best T is near 1 / (1 + 10) ≈ 0.09.',
+      tryIt: () => setup({ cFN: 10, cFP: 1 }) },
+    { type: 'task', q: 'Set the costs to 10 for a missed failure and 1 for a false alarm, and set T to the lowest-cost threshold on the training set.', hint: 'Section 3: enter the costs, then use the button.',
+      check: () => R && S.cFN === 10 && S.cFP === 1 && Math.abs(S.T - R.best.T) < 0.005 },
+    { type: 'predict', q: 'In the reliability diagram, a point lies well below the diagonal at predicted probability 0.8. The model...',
+      options: ['is too cautious there', 'predicts failure too often there: only a smaller share of these banks fails', 'is perfectly calibrated there'], answer: 1,
+      explain: 'Banks given about 80% fail less often than 80% of the time, so the probabilities are too high (overconfident). Recalibration (Platt scaling or isotonic regression) can fix this without changing the ranking.',
+      tryIt: () => setup({ model: 'nb' }) },
+    { type: 'task', q: 'Find the model with the lowest Brier score on the test set and select it.', hint: 'The scores of all three models are in the caption of the calibration chart.',
+      check: () => D && D.brier[S.model] <= Math.min(...Object.values(D.brier)) + 1e-12 },
+    { type: 'predict', q: 'You move T from 0.5 to 0.3. What happens to the AUC?',
+      options: ['It rises', 'It falls', 'Nothing: AUC covers all thresholds at once'], answer: 2,
+      explain: 'AUC is the area under the whole ROC curve; T only moves the diamond along it.',
+      tryIt: () => setup({ T: 0.3 }) }
+  ]);
+
+  MLS.moduleBar({ id: META.id, title: META.title, section: META.sectionTitle, level: META.level },
+    { tabs: [{ id: 'sim', label: 'Simulation' }, { id: 'lesson', label: 'Lesson' }, { id: 'challenges', label: 'Challenges' }, { id: 'real', label: 'On real data' }] });
+  MLS.state.init({
+    id: META.id,
+    get: () => ({ share: S.share, n: S.n, seed: S.seed, model: S.model, T: S.T, cFN: S.cFN, cFP: S.cFP }),
+    set: o => {
+      if (Number.isFinite(o.share)) S.share = Math.max(0.01, Math.min(0.5, o.share));
+      if (Number.isFinite(o.n)) S.n = Math.max(200, Math.min(5000, o.n));
+      if (Number.isFinite(o.seed)) S.seed = o.seed;
+      if (MODELS[o.model]) S.model = o.model;
+      if (Number.isFinite(o.T)) S.T = Math.max(0.01, Math.min(0.99, o.T));
+      if (Number.isFinite(o.cFN)) S.cFN = Math.max(0, o.cFN);
+      if (Number.isFinite(o.cFP)) S.cFP = Math.max(0, o.cFP);
+    }
+  });
+  $('fourCast').href = MLS.APP.fourCastUrl;
+  window.__mls = { S, get R() { return R; }, get D() { return D; } };
+  document.addEventListener('mls:theme', () => refresh(false));
+  refresh(true);
+})();
+</script>
+</body>
+</html>

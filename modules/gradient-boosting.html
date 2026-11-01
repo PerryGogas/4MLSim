@@ -1,0 +1,201 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Gradient Boosting | 4MLSim</title>
+  <meta name="theme-color" content="#1B2340">
+  <link rel="manifest" href="../manifest.json">
+  <link rel="icon" type="image/svg+xml" href="../assets/img/icon.svg">
+  <link rel="apple-touch-icon" href="../assets/img/apple-touch-icon.png">
+  <link rel="stylesheet" href="../assets/vendor/temml.css">
+  <link rel="stylesheet" href="../assets/css/4mlsim.css">
+  <script src="../assets/vendor/temml.min.js"></script>
+  <script src="../assets/js/core.js"></script>
+  <script src="../assets/js/stats.js"></script>
+  <script src="../assets/js/plot.js"></script>
+  <script src="../assets/js/modules.js"></script>
+  <script src="../assets/js/core-ml.js"></script>
+  <script src="../assets/js/classify-ui.js"></script>
+  <script src="../assets/js/trees-ui.js"></script>
+  <script src="../assets/js/boost-ui.js"></script>
+</head>
+<body>
+<div class="page">
+  <header id="mlsHeader" data-variant="compact"></header>
+  <div class="mod-top" id="mlsTop"><div id="mlsModBar"></div><div id="mlsTabs"></div></div>
+
+  <div class="intro-box" id="mlsIntro">
+    <h3>What this module shows</h3>
+    <div class="intro-cols">
+      <div>
+        <p><b>Gradient boosting</b> builds a model from many small trees added <b>one after another</b>. It starts with a simple prediction (the average). Each new tree is fitted to the <b>errors that are still left</b>, and only a fraction of it, the <b>learning rate</b>, is added. Step by step the errors shrink.</p>
+        <p>A random forest grows its trees independently and lets them vote; boosting grows them in sequence, each one correcting the previous ones.</p>
+      </div>
+      <div>
+        <p><b>How to use it</b></p>
+        <ol>
+          <li>Press <b>Reset</b>, then <b>Step</b>: watch each tree learn the errors left by the previous rounds.</li>
+          <li>Change the learning rate and the number of rounds.</li>
+          <li>Follow the training and test results by round: when does boosting start to overfit?</li>
+          <li>Switch to classification for the bank data.</li>
+        </ol>
+      </div>
+    </div>
+  </div>
+
+  <!-- ===================== SIMULATION ===================== -->
+  <section data-panel="sim">
+    <div class="mod-grid">
+      <aside class="side" aria-label="Controls">
+        <div class="card">
+          <div class="card-head"><h3>1. Task and data<button type="button" class="help" data-help="task">?</button></h3></div>
+          <div class="seg full" role="group" aria-label="Task"><button type="button" data-task="reg">Regression</button><button type="button" data-task="class">Classification</button></div>
+          <select id="ds" aria-label="Data set" style="margin-top:10px"></select>
+          <div class="field-row"><label for="n">Observations<button type="button" class="help" data-help="n">?</button></label><output id="nVal"></output></div>
+          <input type="range" id="n" min="40" max="400" step="20" value="100">
+          <div class="field-row"><label for="seed">Random seed<button type="button" class="help" data-help="seed">?</button></label></div>
+          <div class="inline-inputs"><input type="number" id="seed" min="1" max="99999" step="1" value="1" aria-label="Random seed"><button type="button" class="btn-ghost btn-icon" id="newSeed" title="New random data" style="flex:0 0 auto">&#127922;</button></div>
+        </div>
+        <div class="card">
+          <div class="card-head"><h3>2. Settings<button type="button" class="help" data-help="settings">?</button></h3></div>
+          <div id="params"></div>
+        </div>
+        <div class="card">
+          <div class="card-head"><h3>3. Round by round<button type="button" class="help" data-help="steps">?</button></h3></div>
+          <div id="stepper"></div>
+          <p class="note" id="stepNote"></p>
+        </div>
+      </aside>
+
+      <main class="main">
+        <div class="story" id="story"></div>
+        <div class="stat-grid" id="stats" style="margin-top:12px"></div>
+        <div id="statusLine" class="status-line" style="margin:10px 0"></div>
+        <div class="fig-grid">
+          <div id="figMain" class="fig-wide"></div>
+          <div id="figRes"></div>
+          <div id="figErr"></div>
+          <div id="figTree" class="fig-wide"></div>
+          <div class="card fig-wide" id="numCard" hidden></div>
+        </div>
+      </main>
+
+    </div>
+  </section>
+
+  <!-- ===================== LESSON ===================== -->
+  <section data-panel="lesson" class="card lesson" hidden>
+    <div id="mlsMathCtl"></div>
+    <p class="lvl-only-intuition note" style="margin-bottom:8px">Showing the intuition only. Choose <b>Formulas</b> or <b>Deep dive</b> above to add the mathematics.</p>
+
+    <h4>Boosting: models in sequence</h4>
+    <p>Ensemble methods train several models instead of one. <b>Bagging</b> (random forests) trains them independently on bootstrap samples and lets them vote. <b>Boosting</b> trains them one after another: each new model concentrates on what the previous ones got wrong.</p>
+
+    <h4>Gradient boosting step by step</h4>
+    <ol>
+      <li><b>Start</b> with a simple prediction for everyone: the average of the target (regression) or the share of 1s (classification).</li>
+      <li>Compute the <b>errors left</b>: actual minus forecast, for every training observation.</li>
+      <li>Fit a <b>small tree</b> (depth 1 to 5) to these errors: it learns where the model is too low or too high.</li>
+      <li>Add the tree to the model, multiplied by the <b>learning rate</b> (e.g. 0.1): a small, careful step.</li>
+      <li>Repeat for the chosen number of <b>rounds</b>.</li>
+    </ol>
+    <div class="math-block lvl-math"><div class="mb-title">The update</div>
+      <div class="tex-block">F_0(x) = \bar y, \qquad r_i^{(m)} = y_i - F_{m-1}(x_i), \qquad F_m(x) = F_{m-1}(x) + \eta\, h_m(x)</div>
+      <p class="note">h<sub>m</sub> is the tree fitted to the errors r<sup>(m)</sup>; η is the learning rate. For squared error, the errors are the negative gradient of the loss: hence "gradient" boosting.</p>
+    </div>
+
+    <h4>Classification</h4>
+    <p>For classes the model builds a <b>score</b>, turned into a probability with the sigmoid (as in the logit). It starts from the share of failed banks; the error of each bank is (1 or 0) minus its current probability, and each tree pushes the scores in the right direction.</p>
+    <div class="math-block lvl-math"><div class="mb-title">Classification (log-loss)</div>
+      <div class="tex-block">p_i = \frac{1}{1 + e^{-F_{m-1}(x_i)}}, \qquad r_i^{(m)} = y_i - p_i, \qquad \text{leaf value} = \frac{\sum r_i}{\sum p_i (1 - p_i)}</div>
+    </div>
+
+    <h4>Learning rate and number of rounds</h4>
+    <ul>
+      <li>A <b>small learning rate</b> takes small steps: it needs more rounds, but usually generalizes better.</li>
+      <li>With <b>many rounds</b> the training error keeps falling, but later trees start to fit noise: the test error levels off and rises. Boosting <b>can overfit</b>, unlike adding trees to a random forest.</li>
+      <li>The number of rounds is chosen on validation data: stop when the validation error stops improving (<b>early stopping</b>).</li>
+      <li>Small trees (depth 1 to 3) are usually enough: each one only has to correct a little.</li>
+    </ul>
+
+    <div class="math-block deep lvl-deep"><div class="mb-title">Deep dive</div>
+      <p><b>Functional gradient descent.</b> Friedman (2001) views boosting as gradient descent in the space of functions: each tree approximates the negative gradient of the loss at the current forecasts, and the learning rate is the step size (see the Gradient Descent module).</p>
+      <p><b>Leaf values.</b> For squared error the leaf value is the mean error in the leaf. For the log-loss, scikit-learn uses one Newton step per leaf, Σr / Σp(1 − p), as here (the tree structure itself is chosen by squared error on the errors).</p>
+      <p><b>Stochastic gradient boosting.</b> Fitting each tree on a random half of the observations (subsampling) adds randomness that often improves the test error.</p>
+      <p><b>AdaBoost.</b> The first boosting method (Freund and Schapire, 1997) gives misclassified observations a heavier weight in the next model; gradient boosting generalizes this idea to any loss.</p>
+      <p class="note">References: Friedman (2001), "Greedy function approximation: a gradient boosting machine", <i>Annals of Statistics</i> 29(5); Friedman (2002), "Stochastic gradient boosting", <i>Computational Statistics &amp; Data Analysis</i> 38(4); Hastie, Tibshirani and Friedman (2009), <i>The Elements of Statistical Learning</i>, ch. 10.</p>
+    </div>
+  </section>
+
+  <!-- ===================== CHALLENGES ===================== -->
+  <section data-panel="challenges" class="card" hidden>
+    <div class="card-head"><h3>Challenges</h3><span class="card-sub">Answer the "predict first" questions before testing them in the Simulation tab.</span></div>
+    <div id="challenges"></div>
+  </section>
+
+  <!-- ===================== REAL DATA ===================== -->
+  <section data-panel="real" class="card lesson" hidden>
+    <h4>From the simulation to real data</h4>
+    <ul>
+      <li>Gradient boosting is among the most accurate methods for tabular data in economics and finance: demand and price forecasting, credit risk, nowcasting.</li>
+      <li>Tune three things together: the learning rate (small, 0.01 to 0.1), the number of rounds (by early stopping on validation data) and the tree depth (2 to 6).</li>
+      <li>Never choose the number of rounds on the test set.</li>
+    </ul>
+    <div class="crosslink"><span>&#10140;</span><span><a id="fourCast" target="_blank" rel="noopener"><b>4Cast Lab</b></a> includes gradient boosting and XGBoost for your own data.</span></div>
+  </section>
+
+  <footer id="mlsFooter"></footer>
+</div>
+
+<script>
+(function () {
+  'use strict';
+  const MLS = window.MLS, ML = MLS.ml, F = MLS.fmt, TR = MLS.trees;
+  const leaf = (t, x) => ML.cartLeaf(t.root, x).w;
+  MLS.boost.page({
+    id: 'gradient-boosting',
+    defaults: { rounds: 100, eta: 0.1, depth: 2 },
+    params: [
+      { key: 'rounds', label: 'Rounds (trees)', help: 'p_rounds', min: 1, max: 300 },
+      { key: 'eta', label: 'Learning rate', help: 'p_eta', list: [0.01, 0.03, 0.05, 0.1, 0.2, 0.3, 0.5, 1] },
+      { key: 'depth', label: 'Depth of each tree', help: 'p_depth', min: 1, max: 5 }
+    ],
+    fit: (X, y, cls, S) => ML.gbm(X, y, { rounds: S.rounds, eta: S.eta, depth: S.depth, classify: cls }),
+    leafValue: leaf,
+    treeLines: (nd, open, D) => (open ? [D.short[nd.feat] + ' ≤ ' + F(nd.thr, 2) + '?', 'n = ' + nd.n] : ['correction ' + F(nd.w, 3), 'n = ' + nd.n]),
+    treeTip: (nd, open, D) => (open ? 'Question: <b>' + D.names[nd.feat] + ' ≤ ' + F(nd.thr, 2) + '?</b><br>' + nd.n + ' training ' + D.unit : '<b>Leaf</b>: adds learning rate × ' + F(nd.w, 4) + ' to the ' + (D.task === 'class' ? 'score' : 'forecast') + '<br>' + nd.n + ' training ' + D.unit),
+    treeCaption: (D, R, m) => 'Each leaf holds a correction: ' + (D.task === 'class' ? 'how much to raise or lower the score (log-odds) of the ' + D.unit + ' that land there' : 'the average error left of the ' + D.unit + ' that land there') + '. The model adds learning rate (' + F(R.model.eta, 2) + ') × this correction.',
+    help: {
+      settings: { title: 'Settings', html: 'The three settings of gradient boosting: how many trees, how big a step each tree takes, and how big each tree is.' },
+      p_rounds: { title: 'Rounds', html: 'How many trees are added one after another. Too few: underfitting; too many: later trees fit noise.' },
+      p_eta: { title: 'Learning rate', html: 'The share of each tree\'s correction that is added. Small (0.01 to 0.1): careful steps that need more rounds and usually generalize better. 1: each tree is added in full.' },
+      p_depth: { title: 'Depth of each tree', html: 'How many questions each small tree may ask. Depth 1 (a "stump") makes one split per round.' }
+    },
+    challenges: api => [
+      { type: 'predict', q: 'Round 0 on the temperature data. What does the model predict?',
+        options: ['The same value for every day: the average electricity use of the training set', 'Nothing yet', 'A straight line'], answer: 0,
+        explain: 'Gradient boosting starts from the simplest prediction, the average. Every tree after that corrects the errors left.',
+        tryIt: () => api.setup({ task: 'reg', m: 0 }) },
+      { type: 'predict', q: 'What does the tree of round 5 learn?',
+        options: ['The original electricity use', 'The errors left after round 4: where the model is still too low or too high', 'A random part of the data'], answer: 1,
+        explain: 'Each tree is fitted to actual − forecast after the previous round. The "errors" chart shows them, with the tree drawn through them.',
+        tryIt: () => api.setup({ task: 'reg', m: 5 }) },
+      { type: 'predict', q: 'You lower the learning rate from 0.1 to 0.01 (100 rounds). The forecast after 100 rounds will be...',
+        options: ['better fitted', 'the same', 'still too flat: with small steps, 100 rounds are not enough'], answer: 2,
+        explain: 'Each round adds only 1% of the tree\'s correction, so after 100 rounds the model has moved only part of the way. Smaller learning rates need more rounds.',
+        tryIt: () => api.setup({ task: 'reg', eta: 0.01, rounds: 100 }) },
+      { type: 'task', q: 'Regression: make boosting overfit. Find settings where the test RMSE after the last round is at least 10% above the best test RMSE.', hint: 'Deeper trees, a large learning rate and many rounds.',
+        check: () => api.R && !api.isC() && api.cur() === api.R.M && api.R.curve[api.R.M].te >= 1.1 * api.R.bestTe.te },
+      { type: 'predict', q: 'Compared with a random forest, how are the trees of gradient boosting built?',
+        options: ['In sequence: each tree corrects the errors of the previous ones', 'Independently, on bootstrap samples, then they vote', 'All at once in one big tree'], answer: 0,
+        explain: 'Random forests (bagging) grow trees independently and average them; boosting grows them one after another, each focusing on what is still wrong.',
+        tryIt: () => api.setup({ task: 'reg' }) },
+      { type: 'task', q: 'Bank failures: step through the rounds and stop at a round where the test accuracy is at least 90%.', hint: 'Switch to classification, press Reset, then Step.',
+        check: () => api.R && api.isC() && api.R.curve[api.cur()].te >= 0.9 && api.cur() > 0 }
+    ]
+  });
+})();
+</script>
+</body>
+</html>

@@ -1,0 +1,647 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Data Leakage | 4MLSim</title>
+  <meta name="theme-color" content="#1B2340">
+  <link rel="manifest" href="../manifest.json">
+  <link rel="icon" type="image/svg+xml" href="../assets/img/icon.svg">
+  <link rel="apple-touch-icon" href="../assets/img/apple-touch-icon.png">
+  <link rel="stylesheet" href="../assets/vendor/temml.css">
+  <link rel="stylesheet" href="../assets/css/4mlsim.css">
+  <script src="../assets/vendor/temml.min.js"></script>
+  <script src="../assets/js/core.js"></script>
+  <script src="../assets/js/stats.js"></script>
+  <script src="../assets/js/plot.js"></script>
+  <script src="../assets/js/modules.js"></script>
+  <style>
+    .story { background:var(--card); border:2px solid var(--tint-border); border-radius:10px; padding:12px 16px; box-shadow:var(--shadow); }
+    .story h3 { font-size:17px; margin:0 0 6px; color:var(--heading); }
+    .story p { margin:4px 0 0; font-size:14.5px; line-height:1.6; }
+    .story .procs { display:grid; grid-template-columns:repeat(auto-fit, minmax(220px, 1fr)); gap:10px; margin-top:10px; }
+    .story .procs > div { border-radius:8px; padding:8px 10px; font-size:14px; line-height:1.5; border:1px solid var(--border); background:var(--surface); opacity:0.75; }
+    .story .procs > div.cur { opacity:1; border-width:2px; }
+    .story .procs > div.bad.cur { background:var(--warn-bg); border-color:var(--warn-border); }
+    .story .procs > div.good.cur { background:var(--tint); border-color:var(--tint-border); }
+    .story .procs h4 { margin:0 0 4px; font-size:14.5px; }
+    .prob-seg.four { grid-template-columns:1fr 1fr; }
+  </style>
+</head>
+<body>
+<div class="page">
+  <header id="mlsHeader" data-variant="compact"></header>
+  <div class="mod-top" id="mlsTop"><div id="mlsModBar"></div><div id="mlsTabs"></div></div>
+
+  <div class="intro-box" id="mlsIntro">
+    <h3>What this module shows</h3>
+    <div class="intro-cols">
+      <div>
+        <p><b>Data leakage</b> happens when information that will <b>not</b> be available when the model is really used finds its way into training or evaluation. The model then looks better in cross-validation, and often also on the test (hold-out) set, than it really is.</p>
+        <p><b>The key message:</b> leakage makes a model <b>look</b> better, but on new, unknown data it performs <b>no better</b> than the correct model, and sometimes worse.</p>
+        <p>Three common cases from economics and finance: a variable known only <b>after</b> the outcome, choosing predictors with <b>all the data</b>, and the <b>same firm</b> in training and validation. Time series have their own module: <a id="tsLink1">Time-Series Validation</a>.</p>
+      </div>
+      <div>
+        <p><b>How to use it</b></p>
+        <ol>
+          <li>Pick a case on the left and read the box at the top: the data, and what each procedure does.</li>
+          <li>Switch between the procedures (leaky and correct).</li>
+          <li>Compare what each procedure <b>reports</b> (cross-validation, test set) with its <b>true score on new data</b>.</li>
+          <li>Click any <b>?</b> for help, then try the <b>Challenges</b>.</li>
+        </ol>
+      </div>
+    </div>
+  </div>
+
+  <!-- ===================== SIMULATION ===================== -->
+  <section data-panel="sim">
+    <div class="mod-grid">
+      <aside class="side" aria-label="Controls">
+        <div class="card">
+          <div class="card-head"><h3>1. Case<button type="button" class="help" data-help="case">?</button></h3></div>
+          <div class="seg prob-seg" role="group" aria-label="Case" style="grid-template-columns:1fr">
+            <button type="button" data-case="target">Credit: variable known too late</button>
+            <button type="button" data-case="select">Choosing predictors with all data</button>
+            <button type="button" data-case="group">Same firm in both sets</button>
+          </div>
+        </div>
+        <div class="card">
+          <div class="card-head"><h3>2. Procedure<button type="button" class="help" data-help="proc">?</button></h3></div>
+          <div class="seg" role="group" aria-label="Procedure" id="procSeg" style="display:flex;flex-wrap:wrap"></div>
+        </div>
+        <div class="card">
+          <div class="card-head"><h3>3. Data</h3></div>
+          <div id="ctlTarget">
+            <div class="field-row"><label for="aN">Past loans<button type="button" class="help" data-help="an">?</button></label><output id="aNVal"></output></div>
+            <input type="range" id="aN" min="200" max="1000" step="50" value="400">
+          </div>
+          <div id="ctlSelect">
+            <div class="field-row"><label for="bN">Months of data<button type="button" class="help" data-help="bn">?</button></label><output id="bNVal"></output></div>
+            <input type="range" id="bN" min="40" max="240" step="20" value="60">
+            <div class="field-row"><label for="bP">Candidate predictors<button type="button" class="help" data-help="bp">?</button></label><output id="bPVal"></output></div>
+            <input type="range" id="bP" min="20" max="1000" step="20" value="500">
+            <div class="field-row"><label for="bM">Predictors kept<button type="button" class="help" data-help="bm">?</button></label><output id="bMVal"></output></div>
+            <input type="range" id="bM" min="3" max="15" step="1" value="8">
+          </div>
+          <div id="ctlGroup">
+            <div class="field-row"><label for="cF">Firms<button type="button" class="help" data-help="cf">?</button></label><output id="cFVal"></output></div>
+            <input type="range" id="cF" min="20" max="80" step="4" value="40">
+            <div class="field-row"><label for="cY">Years per firm</label><output id="cYVal"></output></div>
+            <input type="range" id="cY" min="4" max="12" step="1" value="8">
+          </div>
+          <div class="field-row"><label for="seed">Random seed<button type="button" class="help" data-help="seed">?</button></label></div>
+          <div class="inline-inputs"><input type="number" id="seed" min="1" max="99999" step="1" value="36" aria-label="Random seed"><button type="button" class="btn-ghost btn-icon" id="newSeed" title="New random data" style="flex:0 0 auto">&#127922;</button></div>
+          <p class="note" id="dataNote"></p>
+        </div>
+      </aside>
+
+      <main class="main">
+        <div class="story" id="story"></div>
+        <div class="stat-grid" id="stats"></div>
+        <div id="statusLine" class="status-line"></div>
+        <div class="fig-grid">
+          <div id="figBars" class="fig-wide"></div>
+          <div id="figCase1"></div>
+          <div id="figCase2"></div>
+        </div>
+      </main>
+    </div>
+  </section>
+
+  <!-- ===================== LESSON ===================== -->
+  <section data-panel="lesson" class="card lesson" hidden>
+    <div id="mlsMathCtl"></div>
+    <p class="lvl-only-intuition note" style="margin-bottom:8px">Showing the intuition only. Choose <b>Formulas</b> or <b>Deep dive</b> above to add the mathematics.</p>
+
+    <h4>What leakage is</h4>
+    <p>A model is built to be used at a certain moment, with the information available at that moment: a bank decides on a loan at application, a forecaster forecasts with the data published so far, an analyst predicts for firms not yet in the data. <b>Leakage</b> is any way in which information that will not be available at that moment enters the training or the evaluation of the model. Cross-validation, and often the test (hold-out) set too, then measure the wrong thing and report a performance that is too good. Only the true score on new data reveals it.</p>
+    <p><b>The key message.</b> Leakage makes a model look better than it is, but it does not make it better. On new, unknown data the leaky model performs no better than the correct model, and sometimes worse. The only thing the leak changes is the promise: the reported scores are too good, so decisions are taken on a model that will disappoint.</p>
+    <p>For every case ask the same question: <b>which data did each decision see?</b> Every decision that looks at data (estimating coefficients, choosing predictors, scaling, removing outliers) is part of the model. Data used to make a decision can no longer give an honest check of it.</p>
+
+    <h4>1. A variable known too late</h4>
+    <ul>
+      <li><b>What the analyst does:</b> uses every column of the historical data, including late-payment fees, to predict loan default.</li>
+      <li><b>What goes wrong:</b> the fees are charged after the borrower misses payments, so they almost reveal the outcome. They are in the validation folds and in the test set too, because these come from the same historical file. New applicants have no fees yet.</li>
+      <li><b>On new data:</b> the model with the fees cannot even be used, because new applicants have no fees. At the default settings it promised an AUC of 0.996; the bank gets the model without fees, which delivers 0.764 on new applicants.</li>
+      <li><b>Correct way:</b> for every variable ask <i>would I know this at the moment of prediction?</i> Keep only those. Other examples: the number of collection calls, a "closed account" flag, a firm's delisting date in a bankruptcy model.</li>
+    </ul>
+
+    <h4>2. Choosing predictors with all the data</h4>
+    <p>One firm, monthly data: training set months 1-48 (4 folds: 1-12, 13-24, 25-36, 37-48), test (hold-out) set months 49-60. The analyst has 500 candidate predictors and keeps the 8 most correlated with the stock return.</p>
+    <ul>
+      <li><b>Choose on all data (leak).</b> The correlations are computed with all 60 months, training + test. Among many useless predictors some correlate with the return by pure chance in these months, and those are the ones picked, partly because they fit months 37-48 (a validation fold) and months 49-60 (the test set). Cross-validation and the test then measure a fit that the choice itself created: both look too good.</li>
+      <li><b>Choose on the training set, then cross-validate (partial leak).</b> The test set is locked away first, the 8 predictors are picked once with months 1-48, and then 4-fold cross-validation is run. In each round the validation fold, e.g. months 37-48, was part of the months used to choose, so cross-validation is still too optimistic. The test set is honest, because months 49-60 took no part in the choice. Warning sign: cross-validation promises much more than the test delivers.</li>
+      <li><b>Choose inside each fold (correct).</b> In each round the 8 predictors are picked with the 3 fitting folds only (e.g. months 1-36) and validated on the fourth (37-48). The rounds may pick different predictors; that is normal. For the final model the predictors are picked once more with months 1-48, and the model is tested once on months 49-60. Every score is measured on months that took no part in the choice.</li>
+    </ul>
+    <p><b>The rule:</b> every step that looks at the data to make a decision (choosing predictors, choosing lags, removing outliers, scaling) is repeated inside each round of cross-validation with the fitting part only, and never sees the test set. A scikit-learn Pipeline does this automatically. (With scaling the effect is usually small; with predictor selection among many candidates it can be large.)</p>
+    <p><b>Out-of-sample R².</b> R² = 1 − (sum of squared forecast errors of the model) / (sum of squared errors when forecasting every month with the average return of the training months). 0 means no better than the average; negative means worse than the average. In the simulation the true predictability is much larger than for real stock returns, so that the leak is easy to see.</p>
+
+    <h4>3. The same firm on both sides</h4>
+    <ul>
+      <li><b>What the analyst does:</b> splits firm-years at random into folds and test set, in a panel of firms observed over several years.</li>
+      <li><b>What goes wrong:</b> every firm has years in the training part and years in the validation fold or the test set. The model recognises the firm from characteristics that never change (size, founding year, region) and copies its usual level. For a new firm this shortcut does not exist.</li>
+      <li><b>Correct way:</b> split by firm (grouped folds), when the model is built for new firms. The same holds for customers, households, banks or countries.</li>
+    </ul>
+
+    <h4>Time series</h4>
+    <p>Time series can leak too: shuffled folds let the model train on months after the month it forecasts, and walking forward without a gap uses examples whose target month is not yet known. See the <a id="tsLink2">Time-Series Validation</a> module.</p>
+
+    <h4>How to avoid leakage</h4>
+    <ul>
+      <li>Write down, for every variable, <b>when</b> it becomes known; keep only variables known at prediction time.</li>
+      <li>Split off the test (hold-out) set first; do every step that learns from data inside the cross-validation loop.</li>
+      <li>Split by group when observations belong to the same firm, customer, household or country.</li>
+      <li>For time series, walk forward and leave a gap for forecasts more than one month ahead (Time-Series Validation module).</li>
+      <li>Be suspicious of results that look too good: an AUC near 1 for credit default, or a large R² for monthly stock returns, is almost always leakage.</li>
+    </ul>
+
+    <div class="math-block deep lvl-deep"><div class="mb-title">Deep dive</div>
+      <p><b>Why the test set often does not catch it.</b> The test set is drawn from the same data and processed by the same pipeline. If the leaky variable is in the data, it is in the test set too; if selection used all observations, it also used the test set. Only data generated after the model is frozen, under the conditions of real use, is safe.</p>
+      <p><b>Selection bias.</b> Choosing m of p candidate predictors by their sample correlation selects, among the useless ones, those whose sample correlation is largest by chance. Evaluating the selected model on the same observations measures this chance correlation as if it were real (Hastie, Tibshirani and Friedman, 2009, §7.10.2: "the wrong and the right way to do cross-validation"). In empirical finance the same problem appears as data snooping over hundreds of candidate factors (Harvey, Liu and Zhu, 2016).</p>
+      <p><b>Grouped cross-validation.</b> GroupKFold keeps all observations of a unit in the same fold. For overlapping time-series targets, López de Prado (2018) proposes purging training examples whose targets overlap the validation period and an embargo after it (see the Time-Series Validation module).</p>
+      <p class="note">References: Kaufman, Rosset, Perlich and Stitelman (2012), "Leakage in data mining: formulation, detection, and avoidance", <i>ACM TKDD</i> 6(4); Hastie, Tibshirani and Friedman (2009), <i>The Elements of Statistical Learning</i>, §7.10; Harvey, Liu and Zhu (2016), "...and the cross-section of expected returns", <i>Review of Financial Studies</i> 29(1); Kapoor and Narayanan (2023), "Leakage and the reproducibility crisis in machine-learning-based science", <i>Patterns</i> 4(9); López de Prado (2018), <i>Advances in Financial Machine Learning</i>, ch. 7.</p>
+    </div>
+  </section>
+
+  <!-- ===================== CHALLENGES ===================== -->
+  <section data-panel="challenges" class="card" hidden>
+    <div class="card-head"><h3>Challenges</h3><span class="card-sub">Answer the "predict first" questions before testing them in the Simulation tab.</span></div>
+    <div id="challenges"></div>
+  </section>
+
+  <!-- ===================== REAL DATA ===================== -->
+  <section data-panel="real" class="card lesson" hidden>
+    <h4>From the simulation to real data</h4>
+    <ul>
+      <li>Credit scoring, churn and fraud: check the date of every variable against the decision date.</li>
+      <li>Firm, bank and country panels: use grouped folds when the model must work for new units, and time-ordered splits when it must work for future years.</li>
+      <li>Macroeconomic forecasting: use the data published at each forecast date (real-time data), not today's revised series, and leave a gap of h months for forecasts h months ahead.</li>
+      <li>Asset returns: an out-of-sample R² of even 1-2% per month is economically large; results far above that deserve a search for leakage.</li>
+    </ul>
+    <div class="crosslink"><span>&#10140;</span><span><a id="fourCast" target="_blank" rel="noopener"><b>4Cast Lab</b></a> evaluates forecasts walking forward in time, so future observations never enter the training window.</span></div>
+  </section>
+
+  <footer id="mlsFooter"></footer>
+</div>
+
+<script>
+(function () {
+  'use strict';
+  const MLS = window.MLS;
+  const META = MLS.moduleMeta('data-leakage');
+  const $ = id => document.getElementById(id);
+  const F = MLS.fmt;
+  const DEF_SEEDS = { target: 36, select: 60, group: 18 };
+
+  const S = { cas: 'target', proc: { target: 'leak', select: 'all', group: 'leak' }, seeds: Object.assign({}, DEF_SEEDS),
+    aN: 400, bN: 60, bP: 500, bM: 8, cF: 40, cY: 8 };
+  let R = null;
+
+  /* ==================================================================
+     helpers
+     ================================================================== */
+  const sig = z => 1 / (1 + Math.exp(-z));
+  function logitFit(X, y, lam) {               /* Newton-Raphson with a small ridge penalty, on standardized X */
+    const st = MLS.colStats(X), Z = MLS.applyScale(X, st), n = Z.length, p = Z[0].length + 1;
+    let b = new Array(p).fill(0);
+    for (let it = 0; it < 50; it++) {
+      const g = new Array(p).fill(0), H = Array.from({ length: p }, () => new Array(p).fill(0));
+      Z.forEach((z, i) => { const row = [1].concat(z), pr = sig(row.reduce((s, v, j) => s + v * b[j], 0)), w = pr * (1 - pr); row.forEach((v, j) => { g[j] += (y[i] - pr) * v; for (let k = 0; k < p; k++) H[j][k] += w * v * row[k]; }); });
+      for (let j = 1; j < p; j++) { g[j] -= lam * n * b[j]; H[j][j] += lam * n; }
+      const Hi = MLS.mat.inv(H); if (!Hi) break;
+      const step = MLS.mat.mulVec(Hi, g); b = b.map((v, j) => v + step[j]);
+      if (Math.max(...step.map(Math.abs)) < 1e-8) break;
+    }
+    return { b, st, prob: x => sig([1].concat(x.map((v, j) => (v - st.mu[j]) / st.sd[j])).reduce((s, v, j) => s + v * b[j], 0)) };
+  }
+  function auc(scores, y) {
+    const pos = y.filter(v => v).length, neg = y.length - pos; if (!pos || !neg) return NaN;
+    const all = scores.map((s, i) => [s, y[i]]).sort((a, b) => a[0] - b[0]);
+    let sumPos = 0; for (let i = 0; i < all.length;) { let j = i; while (j < all.length && all[j][0] === all[i][0]) j++; const r = (i + 1 + j) / 2; for (let t = i; t < j; t++) if (all[t][1]) sumPos += r; i = j; }
+    return (sumPos - pos * (pos + 1) / 2) / (pos * neg);
+  }
+  function knnReg(Xfit, yfit, k) {
+    const st = MLS.colStats(Xfit), Z = MLS.applyScale(Xfit, st);
+    return x => { const z = x.map((v, j) => (v - st.mu[j]) / st.sd[j]); const d = Z.map((r, i) => [r.reduce((s, v, j) => s + (v - z[j]) ** 2, 0), i]).sort((a, b) => a[0] - b[0]).slice(0, k); return { pred: d.reduce((s, v) => s + yfit[v[1]], 0) / d.length, nb: d.map(v => v[1]) }; };
+  }
+  const rmseOf = (ys, ps) => Math.sqrt(ys.reduce((s, v, i) => s + (v - ps[i]) ** 2, 0) / ys.length);
+  const r2Of = (ys, ps, ref) => { let a = 0, b = 0; ys.forEach((v, i) => { a += (v - ps[i]) ** 2; b += (v - ref) ** 2; }); return 1 - a / b; };
+  const blocks = (n, k) => { const f = new Array(n), base = Math.floor(n / k), extra = n % k; let s = 0; for (let j = 0; j < k; j++) { const sz = base + (j < extra ? 1 : 0); for (let t = 0; t < sz; t++) f[s + t] = j; s += sz; } return f; };
+  const foldRanges = (n, k) => { const f = blocks(n, k), out = []; for (let j = 0; j < k; j++) { const a = f.indexOf(j), b = f.lastIndexOf(j); out.push((a + 1) + '-' + (b + 1)); } return out; };
+
+  /* ==================================================================
+     case A: credit scoring with a variable known too late
+     ================================================================== */
+  function genCredit(r, n, feesKnown) {
+    const X = [], y = [];
+    for (let i = 0; i < n; i++) {
+      const inc = Math.max(12, r.normal(42, 14)), dti = Math.min(0.9, Math.max(0.02, r.normal(0.33, 0.12))), score = Math.min(850, Math.max(350, r.normal(670, 70))), yrs = r.int(0, 30);
+      const d = r.random() < sig(-1.7 - 0.03 * (inc - 42) + 5.0 * (dti - 0.33) - 0.012 * (score - 670) - 0.04 * (yrs - 8)) ? 1 : 0;
+      const fees = d ? Math.round(r.uniform(80, 600)) : (r.random() < 0.12 ? Math.round(r.uniform(10, 150)) : 0);
+      X.push([+inc.toFixed(1), +dti.toFixed(3), Math.round(score), yrs, feesKnown ? fees : 0]); y.push(d);
+    }
+    return { X, y };
+  }
+  function runTarget(seed) {
+    const D = genCredit(MLS.rng(seed), S.aN, true), n = S.aN, nTe = Math.round(0.2 * n), nTr = n - nTe;
+    const tr = Array.from({ length: nTr }, (_, i) => i), te = Array.from({ length: nTe }, (_, i) => nTr + i), folds = blocks(nTr, 4);
+    const NEW = genCredit(MLS.rng(seed * 7 + 1), 2000, false);       /* at application the fees do not exist yet */
+    const res = { D, nTr, nTe };
+    for (const leak of [true, false]) {
+      const cs = leak ? [0, 1, 2, 3, 4] : [0, 1, 2, 3], pick = idx => idx.map(i => cs.map(c => D.X[i][c])), sc = [], ys = [];
+      for (let k = 0; k < 4; k++) { const a = tr.filter(i => folds[i] !== k), b = tr.filter(i => folds[i] === k); const m = logitFit(pick(a), a.map(i => D.y[i]), 1e-3); b.forEach(i => { sc.push(m.prob(cs.map(c => D.X[i][c]))); ys.push(D.y[i]); }); }
+      const m = logitFit(pick(tr), tr.map(i => D.y[i]), 1e-3);
+      res[leak ? 'leak' : 'ok'] = { cv: auc(sc, ys), test: auc(te.map(i => m.prob(cs.map(c => D.X[i][c]))), te.map(i => D.y[i])), real: auc(NEW.X.map(x => m.prob(cs.map(c => x[c]))), NEW.y) };
+    }
+    return res;
+  }
+
+  /* ==================================================================
+     case B: one firm, monthly stock return, choosing predictors
+     ================================================================== */
+  const B_TRUE = [0.8, 0.6], B_SCALE = 4, B_NEW = 240;
+  function genReturns(r, n, p) {
+    const X = [], y = [];
+    for (let i = 0; i < n; i++) { const x = Array.from({ length: p }, () => r.normal(0, 1)); X.push(x); y.push(1 + B_SCALE * (B_TRUE[0] * x[0] + B_TRUE[1] * x[1] + r.normal(0, 1))); }
+    return { X, y };
+  }
+  function corrAll(D, rows) {
+    const p = D.X[0].length, ym = rows.reduce((s, i) => s + D.y[i], 0) / rows.length, out = new Array(p);
+    for (let j = 0; j < p; j++) { let xm = 0; rows.forEach(i => (xm += D.X[i][j])); xm /= rows.length; let sxy = 0, sxx = 0, syy = 0; rows.forEach(i => { const a = D.X[i][j] - xm, b = D.y[i] - ym; sxy += a * b; sxx += a * a; syy += b * b; }); out[j] = sxy / Math.sqrt(sxx * syy); }
+    return out;
+  }
+  const topK = (cr, m) => cr.map((v, j) => [j, Math.abs(v)]).sort((a, b) => b[1] - a[1]).slice(0, m).map(v => v[0]);
+  function olsSel(D, rows, sel) { const X = rows.map(i => [1].concat(sel.map(j => D.X[i][j]))), b = MLS.lstsq(X, rows.map(i => D.y[i])).b; return x => b[0] + sel.reduce((s, j, t) => s + b[t + 1] * x[j], 0); }
+  function runSelect(seed) {
+    const n = S.bN, p = S.bP, m = Math.min(S.bM, p), D = genReturns(MLS.rng(seed), n, p), nTr = Math.round(0.8 * n);
+    const all = Array.from({ length: n }, (_, i) => i), tr = all.slice(0, nTr), te = all.slice(nTr), folds = blocks(nTr, 4);
+    const NEW = genReturns(MLS.rng(seed * 5 + 3), B_NEW, p);
+    const corrAllMonths = corrAll(D, all), corrTr = corrAll(D, tr), corrNew = corrAll(NEW, NEW.y.map((_, i) => i));
+    const res = { nTr, nTe: n - nTr, corrAllMonths, corrTr, corrNew };
+    for (const proc of ['all', 'train', 'fold']) {
+      const fixed = proc === 'all' ? topK(corrAllMonths, m) : proc === 'train' ? topK(corrTr, m) : null; let sse = 0, sst = 0;
+      for (let k = 0; k < 4; k++) { const a = tr.filter(i => folds[i] !== k), b = tr.filter(i => folds[i] === k); const sel = fixed || topK(corrAll(D, a), m), f = olsSel(D, a, sel), ma = a.reduce((s, i) => s + D.y[i], 0) / a.length; b.forEach(i => { sse += (D.y[i] - f(D.X[i])) ** 2; sst += (D.y[i] - ma) ** 2; }); }
+      const sel = proc === 'all' ? fixed : topK(corrTr, m), f = olsSel(D, tr, sel), mtr = tr.reduce((s, i) => s + D.y[i], 0) / nTr;
+      res[proc] = { cv: 1 - sse / sst, test: r2Of(te.map(i => D.y[i]), te.map(i => f(D.X[i])), mtr), real: r2Of(NEW.y, NEW.X.map(f), mtr), sel };
+    }
+    return res;
+  }
+
+  /* ==================================================================
+     case C: the same firm on both sides of the split
+     ================================================================== */
+  function genPanel(r, nF, nY) {
+    const rows = [];
+    for (let f = 0; f < nF; f++) {
+      const alpha = r.normal(0, 3), size = +r.normal(5, 1.2).toFixed(2), founded = r.int(1950, 2015), region = r.int(1, 13);
+      for (let t = 0; t < nY; t++) { const x = +r.normal(10, 4).toFixed(2); rows.push({ f, t, X: [x, size, founded, region], y: 8 + alpha + 0.4 * (x - 10) + r.normal(0, 1) }); }
+    }
+    return rows;
+  }
+  function splitPanel(rows, nF, leak, seed) {
+    let te, tr; const fold = {};
+    if (leak) { const idx = rows.map((_, i) => i); MLS.rng(seed * 13 + 1).shuffle(idx); const nTe = Math.round(0.2 * rows.length); te = idx.slice(0, nTe); tr = idx.slice(nTe); tr.forEach((i, t) => (fold[i] = t % 4)); }
+    else { const nTeF = Math.round(0.2 * nF); te = rows.map((_, i) => i).filter(i => rows[i].f >= nF - nTeF); tr = rows.map((_, i) => i).filter(i => rows[i].f < nF - nTeF); tr.forEach(i => (fold[i] = rows[i].f % 4)); }
+    return { te, tr, fold };
+  }
+  function runGroup(seed) {
+    const rows = genPanel(MLS.rng(seed), S.cF, S.cY), NEW = genPanel(MLS.rng(seed * 3 + 11), 40, S.cY), res = { rows };
+    for (const leak of [true, false]) {
+      const sp = splitPanel(rows, S.cF, leak, seed), ps = [], ys = [];
+      for (let k = 0; k < 4; k++) { const a = sp.tr.filter(i => sp.fold[i] !== k), b = sp.tr.filter(i => sp.fold[i] === k); const f = knnReg(a.map(i => rows[i].X), a.map(i => rows[i].y), 5); b.forEach(i => { ps.push(f(rows[i].X).pred); ys.push(rows[i].y); }); }
+      const f = knnReg(sp.tr.map(i => rows[i].X), sp.tr.map(i => rows[i].y), 5);
+      res[leak ? 'leak' : 'ok'] = { cv: rmseOf(ys, ps), test: rmseOf(sp.te.map(i => rows[i].y), sp.te.map(i => f(rows[i].X).pred)), real: rmseOf(NEW.map(o => o.y), NEW.map(o => f(o.X).pred)), split: sp };
+    }
+    return res;
+  }
+
+  /* ==================================================================
+     cases
+     ================================================================== */
+  const CASES = {
+    target: { run: runTarget, metric: 'AUC', better: 'high', thr: 0.05, procs: [['leak', 'Include the fees (leak)'], ['ok', 'Only data known at application']] },
+    select: { run: runSelect, metric: 'R²', better: 'high', thr: 0.1, procs: [['all', 'Choose on all data (leak)'], ['train', 'Choose on the training set, then CV (partial leak)'], ['fold', 'Choose inside each fold (correct)']] },
+    group: { run: runGroup, metric: 'RMSE', better: 'low', thr: 0.12, procs: [['leak', 'Split firm-years at random (leak)'], ['ok', 'Split by firm (correct)']] }
+  };
+  const isLeaky = (cas, p) => !['ok', 'fold'].includes(p);
+  const goodProc = cas => ({ target: 'ok', select: 'fold', group: 'ok' })[cas];
+  const unusable = (cas, p) => cas === 'target' && p === 'leak';        /* the model with the fees cannot be used on new applicants */
+  function compute() { R = CASES[S.cas].run(S.seeds[S.cas]); }
+
+  /* ==================================================================
+     story: data and what each procedure does
+     ================================================================== */
+  function storyData() {
+    const nTrA = Math.round(0.8 * S.aN), nTrB = Math.round(0.8 * S.bN), m = Math.min(S.bM, S.bP), fr = foldRanges(nTrB, 4), nTeF = Math.round(0.2 * S.cF);
+    return {
+      target: { title: 'A bank predicts whether a loan applicant will default.',
+        data: 'Data: ' + S.aN + ' past loans. Training set: loans 1-' + nTrA + ' (4 folds); test (hold-out) set: loans ' + (nTrA + 1) + '-' + S.aN + '. Variables: income, debt-to-income ratio, credit score, years employed and <b>late-payment fees charged</b>. The fees are charged months after the loan is granted, when the borrower misses payments, so mostly to borrowers who later default. When a new applicant applies, the fees do not exist yet. <b>True score on new data:</b> 2,000 new applicants.',
+        procs: { leak: ['Uses all the columns of the historical data, including the fees.', 'The model learns "fees above 0 means default". This works almost perfectly in the validation folds and in the test set, because they come from the same historical data and also contain the fees. New applicants have no fees, so this model cannot be used at all.'],
+          ok: ['Uses only the variables known when the applicant applies.', 'Lower scores on paper, but cross-validation, the test set and the true score on new data agree. It is the only model the bank can use.'] } },
+      select: { title: 'An analyst forecasts a firm\'s monthly stock return.',
+        data: 'One firm, ' + S.bN + ' months. Training set: months 1-' + nTrB + ' (4 folds: ' + fr.join(', ') + '); test (hold-out) set: months ' + (nTrB + 1) + '-' + S.bN + '. ' + S.bP + ' candidate predictors (financial ratios, macro series, technical indicators), all measured in the previous month. Only 2 really affect the return; the other ' + (S.bP - 2) + ' are unrelated. The analyst keeps the ' + m + ' predictors most correlated with the return and fits OLS. <b>True score on new data:</b> the same model forecasting the next ' + B_NEW + ' months.',
+        procs: { all: ['Computes the correlation of every predictor with the return over all ' + S.bN + ' months (training + test), keeps the ' + m + ' highest, then runs cross-validation and the test.', 'Some useless predictors correlate with the return by pure chance in these months. They are chosen partly because they fit the validation folds and the test months, so both checks measure a fit that the choice itself created.'],
+          train: ['Locks the test set away, chooses the ' + m + ' predictors once with months 1-' + nTrB + ', then runs 4-fold cross-validation with them.', 'In each round the validation fold (e.g. months ' + fr[3] + ') was among the months used to choose. Cross-validation is too optimistic; the test set is honest, because months ' + (nTrB + 1) + '-' + S.bN + ' played no part in the choice.'],
+          fold: ['In each round chooses the ' + m + ' predictors with the 3 fitting folds only (e.g. months 1-' + fr[2].split('-')[1] + '), then validates on the fourth (' + fr[3] + '). The final choice uses months 1-' + nTrB + '; the test uses months ' + (nTrB + 1) + '-' + S.bN + ' once.', 'Every score is measured on months that took no part in the choice, as with new data.'] } },
+      group: { title: 'An analyst predicts firms\' profitability (return on assets, %).',
+        data: S.cF + ' firms, ' + S.cY + ' years each (' + S.cF * S.cY + ' firm-years). Each firm has its own persistent level of profitability. Inputs: the investment rate, plus firm characteristics that never change (size, founding year, region). Model: k-nearest neighbours (the 5 most similar firm-years). The model is built for <b>new</b> firms. <b>True score on new data:</b> 40 new firms.',
+        procs: { leak: ['Assigns firm-years at random to the test set (20%) and to the 4 folds.', 'Every firm has years in the training part and years in the validation fold or the test set. The model recognises the firm from its fixed characteristics and copies its usual profitability. For a new firm this shortcut does not exist.'],
+          ok: ['Puts whole firms in the test set (the last ' + nTeF + ' firms) and in the folds.', 'The model is always checked on firms it has never seen, exactly like the new firms it is built for.'] } }
+    }[S.cas];
+  }
+  const fm = v => F(v, CASES[S.cas].metric === 'AUC' ? 3 : 2);
+  const realWhat = () => ({ target: '2,000 new applicants', select: 'the next ' + B_NEW + ' months', group: '40 new firms' })[S.cas];
+  const testWhat = () => ({ target: 'test (hold-out) set, ' + (S.aN - Math.round(0.8 * S.aN)) + ' loans', select: 'test (hold-out) set, ' + (S.bN - Math.round(0.8 * S.bN)) + ' months', group: 'test (hold-out) set' })[S.cas];
+  /* the key message: on new data the leaky procedure does no better than the correct one */
+  function newDataLine(p) {
+    const C = CASES[S.cas], g = R[goodProc(S.cas)].real, v = R[p].real;
+    if (unusable(S.cas, p)) return 'On new data this model cannot be used: the fees do not exist when the applicant applies. The bank can only use the model without fees: ' + C.metric + ' = ' + fm(g) + '. Promised ' + fm(R[p].cv) + ', delivered ' + fm(g) + '.';
+    const d = C.better === 'high' ? v - g : (g - v) / g;          /* > 0: the leaky procedure is better on new data */
+    return 'True score on new data: ' + fm(v) + ' vs ' + fm(g) + ' for the correct procedure. ' +
+      (d > 0.03 ? 'Only slightly better, far less than its reported scores promise.' : d < -0.03 ? 'The leak makes the model look better but it is worse on new data.' : 'The leak makes the model look better, but on new data it does no better than the correct model.');
+  }
+  function updateText() {
+    const C = CASES[S.cas], p = S.proc[S.cas], a = R[p], st = storyData();
+    $('story').innerHTML = '<h3>' + st.title + '</h3><p>' + st.data + '</p><div class="procs">' +
+      C.procs.map(([k, lab]) => '<div class="' + (isLeaky(S.cas, k) ? 'bad' : 'good') + (k === p ? ' cur' : '') + '"><h4>' + lab + (k === p ? ' (shown)' : '') + '</h4><b>What the analyst does:</b> ' + st.procs[k][0] + '<br><b>Result:</b> ' + st.procs[k][1] + '</div>').join('') + '</div>';
+    const card = MLS.statCard, mname = C.metric;
+    const unus = unusable(S.cas, p), real = unus ? R[goodProc(S.cas)].real : a.real;
+    $('stats').innerHTML =
+      card('Procedure', '<span style="font-size:17px;line-height:1.3;display:block">' + C.procs.find(q => q[0] === p)[1] + '</span>', '', '', 'st_proc') +
+      card(mname + ', cross-validation', fm(a.cv), 'training set, 4 validation folds', '', 'st_cv') +
+      card(mname + ', test set', fm(a.test), testWhat(), '', 'st_test') +
+      card(mname + ', new data (true score)', unus ? '<span style="font-size:17px;line-height:1.3;display:block">cannot be used</span>' : fm(a.real), unus ? 'no fees at application; the model without fees: ' + fm(real) : realWhat(), '', 'st_real');
+    const opt = v => (C.better === 'high' ? v - real : (real - v) / real);
+    const cvBad = opt(a.cv) > C.thr, teBad = opt(a.test) > C.thr;
+    let msg, cls = 'status-line';
+    const words = C.better === 'high' ? 'too optimistic' : 'too optimistic (errors too small)';
+    if (unus) { msg = '⚠ Leakage: cross-validation reports ' + mname + ' = ' + fm(a.cv) + ' and the test set ' + fm(a.test) + '. ' + newDataLine(p) + ' Leakage made the model look better; on new data it does no better than the correct model.'; cls += ' bad'; }
+    else if (cvBad && teBad) { msg = '⚠ Leakage: cross-validation reports ' + mname + ' = ' + fm(a.cv) + ' and the test set ' + fm(a.test) + '. Both checks are ' + words + '. ' + newDataLine(p); cls += ' bad'; }
+    else if (cvBad) { msg = '⚠ Leakage: cross-validation reports ' + mname + ' = ' + fm(a.cv) + '. The test set (' + fm(a.test) + ') is honest here; the warning sign is that cross-validation promises much more than the test delivers. ' + newDataLine(p); cls += ' bad'; }
+    else if (teBad) { msg = '⚠ The test set reports ' + fm(a.test) + '. ' + newDataLine(p); cls += ' bad'; }
+    else if (isLeaky(S.cas, p)) msg = 'With these settings the leak is small: cross-validation ' + fm(a.cv) + ', test set ' + fm(a.test) + '. ' + newDataLine(p) + ' Try the default settings or another seed.';
+    else { msg = '✓ No leak: cross-validation ' + fm(a.cv) + ', test set ' + fm(a.test) + ', true score on new data ' + fm(a.real) + '. They tell the same story (up to sampling noise). The leaky procedure' + (C.procs.length > 2 ? 's report' : ' reports') + ' better scores but do' + (C.procs.length > 2 ? '' : 'es') + ' no better on new data.'; cls += ' ok'; }
+    $('statusLine').textContent = msg; $('statusLine').className = cls;
+  }
+
+  /* ==================================================================
+     figures
+     ================================================================== */
+  const col = () => ({ leak: MLS.color('series-2'), ok: MLS.color('series-1'), mid: MLS.color('series-4'), ink: MLS.color('chart-ink'), mu: MLS.color('chart-muted'), g: MLS.color('series-3'), bad: MLS.color('series-8'), te: MLS.color('chart-muted') });
+  const procColor = (k, c) => ({ leak: c.leak, all: c.leak, train: c.mid, ok: c.ok, fold: c.ok })[k];
+  const tip = (P, el, html) => { el.setAttribute('data-tip', P.tips.length); P.tips.push(() => html); return el; };
+  const metricNote = () => ({
+    AUC: 'AUC: the probability that the model ranks a borrower who defaults above one who repays (0.5 = coin toss, 1 = perfect). Higher is better; the bars start at 0.5.',
+    'R²': 'Out-of-sample R² = 1 − (squared forecast errors of the model) / (squared errors of forecasting every month with the average return of the training months). 0 = no better than the average, negative = worse. Higher is better.',
+    RMSE: 'RMSE: the typical size of a prediction error, in percentage points of return on assets. Lower is better.' })[CASES[S.cas].metric];
+
+  const figBars = MLS.figure($('figBars'), {
+    title: 'What each procedure reports, and its true score on new data', help: 'figbars', file: 'leakage-comparison',
+    plot: { aspect: 0.32, margin: { l: 60 }, x: { ticks: false }, y: { label: () => CASES[S.cas].metric + (CASES[S.cas].better === 'high' ? ' (higher is better)' : ' (lower is better)') } },
+    data: () => ({ cols: ['Procedure', 'Cross-validation (training set)', 'Test (hold-out) set', 'True score on new data'], rows: CASES[S.cas].procs.map(p => [p[1], R[p[0]].cv, R[p[0]].test, unusable(S.cas, p[0]) ? 'cannot be used' : R[p[0]].real]) })
+  });
+  function drawBars() {
+    const P = figBars.plot, c = col(), C = CASES[S.cas], procs = C.procs, groups = [['cv', 'Reported by cross-validation'], ['test', 'Reported by the test (hold-out) set'], ['real', 'True score on new data']];
+    const vals = []; procs.forEach(p => groups.forEach(g => { if (!(g[0] === 'real' && unusable(S.cas, p[0]))) vals.push(R[p[0]][g[0]]); }));
+    const lo = C.metric === 'AUC' ? 0.5 : Math.min(0, ...vals) * 1.15, hi = Math.max(...vals) * 1.28 + (C.metric === 'R²' ? 0.04 : 0);
+    P.setX(0, 3); P.setY(lo, hi);
+    const w = 0.8 / procs.length;
+    P.draw(P => {
+      if (lo < 0) P.hline(0, { color: c.ink, width: 1 });
+      groups.forEach(([g, lab], gi) => {
+        P.text(gi + 0.5, hi, lab, { anchor: 'middle', dy: 16, size: 12.5, weight: 700 });
+        procs.forEach(([k, plab], pi) => {
+          const x0 = gi + 0.1 + pi * w, v = R[k][g], cur = k === S.proc[S.cas];
+          if (g === 'real' && unusable(S.cas, k)) {          /* no bar: the leaky credit model cannot be used on new applicants */
+            const lines = ['The leaky model', 'cannot be used:', 'the fees do not exist', 'when the applicant', 'applies.'], ym = lo + (hi - lo) * 0.62;
+            lines.forEach((t, li) => P.text(x0 + w / 2, ym, t, { anchor: 'middle', dy: li * 15 - 22, size: 11.5, weight: cur ? 800 : 600, color: procColor(k, c) }));
+            return;
+          }
+          tip(P, P.rect(x0 + 0.02, C.metric === 'AUC' ? lo : 0, x0 + w - 0.02, v, { fill: procColor(k, c), opacity: cur ? 1 : 0.4, stroke: cur ? c.ink : null, width: cur ? 1.5 : null }),
+            '<b>' + MLS.esc(plab) + '</b><br>' + lab + ': <b>' + C.metric + ' = ' + fm(v) + '</b>');
+          P.text(x0 + w / 2, v, fm(v), { anchor: 'middle', dy: v >= 0 ? -5 : 14, size: 12, weight: cur ? 800 : 500 });
+        });
+      });
+      P.vline(2, { color: c.mu, width: 1.2, dash: '4 4' });
+    });
+    figBars.legend(procs.map(([k, lab]) => ({ label: lab + (k === S.proc[S.cas] ? ' (shown)' : ''), color: procColor(k, c), box: true })));
+    figBars.caption('One data set, the one described above; hover over a bar for its value. The first two groups are what the analyst sees before using the model; the last group, right of the dashed line, is the true score on new data (' + realWhat() + '), known in practice only later. <b>Leakage makes the model look better, but on new data it performs no better than the correct model.</b> ' + metricNote());
+  }
+  const O1 = { aspect: 0.78, margin: { l: 72 }, x: {}, y: {} }, O2 = { aspect: 0.78, margin: { l: 72 }, x: {}, y: {} };
+  const figCase1 = MLS.figure($('figCase1'), { title: '&nbsp;', help: 'figcase1', file: 'leakage-case-1', plot: O1 });
+  const figCase2 = MLS.figure($('figCase2'), { title: '&nbsp;', help: 'figcase2', file: 'leakage-case-2', plot: O2 });
+  const setTitle = (id, t) => { $(id).querySelector('.figure-title').firstChild.textContent = t; };
+  const axes = (o, x, y) => { o.x = x || { ticks: false }; o.y = y || { ticks: false }; };
+
+  function drawCase() {
+    const c = col(), P1 = figCase1.plot, P2 = figCase2.plot;
+    P1.hover = null; P2.hover = null;
+    if (S.cas === 'target') {
+      setTitle('figCase1', 'Late-payment fees by outcome');
+      const D = R.D, g = MLS.rng(4), fees = D.X.map(x => x[4]);
+      axes(O1, { label: 'Late-payment fees charged (€)' }, { ticks: false });
+      P1.setX(-20, Math.max(...fees) * 1.05); P1.setY(0, 2);
+      P1.draw(P => {
+        P.text(-20, 1.5, 'Defaulted', { anchor: 'end', dx: -6, dy: 4, size: 12, weight: 700, halo: false });
+        P.text(-20, 0.5, 'Repaid', { anchor: 'end', dx: -6, dy: 4, size: 12, weight: 700, halo: false });
+        P.points(D.X.map((x, i) => ({ x: x[4], y: (D.y[i] ? 1.15 : 0.15) + 0.7 * g.random(), i })), { color: dd => (D.y[dd.i] ? c.leak : c.ok), r: 3.4, opacity: 0.75, ring: false,
+          tip: dd => 'Loan ' + (dd.i + 1) + '<br>Fees: <b>' + D.X[dd.i][4] + ' €</b><br>' + (D.y[dd.i] ? 'Defaulted' : 'Repaid') + '<br>Income ' + D.X[dd.i][0] + 'k €, credit score ' + D.X[dd.i][2] });
+      });
+      const nD = D.y.filter(v => v).length;
+      figCase1.legend([{ label: 'Defaulted (' + nD + ')', color: c.leak }, { label: 'Repaid (' + (D.y.length - nD) + ')', color: c.ok }]);
+      figCase1.caption('Each dot is one past loan. Almost every borrower with fees above 150 € defaulted, so the fees "predict" default very well in the historical data. But fees appear only after missed payments: a new applicant always has 0.');
+      setTitle('figCase2', 'When each piece of information appears');
+      axes(O2);
+      P2.setX(0, 10); P2.setY(0, 4);
+      P2.draw(P => {
+        P.rect(4.4, 0.3, 9.7, 3.7, { fill: MLS.rgba(c.leak, 0.08) });
+        P.text(7.05, 3.7, 'not known when the decision is made', { anchor: 'middle', dy: 16, size: 12, weight: 700, color: c.leak });
+        P.arrow(0.4, 2, 9.7, 2, { color: c.ink, width: 2 });
+        P.text(9.7, 2, 'time', { anchor: 'end', dy: 18, size: 11.5 });
+        [[1, 'Application', 'income, debt, score, years', c.ok], [3.4, 'Decision', 'the model is used here', c.g], [5.9, 'Missed payments', 'fees are charged', c.leak], [8.4, 'Default', 'the outcome', c.ink]].forEach(([x, t, s, colr], i) => {
+          P.points([{ x, y: 2 }], { color: colr, r: 7 });
+          P.text(x, 2, t, { anchor: 'middle', dy: i % 2 ? 30 : -30, size: 12.5, weight: 800, color: colr });
+          P.text(x, 2, s, { anchor: 'middle', dy: i % 2 ? 46 : -14, size: 11.5, color: c.ink });
+        });
+      });
+      figCase2.legend([]); figCase2.caption('Ask of every variable: would I know this at the moment I make the prediction?');
+    } else if (S.cas === 'select') {
+      const pr = S.proc.select, sel = new Set(R[pr].sel), p = S.bP, m = sel.size, nTr = R.nTr;
+      setTitle('figCase1', 'Which predictors were chosen');
+      const cols = Math.ceil(Math.sqrt(p * 1.6)), rows = Math.ceil(p / cols);
+      axes(O1);
+      P1.setX(0, cols); P1.setY(0, rows);
+      P1.draw(P => {
+        for (let j = 0; j < p; j++) {
+          const cx = j % cols, cy = rows - 1 - Math.floor(j / cols), real = j < 2, chosen = sel.has(j);
+          tip(P, P.rect(cx + 0.08, cy + 0.08, cx + 0.92, cy + 0.92, { fill: chosen ? (real ? c.g : c.bad) : (real ? MLS.rgba(c.g, 0.3) : MLS.rgba(c.mu, 0.18)), rx: 1.5 }),
+            'Predictor ' + (j + 1) + '<br>' + (real ? 'Really affects the return' : 'Unrelated to the return') + '<br>' + (chosen ? '<b>chosen</b>' : 'not chosen') + '<br>Correlation in the months used to choose: ' + F((pr === 'all' ? R.corrAllMonths : R.corrTr)[j], 2) + '<br>Correlation in the next ' + B_NEW + ' months: ' + F(R.corrNew[j], 2));
+          if (p <= 120) P.text(cx + 0.5, cy + 0.5, String(j + 1), { anchor: 'middle', dy: 4, size: 9.5, weight: 600, color: chosen ? '#FFFFFF' : c.ink, halo: false, parent: P.layer });
+        }
+      });
+      const realChosen = [0, 1].filter(j => sel.has(j)).length;
+      figCase1.legend([{ label: 'Chosen, really matters (' + realChosen + ')', color: c.g, box: true }, { label: 'Chosen by pure chance (' + (m - realChosen) + ')', color: c.bad, box: true }, { label: 'Really matters, not chosen (' + (2 - realChosen) + ')', color: MLS.rgba(c.g, 0.35), box: true }, { label: 'Not chosen (' + (p - m - 2 + realChosen) + ')', color: MLS.rgba(c.mu, 0.3), box: true }]);
+      figCase1.caption('Each square is one of the ' + p + ' candidate predictors; predictors 1 and 2 (top left) really affect the return. Final choice made with ' + (pr === 'all' ? 'all ' + S.bN + ' months, training + test' : 'the training months 1-' + nTr) + '. Hover for the correlations.');
+      setTitle('figCase2', 'Correlation with the return: when choosing vs in new months');
+      const cx = pr === 'all' ? R.corrAllMonths : R.corrTr, all = cx.concat(R.corrNew), lim = Math.max(...all.map(Math.abs)) * 1.08;
+      axes(O2, { label: 'Correlation in the months used to choose (' + (pr === 'all' ? '1-' + S.bN : '1-' + nTr) + ')' }, { label: 'Correlation in the next ' + B_NEW + ' months' });
+      P2.setX(-lim, lim); P2.setY(-lim, lim);
+      P2.draw(P => {
+        P.hline(0, { color: c.mu, width: 1 }); P.vline(0, { color: c.mu, width: 1 });
+        P.line([[-lim, -lim], [lim, lim]], { color: c.ink, dash: '5 4', width: 1.1 });
+        const pts = cx.map((v, j) => ({ x: v, y: R.corrNew[j], j })).filter(q => !sel.has(q.j) && q.j >= 2);
+        P.points(pts, { color: MLS.rgba(c.mu, 0.5), r: 2.4, ring: false, tip: q => 'Predictor ' + (q.j + 1) + ' (unrelated, not chosen)<br>Correlation when choosing: ' + F(q.x, 2) + '<br>In new months: ' + F(q.y, 2) });
+        const hl = cx.map((v, j) => ({ x: v, y: R.corrNew[j], j })).filter(q => sel.has(q.j) || q.j < 2);
+        P.points(hl, { color: q => (q.j < 2 ? c.g : c.bad), shape: q => (sel.has(q.j) ? 'circle' : 'square'), r: 5, tip: q => 'Predictor ' + (q.j + 1) + (q.j < 2 ? ' (really matters)' : ' (unrelated)') + (sel.has(q.j) ? ', chosen' : ', not chosen') + '<br>Correlation when choosing: <b>' + F(q.x, 2) + '</b><br>In new months: <b>' + F(q.y, 2) + '</b>' });
+      });
+      figCase2.legend([{ label: 'Chosen, really matters', color: c.g }, { label: 'Chosen by pure chance', color: c.bad }, { label: 'Other predictors', color: MLS.rgba(c.mu, 0.6) }, { label: 'Same correlation in new months', color: c.ink, line: true, dash: '5 4' }]);
+      figCase2.caption('Each dot is a predictor. The chance predictors (red) were chosen because their correlation was far from 0 in the months used to choose; in new months it falls back to about 0. The real predictors (green) keep their correlation.');
+    } else if (S.cas === 'group') {
+      setTitle('figCase1', 'How the firm-years are split');
+      const rows = R.rows, sp = R[S.proc.group].split, role = {};
+      sp.te.forEach(i => (role[i] = 'te')); sp.tr.forEach(i => (role[i] = sp.fold[i] === 0 ? 'val' : 'fit'));
+      const nF = Math.min(S.cF, 40), cnt = { fit: 0, val: 0, te: 0 };
+      rows.forEach((o, i) => cnt[role[i]]++);
+      axes(O1);
+      P1.setX(0, S.cY); P1.setY(0, nF);
+      P1.draw(P => {
+        rows.forEach((o, i) => { if (o.f >= nF) return; const fill = { te: c.te, val: c.leak, fit: c.ok }[role[i]];
+          tip(P, P.rect(o.t + 0.06, nF - 1 - o.f + 0.08, o.t + 0.94, nF - o.f - 0.08, { fill, opacity: role[i] === 'te' ? 0.6 : 1 }),
+            'Firm ' + (o.f + 1) + ', year ' + (o.t + 1) + '<br>' + { fit: 'Training part (round 1)', val: 'Validation fold (round 1)', te: 'Test (hold-out) set' }[role[i]] + '<br>ROA ' + F(o.y, 2) + '%'); });
+        for (let f = 0; f < nF; f += 5) P.text(0, nF - 0.5 - f, 'Firm ' + (f + 1), { anchor: 'end', dx: -6, dy: 4, size: 11, halo: false });
+        for (let t = 0; t < S.cY; t++) P.text(t + 0.5, 0, 'Year ' + (t + 1), { anchor: 'middle', dy: 15, size: 11, halo: false });
+      });
+      figCase1.legend([{ label: 'Training part, round 1 (' + cnt.fit + ')', color: c.ok, box: true }, { label: 'Validation fold, round 1 (' + cnt.val + ')', color: c.leak, box: true }, { label: 'Test (hold-out) set (' + cnt.te + ')', color: c.te, box: true }]);
+      figCase1.caption((S.proc.group === 'leak' ? 'Random split: in every row (one firm) some years are for training and others for validation or testing. The model meets the same firms on both sides.' : 'Split by firm: each firm (row) is entirely in the training part, the validation fold or the test set, just like the new firms the model is built for.') + ' Counts are firm-years.' + (S.cF > 40 ? ' First 40 firms shown.' : ''));
+      setTitle('figCase2', 'Profitability of the first 12 firms, all years');
+      const nS = Math.min(12, S.cF), pts = rows.map((o, i) => ({ x: o.f + 1 + (o.t - (S.cY - 1) / 2) * 0.05, y: o.y, o, r: role[i] })).filter(q => q.o.f < nS);
+      const yd = MLS.niceDomain(Math.min(...pts.map(q => q.y)), Math.max(...pts.map(q => q.y)), 0.1);
+      axes(O2, { fmt: v => (Number.isInteger(v) && v >= 1 && v <= nS ? String(v) : ''), label: 'Firm' }, { label: 'Return on assets (%)' });
+      P2.setX(0.4, nS + 0.6); P2.setY(yd[0], yd[1]);
+      P2.draw(P => {
+        for (let f = 0; f < nS; f++) { const ys = rows.filter(o => o.f === f).map(o => o.y); P.segment(f + 0.7, MLS.mean(ys), f + 1.3, MLS.mean(ys), { color: c.mu, width: 1.4 }); }
+        P.points(pts, { color: q => ({ te: c.te, val: c.leak, fit: c.ok })[q.r], r: 4.5, opacity: 0.9,
+          tip: q => 'Firm ' + (q.o.f + 1) + ', year ' + (q.o.t + 1) + '<br>ROA <b>' + F(q.y, 2) + '%</b><br>' + { fit: 'Training part (round 1)', val: 'Validation fold (round 1)', te: 'Test (hold-out) set' }[q.r] });
+      });
+      figCase2.legend([{ label: 'Training part, round 1', color: c.ok }, { label: 'Validation fold, round 1', color: c.leak }, { label: 'Test (hold-out) set', color: c.te }, { label: 'Firm average', color: c.mu, line: true }]);
+      figCase2.caption('Each column is one firm, each dot one year. The years of a firm stay close to the firm\'s own level. ' + (S.proc.group === 'leak' ? 'With the random split, an orange (validation) dot sits among blue (training) dots of the same firm: easy to predict, but only because the firm is already known.' : 'With the split by firm, each column has one colour: the model must predict firms it has never seen, as in real use.'));
+    }
+  }
+
+  /* ==================================================================
+     controls
+     ================================================================== */
+  function syncUI() {
+    MLS.$$('[data-case]').forEach(b => b.setAttribute('aria-pressed', String(b.dataset.case === S.cas)));
+    $('procSeg').innerHTML = CASES[S.cas].procs.map(([k, lab]) => '<button type="button" data-proc="' + k + '" style="flex:1 1 100%" aria-pressed="' + (S.proc[S.cas] === k) + '">' + lab + '</button>').join('');
+    MLS.$$('[data-proc]').forEach(b => (b.onclick = () => { S.proc[S.cas] = b.dataset.proc; light(); }));
+    ['Target', 'Select', 'Group'].forEach(k => ($('ctl' + k).hidden = S.cas !== k.toLowerCase()));
+    $('aN').value = S.aN; $('aNVal').textContent = S.aN; $('bN').value = S.bN; $('bNVal').textContent = S.bN; $('bP').value = S.bP; $('bPVal').textContent = S.bP; $('bM').value = S.bM; $('bMVal').textContent = Math.min(S.bM, S.bP);
+    $('cF').value = S.cF; $('cFVal').textContent = S.cF; $('cY').value = S.cY; $('cYVal').textContent = S.cY;
+    $('seed').value = S.seeds[S.cas];
+    $('dataNote').textContent = 'All numbers come from this one data set. The dice gives new data.';
+  }
+  function refresh(re) { if (re !== false) compute(); syncUI(); updateText(); drawBars(); drawCase(); figBars.refreshTable(); if (ch) ch.check(); MLS.state.save(); }
+  const light = () => refresh(false);
+  MLS.$$('[data-case]').forEach(b => (b.onclick = () => { S.cas = b.dataset.case; refresh(); }));
+  ['aN', 'bN', 'bP', 'bM', 'cF', 'cY'].forEach(id => {
+    $(id).addEventListener('input', e => ($(id + 'Val').textContent = e.target.value));
+    $(id).onchange = e => { S[id] = +e.target.value; refresh(); };
+  });
+  $('seed').onchange = e => { S.seeds[S.cas] = Math.max(1, Math.round(+e.target.value) || 1); refresh(); };
+  $('newSeed').onclick = () => { S.seeds[S.cas] = MLS.newSeed(); refresh(); };
+
+  /* ==================================================================
+     help (texts depend on the case shown)
+     ================================================================== */
+  const byCase = o => () => o[S.cas];
+  MLS.registerHelp({
+    case: { title: 'Case', html: 'Three common ways leakage happens in economics and finance. Each case has leaky procedures and a correct one. Time series: see the Time-Series Validation module.' },
+    proc: { title: 'Procedure', html: byCase({
+      target: '<b>Include the fees (leak)</b>: the model uses every column of the historical data. <b>Only data known at application</b>: income, debt-to-income ratio, credit score and years employed only.',
+      select: '<b>Choose on all data</b>: the predictors are chosen with all months, training + test. <b>Choose on the training set, then CV</b>: chosen once with the training months, then cross-validated. <b>Choose inside each fold</b>: chosen again in every round of cross-validation with the 3 training folds only; the final choice uses the training set.',
+      group: '<b>Split firm-years at random</b>: years of the same firm end up in training, validation and test. <b>Split by firm</b>: each firm is entirely in one part.' }) },
+    an: { title: 'Past loans', html: 'Number of past loans in the data. 80% form the training set (4 folds), 20% the test (hold-out) set. True score on new data: 2,000 new applicants.' },
+    bn: { title: 'Months of data', html: 'Number of months of data for the firm. The first 80% of the months form the training set (4 folds of consecutive months), the last 20% the test (hold-out) set.' },
+    bp: { title: 'Candidate predictors', html: 'How many predictors the analyst searches through. Only predictors 1 and 2 really affect the return. The more candidates, the more of the useless ones correlate with the return by chance.' },
+    bm: { title: 'Predictors kept', html: 'How many of the predictors most correlated with the return are kept for the OLS model.' },
+    cf: { title: 'Firms', html: 'Number of firms in the panel. 20% of the firm-years (random split) or of the firms (split by firm) form the test (hold-out) set. True score on new data: 40 new firms.' },
+    seed: { title: 'Random seed', html: 'Fixes the simulated data of the case shown. Each case keeps its own seed; the dice gives new data.' },
+    st_proc: { title: 'Procedure', html: 'The procedure shown. The box at the top explains what it does.' },
+    st_cv: { title: 'Cross-validation', html: byCase({
+      target: 'AUC of the default predictions in the 4 validation folds of the training set, each predicted by the model trained on the other 3 folds. Higher is better.',
+      select: 'Out-of-sample R² of the return forecasts in the 4 validation folds (consecutive blocks of months of the training set), each forecast by the model trained on the other 3 folds. Higher is better; 0 = no better than the average return.',
+      group: 'RMSE of the profitability predictions in the 4 validation folds of the training set, in percentage points of return on assets. Lower is better.' }) },
+    st_test: { title: 'Test set', html: byCase({
+      target: 'AUC on the test (hold-out) loans, predicted by the final model trained on the whole training set.',
+      select: 'Out-of-sample R² on the test (hold-out) months, forecast by the final model trained on the training months.',
+      group: 'RMSE on the test (hold-out) set, predicted by the final model trained on the whole training set.' }) },
+    st_real: { title: 'True score on new data', html: () => 'In practice known only later; the simulation can show it because it creates the future data.<br><br>' + ({
+      target: 'AUC on 2,000 new applicants. They apply today, so nobody has late-payment fees yet: the model with the fees cannot be used, and the bank can only use the model without fees.',
+      select: 'Out-of-sample R² of the same final model forecasting the next ' + B_NEW + ' months, which did not exist when the model was built.',
+      group: 'RMSE of the same final model on 40 new firms, never seen before. That is what the model is built for.' })[S.cas] },
+    figbars: { title: 'Comparison', html: () => 'For each procedure (colours): the score reported by cross-validation, the score on the test (hold-out) set, and the true score on new data (known in practice only later; the simulation can show it because it creates the future data). With leakage, the reported scores are too good, but on new data the leaky procedure does no better than the correct one. ' + metricNote() },
+    figcase1: { title: () => ({ target: 'Fees by outcome', select: 'Which predictors were chosen', group: 'How the firm-years are split' })[S.cas], html: byCase({
+      target: 'Each dot is one past loan: horizontal = late-payment fees, rows = outcome. Fees above 0 almost always mean default, but they appear only after the loan is granted.',
+      select: 'Each square is one candidate predictor. Green: really affects the return. Red: chosen, but unrelated to the return: picked only because of a chance correlation in the months used to choose.',
+      group: 'Each row is one firm, each column one year. The colour shows whether the firm-year is used for training, for validation (round 1 of cross-validation) or in the test set.' }) },
+    figcase2: { title: () => ({ target: 'Timeline', select: 'Correlations when choosing and in new months', group: 'Profitability by firm' })[S.cas], html: byCase({
+      target: 'When each piece of information becomes known, relative to the decision on the loan.',
+      select: 'Each dot is one predictor: horizontal = its correlation with the return in the months used to choose, vertical = in the next ' + B_NEW + ' months. Chance correlations do not repeat in new months.',
+      group: 'Each column is one firm, each dot one year, coloured by its role in the split. Dots of the same firm are close together: knowing one year of a firm almost tells you the others.' }) }
+  });
+
+  /* ==================================================================
+     challenges
+     ================================================================== */
+  function setup(o) { Object.assign(S, o); MLS.pickTab('sim'); refresh(); window.scrollTo({ top: 0, behavior: 'smooth' }); }
+  const withProc = (cas, p) => ({ cas, proc: Object.assign({}, S.proc, { [cas]: p }) });
+  const ch = MLS.challenges($('challenges'), META.id, [
+    { type: 'predict', q: 'Credit case with the late-payment fees included. Compared with the true score on new applicants, the test (hold-out) set will report a performance that is...',
+      options: ['about the same, because the test set is never used for training', 'much better, because the test set also contains the fees', 'worse, because the test set is small'], answer: 1,
+      explain: 'The test set comes from the same historical data, so it also contains the fees recorded after default. New applicants have no fees yet, so the model with the fees cannot even be used. A test set cannot catch a leak that is in the data itself.',
+      tryIt: () => setup(withProc('target', 'leak')) },
+    { type: 'predict', q: 'Choosing predictors with all data. If the analyst searches through 1,000 candidate predictors instead of 500, cross-validation will look...',
+      options: ['even better, while the true score on new data does not improve', 'worse, because there is more noise', 'the same'], answer: 0,
+      explain: 'With more candidates, the best chance correlations are larger, and choosing with all the data turns them into apparent predictive power in cross-validation and in the test set. The true score on new data does not improve, because chance correlations do not repeat in new months.',
+      tryIt: () => setup(Object.assign(withProc('select', 'all'), { bP: 1000 })) },
+    { type: 'predict', q: 'The analyst locks the test set away, chooses the predictors once with the training months, and then runs cross-validation. Which check is too optimistic?',
+      options: ['Both cross-validation and the test set', 'Neither', 'Only cross-validation; the test set is honest'], answer: 2,
+      explain: 'The validation folds were among the months used to choose the predictors, so cross-validation is too optimistic. The test months took no part in the choice, so the test set is honest. Cross-validation promising much more than the test delivers is the warning sign.',
+      tryIt: () => setup(withProc('select', 'train')) },
+    { type: 'predict', q: 'Firm panel, split at random by firm-year. The model will work best for...',
+      options: ['firms already in the data, in other years', 'new firms', 'both equally'], answer: 0,
+      explain: 'With a random split, the model learns to recognise each firm from its fixed characteristics and to copy its usual profitability. That works for known firms and fails for new ones. If the model is meant for new firms, the split must be by firm.',
+      tryIt: () => setup(withProc('group', 'leak')) },
+    { type: 'predict', q: 'A leaky procedure reports much better scores than the correct one. On new, unknown data the leaky model will perform...',
+      options: ['much better, as its cross-validation promised', 'better by about the same margin as on the test set', 'no better than the correct model, and sometimes worse'], answer: 2,
+      explain: 'Leakage changes the reported scores, not the skill of the model. In all three cases the true score on new data of the leaky procedure is about the same as that of the correct one, or worse; in the credit case the leaky model cannot be used at all. Compare the last group of bars in each case.',
+      tryIt: () => setup(withProc('group', 'leak')) },
+    { type: 'task', q: 'Choosing predictors with all data: make the leak almost disappear (cross-validation within 0.05 of the true score on new data).', hint: 'Fewer candidates, or more months.',
+      check: () => S.cas === 'select' && S.proc.select === 'all' && R && R.all && Math.abs(R.all.cv - R.all.real) < 0.05 }
+  ]);
+
+  /* ==================================================================
+     state
+     ================================================================== */
+  MLS.moduleBar({ id: META.id, title: META.title, section: META.sectionTitle, level: META.level },
+    { tabs: [{ id: 'sim', label: 'Simulation' }, { id: 'lesson', label: 'Lesson' }, { id: 'challenges', label: 'Challenges' }, { id: 'real', label: 'On real data' }] });
+  MLS.state.init({
+    id: META.id,
+    get: () => ({ cas: S.cas, proc: S.proc, seeds: S.seeds, aN: S.aN, bN: S.bN, bP: S.bP, bM: S.bM, cF: S.cF, cY: S.cY }),
+    set: o => {
+      if (CASES[o.cas]) S.cas = o.cas;
+      if (o.proc) Object.keys(CASES).forEach(k => { if (o.proc[k] && CASES[k].procs.some(p => p[0] === o.proc[k])) S.proc[k] = o.proc[k]; });
+      if (o.seeds) Object.keys(CASES).forEach(k => { if (Number.isFinite(o.seeds[k])) S.seeds[k] = o.seeds[k]; });
+      ['aN', 'bN', 'bP', 'bM', 'cF', 'cY'].forEach(k => { if (Number.isFinite(o[k])) S[k] = o[k]; });
+    }
+  });
+  $('fourCast').href = MLS.APP.fourCastUrl;
+  ['tsLink1', 'tsLink2'].forEach(id => { const a = $(id); a.href = MLS.base + 'modules/ts-validation.html'; a.setAttribute('data-nav', 'modules/ts-validation.html'); });
+  window.__mls = { S, get R() { return R; } };
+  document.addEventListener('mls:theme', () => light());
+  refresh();
+})();
+</script>
+</body>
+</html>

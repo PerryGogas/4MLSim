@@ -1,0 +1,373 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Logistic Regression | 4MLSim</title>
+  <meta name="theme-color" content="#1B2340">
+  <link rel="manifest" href="../manifest.json">
+  <link rel="icon" type="image/svg+xml" href="../assets/img/icon.svg">
+  <link rel="apple-touch-icon" href="../assets/img/apple-touch-icon.png">
+  <link rel="stylesheet" href="../assets/vendor/temml.css">
+  <link rel="stylesheet" href="../assets/css/4mlsim.css">
+  <script src="../assets/vendor/temml.min.js"></script>
+  <script src="../assets/js/core.js"></script>
+  <script src="../assets/js/stats.js"></script>
+  <script src="../assets/js/plot.js"></script>
+  <script src="../assets/js/modules.js"></script>
+  <script src="../assets/js/core-ml.js"></script>
+  <script src="../assets/js/classify-ui.js"></script>
+</head>
+<body>
+<div class="page">
+  <header id="mlsHeader" data-variant="compact"></header>
+  <div class="mod-top" id="mlsTop"><div id="mlsModBar"></div><div id="mlsTabs"></div></div>
+
+  <div class="intro-box" id="mlsIntro">
+    <h3>What this module shows</h3>
+    <div class="intro-cols">
+      <div>
+        <p><b>Logistic regression</b> (the logit) predicts a <b>probability</b> between 0 and 1, for example that a bank fails. It turns a straight-line score <i>b0 + b1 &times; x</i> into a probability with the S-shaped <b>sigmoid</b> curve.</p>
+        <p>The coefficients are estimated by <b>maximum likelihood</b>: the values that make the observed outcomes most probable. A <b>threshold T</b> then turns each probability into a class.</p>
+      </div>
+      <div>
+        <p><b>How to use it</b></p>
+        <ol>
+          <li>Choose a data set on the left.</li>
+          <li>Press <b>Reset</b>, then <b>Step</b>, to watch the estimation climb to the maximum likelihood.</li>
+          <li>Move the threshold T and see the cutoff and the confusion matrix change.</li>
+          <li>Click any <b>?</b> for help, then try the <b>Challenges</b>.</li>
+        </ol>
+      </div>
+    </div>
+  </div>
+
+  <!-- ===================== SIMULATION ===================== -->
+  <section data-panel="sim">
+    <div class="mod-grid">
+      <aside class="side" aria-label="Controls">
+        <div class="card">
+          <div class="card-head"><h3>1. Data<button type="button" class="help" data-help="data">?</button></h3></div>
+          <select id="ds" aria-label="Data set"></select>
+          <div class="field-row"><label for="n">Observations<button type="button" class="help" data-help="n">?</button></label><output id="nVal"></output></div>
+          <input type="range" id="n" min="40" max="600" step="20" value="200">
+          <div class="field-row"><label for="seed">Random seed<button type="button" class="help" data-help="seed">?</button></label></div>
+          <div class="inline-inputs"><input type="number" id="seed" min="1" max="99999" step="1" value="4" aria-label="Random seed"><button type="button" class="btn-ghost btn-icon" id="newSeed" title="New random data" style="flex:0 0 auto">&#127922;</button></div>
+          <p class="note" id="dataNote"></p>
+        </div>
+        <div class="card">
+          <div class="card-head"><h3>2. Estimation: maximum likelihood<button type="button" class="help" data-help="newton">?</button></h3></div>
+          <div id="stepper"></div>
+          <p class="note" id="iterNote"></p>
+          <div id="pseudo"></div>
+        </div>
+        <div class="card">
+          <div class="card-head"><h3>3. Threshold<button type="button" class="help" data-help="thr">?</button></h3></div>
+          <div class="field-row"><label for="thr" id="thrLabel">Threshold T</label><output id="thrVal"></output></div>
+          <input type="range" id="thr" min="0.01" max="0.99" step="0.01" value="0.5">
+          <p class="note" id="thrNote"></p>
+        </div>
+      </aside>
+
+      <main class="main">
+        <div class="story" id="story"></div>
+        <div class="stat-grid" id="stats" style="margin-top:12px"></div>
+        <div id="statusLine" class="status-line" style="margin:10px 0"></div>
+        <div class="fig-grid">
+          <div id="figS" class="fig-wide"></div>
+          <div class="card fig-wide" id="coefCard"></div>
+          <div id="figLL"></div>
+          <div class="card" id="cmCard"></div>
+        </div>
+      </main>
+    </div>
+  </section>
+
+  <!-- ===================== LESSON ===================== -->
+  <section data-panel="lesson" class="card lesson" hidden>
+    <div id="mlsMathCtl"></div>
+    <p class="lvl-only-intuition note" style="margin-bottom:8px">Showing the intuition only. Choose <b>Formulas</b> or <b>Deep dive</b> above to add the mathematics.</p>
+
+    <h4>Why not an ordinary regression line?</h4>
+    <p>The outcome is 0 or 1 (healthy or failed bank). A straight line fitted to 0s and 1s (the linear probability model) gives "probabilities" below 0 or above 1 for extreme values of x. Logistic regression bends the line into an S between 0 and 1.</p>
+
+    <h4>From a score to a probability</h4>
+    <p>First a straight-line score: <b>score = b0 + b1 &times; x</b>. Then the sigmoid turns the score into a probability: a score of 0 gives 0.5, large positive scores approach 1, large negative scores approach 0. If b1 &gt; 0 the probability rises with x (more debt, more failures); if b1 &lt; 0 it falls (a higher term spread, fewer recessions).</p>
+    <div class="math-block lvl-math"><div class="mb-title">The model</div>
+      <div class="tex-block">P(y_i = 1 \mid x_i) = p_i = \frac{1}{1 + e^{-(b_0 + b_1 x_i)}}, \qquad \ln\frac{p_i}{1 - p_i} = b_0 + b_1 x_i</div>
+      <p class="note">The left side of the second equation is the <b>log-odds</b>: the logarithm of the odds p / (1 − p). It is linear in x.</p>
+    </div>
+
+    <h4>Reading the coefficients: odds ratios</h4>
+    <p>The odds are p / (1 − p): odds of 1 mean "1 to 1" (p = 0.5), odds of 3 mean p = 0.75. When x rises by one unit, the odds are <b>multiplied by e<sup>b1</sup></b>, the odds ratio. With e<sup>b1</sup> = 2, each extra unit of debt-to-equity doubles the odds of failure. The effect on the probability itself is largest where p is near 0.5.</p>
+
+    <h4>Estimation: maximum likelihood</h4>
+    <p>For given coefficients, every observation gets a probability. The <b>likelihood</b> is the probability of seeing exactly the outcomes in the data: the product of p<sub>i</sub> for the 1s and of (1 − p<sub>i</sub>) for the 0s. Maximum likelihood picks the coefficients that make this as large as possible. We work with its logarithm, the <b>log-likelihood</b> (a sum, always negative; closer to 0 is better).</p>
+    <p>There is no formula for the maximum, so it is found step by step. <b>Newton's method</b>, used by statsmodels and most econometric software, starts at b0 = b1 = 0 (every probability 0.5), looks at the slope and the curvature of the log-likelihood, and jumps to the top of the parabola that fits there. It reaches the maximum in a handful of steps. (The Gradient Descent module solves the same problem with small downhill steps.)</p>
+    <div class="math-block lvl-math"><div class="mb-title">Log-likelihood and Newton step</div>
+      <div class="tex-block">\ell(b) = \sum_i \bigl[\, y_i \ln p_i + (1 - y_i) \ln(1 - p_i) \,\bigr]</div>
+      <div class="tex-block">g = X^\top (y - p), \qquad H = X^\top W X,\; W = \mathrm{diag}\bigl(p_i (1 - p_i)\bigr), \qquad b_{\text{new}} = b + H^{-1} g</div>
+      <p class="note">Standard errors are the square roots of the diagonal of H<sup>−1</sup> at the maximum. McFadden's pseudo R² = 1 − ℓ(b) / ℓ<sub>0</sub>, where ℓ<sub>0</sub> is the log-likelihood with the constant only.</p>
+    </div>
+
+    <h4>From probabilities to classes: the threshold</h4>
+    <p>An observation is classified as 1 when its probability is at least the threshold T (by default 0.5). With one input this is the same as a <b>cutoff</b> on x: the value where the S-curve crosses T. Lowering T moves the cutoff and finds more 1s (higher sensitivity) but also raises false alarms. The Confusion Matrix and ROC modules take this further.</p>
+
+    <h4>Econometrics and machine learning</h4>
+    <ul>
+      <li><b>Econometrics</b> reads the coefficient table: is b1 significantly different from 0 (p-value), how large is the odds ratio?</li>
+      <li><b>Machine learning</b> asks how well the model classifies new data: here it is estimated on the training set (80%) and checked once on the test set (20%).</li>
+    </ul>
+
+    <div class="math-block deep lvl-deep"><div class="mb-title">Deep dive</div>
+      <p><b>Separation.</b> If a value of x separates the 0s from the 1s perfectly, the likelihood keeps rising as b1 grows without limit: the maximum does not exist and the standard errors explode. Software stops with a warning; penalized (ridge) logistic regression or Firth's correction give finite estimates.</p>
+      <p><b>Marginal effects.</b> The effect of x on the probability is ∂p/∂x = b1 p (1 − p): largest at p = 0.5 (b1 / 4), small in the tails.</p>
+      <p><b>Software defaults.</b> statsmodels Logit estimates without a penalty (as here). scikit-learn's LogisticRegression adds a ridge penalty by default (C = 1), which shrinks the coefficients a little.</p>
+      <p class="note">References: Cox (1958), "The regression analysis of binary sequences", <i>JRSS B</i> 20(2); Hosmer, Lemeshow and Sturdivant (2013), <i>Applied Logistic Regression</i>, 3rd ed.; Estrella and Mishkin (1998), "Predicting U.S. recessions: financial variables as leading indicators", <i>Review of Economics and Statistics</i> 80(1).</p>
+    </div>
+  </section>
+
+  <!-- ===================== CHALLENGES ===================== -->
+  <section data-panel="challenges" class="card" hidden>
+    <div class="card-head"><h3>Challenges</h3><span class="card-sub">Answer the "predict first" questions before testing them in the Simulation tab.</span></div>
+    <div id="challenges"></div>
+  </section>
+
+  <!-- ===================== REAL DATA ===================== -->
+  <section data-panel="real" class="card lesson" hidden>
+    <h4>From the simulation to real data</h4>
+    <ul>
+      <li><b>Bank failures and credit risk</b>: early-warning models use several financial ratios (capital, asset quality, earnings, liquidity). The logit is the classic benchmark against which machine learning models (SVM, trees, neural networks) are compared.</li>
+      <li><b>Recession probabilities</b>: the term spread of the yield curve is one of the best single predictors of a US recession within a year (Estrella and Mishkin, 1998); central banks publish such probit and logit probabilities.</li>
+      <li><b>Credit scoring</b>: scorecards are often logits, because the coefficients and odds ratios are easy to explain to supervisors.</li>
+      <li>With many inputs, check for separation, and remember that a significant coefficient does not guarantee good predictions on new data: always look at the test set too.</li>
+    </ul>
+    <div class="crosslink"><span>&#10140;</span><span><a id="fourCast" target="_blank" rel="noopener"><b>4Cast Lab</b></a> estimates logit models on your own data, with the coefficient table and out-of-sample classification metrics.</span></div>
+  </section>
+
+  <footer id="mlsFooter"></footer>
+</div>
+
+<script>
+(function () {
+  'use strict';
+  const MLS = window.MLS, ML = MLS.ml, CL = MLS.cls;
+  const META = MLS.moduleMeta('logistic-regression');
+  const $ = id => document.getElementById(id);
+  const F = MLS.fmt, pct = CL.pct;
+  const DS = ML.DATA1;
+
+  const S = { ds: 'banks', n: {}, seed: 4, iter: -1, T: 0.5, cmPct: false };
+  let D = null, R = null;      /* data; results of the estimation */
+  const ds = () => DS[S.ds], nObs = () => S.n[S.ds] || ds().n;
+
+  /* ==================================================================
+     data and estimation
+     ================================================================== */
+  function makeData() {
+    const g = ds().gen(ML.rng(S.seed), nObs(), ds().share), test = ML.split(g.x.length, S.seed);
+    const pts = g.x.map((x, i) => ({ x, y: g.y[i], te: test[i], id: i, jit: ML.rng(i * 97 + S.seed).random() }));
+    const xs = pts.map(p => p.x);
+    D = { pts, dom: MLS.niceDomain(Math.min(...xs), Math.max(...xs), 0.06) };
+  }
+  const trainPts = () => D.pts.filter(p => !p.te), testPts = () => D.pts.filter(p => p.te);
+  function estimate() {
+    const tr = trainPts();
+    R = ML.logitNewton(tr.map(p => [p.x]), tr.map(p => p.y), 30);
+    R.last = R.path.length - 1;
+  }
+  const curIt = () => (S.iter < 0 || S.iter > R.last ? R.last : S.iter);
+  const curB = () => R.path[curIt()].b;
+  const probAt = (x, b) => ML.sigmoid((b || curB())[0] + (b || curB())[1] * x);
+  const cutoff = b => { b = b || curB(); return Math.abs(b[1]) < 1e-12 ? NaN : (Math.log(S.T / (1 - S.T)) - b[0]) / b[1]; };
+  const evalSet = pts => CL.evalBinary(pts, p => probAt(p.x), S.T);
+
+  /* ==================================================================
+     text
+     ================================================================== */
+  const cls = () => ds().classes, w = () => ds().unit;
+  function updateText() {
+    const d = ds(), b = curB(), it = curIt(), fin = it === R.last, mTe = evalSet(testPts()), mTr = evalSet(trainPts());
+    $('story').innerHTML = '<h3>Data: ' + d.label + '</h3><p>' + d.note + ' <b>' + trainPts().length + ' ' + w() + ' in the training set (filled), ' + testPts().length + ' in the test set (rings).</b> The outcome is 1 = ' + MLS.esc(cls()[1]) + ', 0 = ' + MLS.esc(cls()[0]) + '.</p>';
+    const card = MLS.statCard;
+    $('stats').innerHTML =
+      card('Slope b1', F(b[1], 3), fin ? 'maximum likelihood estimate' : 'Newton step ' + it + ' of ' + R.last, '', 'st_b1') +
+      card('Odds ratio, e<sup>b1</sup>', F(Math.exp(b[1]), 3), 'odds multiplied per extra unit of x', '', 'st_or') +
+      card('Accuracy, test set', pct(mTe.acc), 'at T = ' + F(S.T, 2) + ', ' + mTe.n + ' new ' + w(), '', 'm_acc') +
+      card('Sensitivity, test set', pct(mTe.sens), MLS.esc(cls()[1]) + ' found: ' + mTe.TP + ' of ' + (mTe.TP + mTe.FN), '', 'm_sens');
+    let msg, c = 'status-line';
+    if (R.separated) { msg = 'Warning: the training data are (almost) perfectly separated by x, so the maximum likelihood estimate does not exist (b1 keeps growing). Try more observations or another seed.'; c += ' bad'; }
+    else if (!fin) msg = 'Newton step ' + it + ': log-likelihood ' + F(R.path[it].ll, 3) + '. Press Step to climb further; the maximum is reached after ' + R.last + ' steps.';
+    else { const x0 = cutoff(); msg = 'Maximum likelihood reached after ' + R.last + ' Newton steps. At T = ' + F(S.T, 2) + ' a ' + (w() === 'months' ? 'month' : w().replace(/s$/, '')) + ' is classified as ' + MLS.esc(cls()[1]) + ' when ' + d.xname.replace(/ \(.*\)/, '').toLowerCase() + ' is ' + (b[1] > 0 ? 'at least ' : 'at most ') + F(x0, 2) + '. Test accuracy ' + pct(mTe.acc) + ' (training ' + pct(mTr.acc) + ').'; c += ' ok'; }
+    $('statusLine').textContent = msg; $('statusLine').className = c;
+    $('iterNote').innerHTML = 'Step <b>' + it + '</b> of ' + R.last + ': b0 = ' + F(b[0], 3) + ', b1 = ' + F(b[1], 3) + ', log-likelihood = ' + F(R.path[it].ll, 3) + '.';
+    $('thrVal').textContent = F(S.T, 2);
+    $('thrLabel').innerHTML = 'Threshold T for ' + MLS.esc(cls()[1]);
+    const x0 = cutoff();
+    $('thrNote').innerHTML = 'Classify as <b>' + MLS.esc(cls()[1]) + '</b> when the probability is at least T. ' + (Number.isFinite(x0) ? 'Cutoff: ' + d.xname.replace(/ \(.*\)/, '').toLowerCase() + ' ' + (b[1] > 0 ? '&ge; ' : '&le; ') + F(x0, 2) + '.' : '');
+    $('dataNote').textContent = 'About ' + Math.round(100 * d.share) + '% of the ' + w() + ' are ' + cls()[1] + '.';
+  }
+
+  /* ==================================================================
+     charts
+     ================================================================== */
+  const figS = MLS.figure($('figS'), {
+    title: 'The S-curve: probability of the outcome', help: 'figs', file: 'logit-s-curve',
+    plot: { aspect: 0.5, margin: { l: 62, b: 50 }, x: { label: () => ds().xname }, y: { label: () => 'Probability of ' + cls()[1], fmt: v => F(v, 1) } },
+    data: () => ({ cols: [ds().xname, 'Actual (1 = ' + cls()[1] + ')', 'Probability', 'Predicted at T', 'Set'], rows: D.pts.map(p => [p.x, p.y, probAt(p.x), probAt(p.x) >= S.T ? 1 : 0, p.te ? 'test' : 'training']) })
+  });
+  function drawS() {
+    const P = figS.plot, b = curB(), ink = MLS.color('chart-ink'), mu = MLS.color('chart-muted'), c0 = CL.color(0), c1 = CL.color(1), x0 = cutoff();
+    P.setX(D.dom[0], D.dom[1]); P.setY(-0.1, 1.1);
+    P.draw(P => {
+      if (Number.isFinite(x0)) {
+        const lo = Math.max(D.dom[0], Math.min(D.dom[1], x0)), right1 = b[1] > 0;
+        P.rect(D.dom[0], -0.1, lo, 1.1, { fill: MLS.rgba(right1 ? c0 : c1, 0.08) }); P.rect(lo, -0.1, D.dom[1], 1.1, { fill: MLS.rgba(right1 ? c1 : c0, 0.08) });
+        if (x0 > D.dom[0] && x0 < D.dom[1]) { P.vline(x0, { color: ink, width: 1.6, dash: '5 4' }); P.text(x0, 1.1, 'cutoff ' + F(x0, 2), { anchor: 'middle', dy: 14, size: 12, weight: 700 }); }
+      }
+      P.hline(S.T, { color: mu, width: 1.3, dash: '3 3' }); P.text(D.dom[1], S.T, 'T = ' + F(S.T, 2), { anchor: 'end', dy: -5, size: 11.5, color: mu });
+      P.hline(0, { color: mu, width: 0.8 }); P.hline(1, { color: mu, width: 0.8 });
+      const fx = []; for (let k = 0; k <= 300; k++) { const x = D.dom[0] + (D.dom[1] - D.dom[0]) * k / 300; fx.push([x, probAt(x)]); }
+      P.line(fx, { color: ink, width: 2.6 });
+      P.crosshair([{ name: 'Probability of ' + cls()[1], color: ink, pts: fx }], v => ds().xname.replace(/ \(.*\)/, '') + ' ' + F(v, 2), v => F(v, 3));
+      const yy = p => (p.y ? 1.02 + 0.06 * p.jit : -0.02 - 0.06 * p.jit);
+      const tip = p => '<b>' + (p.te ? 'Test set' : 'Training set') + '</b><br>' + ds().xname + ': <b>' + F(p.x, 2) + '</b><br>Actual: <b>' + MLS.esc(cls()[p.y]) + '</b><br>Probability ' + F(probAt(p.x), 3) + ' → ' + MLS.esc(cls()[probAt(p.x) >= S.T ? 1 : 0]);
+      P.points(trainPts().map(p => ({ x: p.x, y: yy(p), p })), { color: d => CL.color(d.p.y), r: 4.2, opacity: 0.85, tip: d => tip(d.p) });
+      P.points(testPts().map(p => ({ x: p.x, y: yy(p), p })), { color: d => CL.color(d.p.y), r: 5, hollow: true, tip: d => tip(d.p) });
+    });
+    const it = curIt();
+    figS.legend([{ label: MLS.esc(cls()[1]) + ' (1), at the top', color: c1 }, { label: MLS.esc(cls()[0]) + ' (0), at the bottom', color: c0 }, { label: 'filled = training set, ring = test set', color: 'transparent', stroke: mu },
+      { label: 'S-curve, ' + (it === R.last ? 'estimated' : 'Newton step ' + it), color: ink, line: true }, { label: 'Threshold T and cutoff', color: ink, line: true, dash: '5 4' }]);
+    figS.caption('Each point is one observation, at 1 (' + MLS.esc(cls()[1]) + ') or 0 (' + MLS.esc(cls()[0]) + '). The curve is the predicted probability for every value of x. Where it is above T (shaded ' + MLS.esc(cls()[1]) + ' side) the model predicts ' + MLS.esc(cls()[1]) + '. Hover over the curve or a point for its values.');
+  }
+  const figLL = MLS.figure($('figLL'), { title: 'Climbing to the maximum likelihood', help: 'figll', file: 'logit-likelihood',
+    plot: { aspect: 0.72, margin: { l: 70, b: 50 }, x: { label: 'Newton step', fmt: v => (Number.isInteger(v) ? String(v) : '') }, y: { label: 'Log-likelihood (training set)' } },
+    data: () => ({ cols: ['Step', 'b0', 'b1', 'Log-likelihood'], rows: R.path.map((q, i) => [i, q.b[0], q.b[1], q.ll]) }) });
+  function drawLL() {
+    const P = figLL.plot, path = R.path, it = curIt(), c = MLS.color('series-7'), mu = MLS.color('chart-muted');
+    const lo = Math.min(R.ll0, ...path.map(q => q.ll)), hi = Math.max(...path.map(q => q.ll));
+    P.setX(-0.3, Math.max(R.last, 1) + 0.3); P.setY(lo - 0.05 * (hi - lo + 1), hi + 0.08 * (hi - lo + 1));
+    P.draw(P => {
+      P.hline(R.ll0, { color: mu, dash: '5 4', width: 1.2 }); P.text(Math.max(R.last, 1), R.ll0, 'constant only: ' + F(R.ll0, 2), { anchor: 'end', dy: 14, size: 11.5, color: mu });
+      P.line(path.map((q, i) => [i, q.ll]), { color: c, width: 2 });
+      P.points(path.map((q, i) => ({ x: i, y: q.ll, i })), { color: d => (d.i === it ? MLS.color('series-2') : c), r: d => (d.i === it ? 7 : 4), tip: d => 'Step ' + d.i + '<br>b0 = ' + F(path[d.i].b[0], 4) + ', b1 = ' + F(path[d.i].b[1], 4) + '<br>Log-likelihood ' + F(d.y, 4) });
+    });
+    figLL.legend([{ label: 'Log-likelihood after each step', color: c, line: true }, { label: 'Current step (' + it + ')', color: MLS.color('series-2') }, { label: 'Model with the constant only', color: mu, line: true, dash: '5 4' }]);
+    figLL.caption('Step 0: b0 = b1 = 0, every probability 0.5. Each Newton step climbs; at the top the log-likelihood stops changing: the maximum likelihood estimate.');
+  }
+  function drawCoef() {
+    const tr = trainPts(), b = R.b, se = R.se, z = b.map((v, j) => v / se[j]), pv = z.map(v => 2 * (1 - MLS.dist.normCdf(Math.abs(v))));
+    const row = (name, j) => '<tr><td>' + name + '</td><td>' + F(b[j], 4) + '</td><td>' + F(se[j], 4) + '</td><td>' + F(z[j], 2) + '</td><td>' + MLS.fmtP(pv[j]) + MLS.stars(pv[j]) + '</td><td>[' + F(b[j] - 1.959964 * se[j], 3) + ', ' + F(b[j] + 1.959964 * se[j], 3) + ']</td><td>' + F(Math.exp(b[j]), 3) + '</td></tr>';
+    $('coefCard').innerHTML = '<div class="card-head"><h3>Coefficient table (training set)' + MLS.helpBtn('coef') + '</h3><span class="card-sub">' + tr.length + ' ' + w() + '</span></div>' +
+      '<div class="fig-table" style="max-height:none"><table class="tbl"><thead><tr><th></th><th>Coef.</th><th>Std. error</th><th>z</th><th>p-value</th><th>95% CI</th><th>e<sup>coef</sup></th></tr></thead><tbody>' +
+      row('Constant b0', 0) + row(MLS.esc(ds().xname.replace(/ \(.*\)/, '')) + ' b1', 1) + '</tbody></table></div>' +
+      '<p class="note">Log-likelihood ' + F(R.ll, 3) + '; constant only ' + F(R.ll0, 3) + '; McFadden pseudo R² = ' + F(1 - R.ll / R.ll0, 3) + '. *** p &lt; 0.01, ** p &lt; 0.05, * p &lt; 0.1. Estimates at the maximum, as in statsmodels Logit.</p>';
+  }
+  function drawCM() {
+    const tr = evalSet(trainPts()), te = evalSet(testPts());
+    $('cmCard').innerHTML = '<div class="card-head"><h3>Confusion matrix at T = ' + F(S.T, 2) + MLS.helpBtn('cm') + '</h3><div class="seg" role="group" aria-label="Counts or percentages"><button type="button" data-cm="0" aria-pressed="' + !S.cmPct + '">Counts</button><button type="button" data-cm="1" aria-pressed="' + S.cmPct + '">% of actual</button></div></div>' +
+      '<div class="cm-wrap">' + CL.cmTable(tr.M, cls(), { title: 'Training set', pct: S.cmPct }) + CL.cmTable(te.M, cls(), { title: 'Test set', pct: S.cmPct }) + '</div>' + CL.cmNote(cls(), S.cmPct);
+    MLS.$$('[data-cm]', $('cmCard')).forEach(b => (b.onclick = () => { S.cmPct = b.dataset.cm === '1'; drawCM(); MLS.state.save(); }));
+  }
+
+  /* ==================================================================
+     controls
+     ================================================================== */
+  const CODE = [
+    '**start** b0 = 0, b1 = 0   // all p = 0.5',
+    '**repeat**',
+    '  p = sigmoid(b0 + b1 x)',
+    '  slope, curvature of LL',
+    '  Newton step: b += H⁻¹ g',
+    '**until** no more change   // maximum'
+  ];
+  const pseudo = MLS.pseudo($('pseudo'), CODE);
+  function hlCode() { const it = curIt(); pseudo.hl(it === 0 ? [1] : it === R.last ? [6] : [3, 4, 5]); }
+  const stepper = MLS.stepper($('stepper'), { speed: 2, runMax: 100,
+    step: () => { const it = curIt(); if (it >= R.last) return false; S.iter = it + 1; return true; },
+    reset: () => { S.iter = 0; }, after: () => refresh(false) });
+  function syncUI() {
+    $('ds').innerHTML = Object.keys(DS).map(k => '<option value="' + k + '"' + (k === S.ds ? ' selected' : '') + '>' + DS[k].label + '</option>').join('');
+    $('n').value = nObs(); $('nVal').textContent = nObs(); $('seed').value = S.seed; $('thr').value = S.T;
+  }
+  function refresh(re) { if (re) { makeData(); estimate(); } syncUI(); updateText(); drawS(); drawLL(); drawCoef(); drawCM(); hlCode(); figS.refreshTable(); if (ch) ch.check(); MLS.state.save(); }
+  const full = () => { S.iter = -1; refresh(true); };
+  $('ds').onchange = e => { S.ds = e.target.value; full(); };
+  $('n').addEventListener('input', e => ($('nVal').textContent = e.target.value));
+  $('n').onchange = e => { S.n[S.ds] = +e.target.value; full(); };
+  $('seed').onchange = e => { S.seed = Math.max(1, Math.round(+e.target.value) || 1); full(); };
+  $('newSeed').onclick = () => { S.seed = MLS.newSeed(); full(); };
+  $('thr').addEventListener('input', e => { S.T = +e.target.value; refresh(false); });
+
+  /* ==================================================================
+     help
+     ================================================================== */
+  MLS.registerHelp({
+    data: { title: 'Data', html: () => '<b>Bank failures</b>: debt-to-equity ratio and failed / healthy. <b>Recessions</b>: the term spread of the yield curve and a recession within 12 months. <b>Loan defaults</b>: debt-to-income ratio and default / repaid. The data are simulated; a new seed gives a new sample. ' + ds().note },
+    n: { title: 'Observations', html: 'How many observations are simulated. 80% form the training set, on which the coefficients are estimated; 20% the test set.' },
+    newton: { title: 'Maximum likelihood, step by step', html: 'The coefficients are found by Newton\'s method on the training set. <b>Reset</b> goes to step 0 (b0 = b1 = 0, every probability 0.5); <b>Step</b> makes one Newton step; <b>Play</b> runs slowly; <b>End</b> jumps to the maximum. The S-curve, the tiles and the confusion matrix follow the current step.' },
+    thr: { title: 'Threshold T', html: () => 'An observation is classified as <b>' + MLS.esc(cls()[1]) + '</b> when its probability is at least T (default 0.5). With one input this is a cutoff on x, where the S-curve crosses T. A lower T finds more ' + MLS.esc(cls()[1]) + ' cases (higher sensitivity) but gives more false alarms.' },
+    st_b1: { title: 'Slope b1', html: 'How the log-odds change when x rises by one unit. Positive: the probability rises with x. Negative: it falls. 0: x does not matter.' },
+    st_or: { title: 'Odds ratio', html: 'e<sup>b1</sup>: the odds p / (1 − p) are multiplied by this number when x rises by one unit. 1 = no effect; 2 = the odds double.' },
+    coef: { title: 'Coefficient table', html: 'Maximum likelihood estimates on the training set, as statsmodels Logit reports them. Std. error from the curvature of the log-likelihood at the maximum; z = coef. / std. error; p-value from the normal distribution (H0: coefficient = 0); 95% confidence interval; e<sup>coef</sup> is the odds ratio for b1. McFadden pseudo R² compares the log-likelihood with that of the model with the constant only.' },
+    figs: { title: 'The S-curve', html: 'Points: the observations at 1 (top) or 0 (bottom), slightly spread so they do not overlap. Curve: the predicted probability. Dashed horizontal line: the threshold T; dashed vertical line: the cutoff where the curve crosses T. The shaded sides show the class the model predicts.' },
+    figll: { title: 'Log-likelihood by Newton step', html: 'The log-likelihood of the training set after each Newton step. It rises and then stops changing: that is the maximum. The dashed line is the log-likelihood of the model with the constant only (the same probability for everyone), used for the pseudo R².' }
+  });
+
+  /* ==================================================================
+     challenges
+     ================================================================== */
+  let stepped = false;
+  function setup(o) { Object.assign(S, o); MLS.pickTab('sim'); full(); if (o.iter !== undefined) { S.iter = o.iter; refresh(false); } window.scrollTo({ top: 0, behavior: 'smooth' }); }
+  const ch = MLS.challenges($('challenges'), META.id, [
+    { type: 'predict', q: 'Bank failures: b1 is positive. When the debt-to-equity ratio rises, the probability of failure...',
+      options: ['falls', 'rises, along an S-curve between 0 and 1', 'rises in a straight line, without limit'], answer: 1,
+      explain: 'A positive slope means the log-odds rise with x, so the probability rises; the sigmoid keeps it between 0 and 1. It rises fastest around p = 0.5.',
+      tryIt: () => setup({ ds: 'banks' }) },
+    { type: 'predict', q: 'The odds ratio e^b1 is about 3. What happens when the debt-to-equity ratio rises by one unit?',
+      options: ['The odds of failure are multiplied by about 3', 'The probability of failure rises by 3 percentage points', 'The probability of failure triples'], answer: 0,
+      explain: 'The odds ratio multiplies the odds p / (1 − p), not the probability. From odds 0.5 (p = 0.33) to odds 1.5 (p = 0.6), for example.',
+      tryIt: () => setup({ ds: 'banks' }) },
+    { type: 'predict', q: 'Recessions and the yield curve. What sign will b1, the coefficient of the term spread, have?',
+      options: ['Positive', 'Zero', 'Negative: a lower (inverted) spread makes a recession more likely'], answer: 2,
+      explain: 'Recessions follow low or negative spreads, so the probability falls as the spread rises: b1 < 0, and the odds ratio is below 1.',
+      tryIt: () => setup({ ds: 'recession' }) },
+    { type: 'predict', q: 'You lower the threshold T from 0.5 to 0.3 on the bank data. The cutoff on debt-to-equity...',
+      options: ['moves to a lower value: more banks are classified as failed', 'moves to a higher value', 'does not move'], answer: 0,
+      explain: 'A lower T is reached at a lower point of the rising S-curve, so the cutoff moves left. More failed banks are found (sensitivity up), and more healthy banks are flagged (false alarms up).',
+      tryIt: () => setup({ ds: 'banks', T: 0.3 }) },
+    { type: 'task', q: 'Press Reset and then Step until the estimation reaches the maximum likelihood.', hint: 'Section 2. Watch the log-likelihood chart: at the top it stops changing.',
+      check: () => R && S.iter === R.last && R.last > 0 && stepped },
+    { type: 'predict', q: 'Why not fit an ordinary regression line to the 0/1 outcome?',
+      options: ['It would be too slow', 'It can predict "probabilities" below 0 or above 1', 'It cannot use more than one x'], answer: 1,
+      explain: 'A straight line goes on forever; for extreme x it crosses 0 and 1. The sigmoid keeps every prediction between 0 and 1.',
+      tryIt: () => setup({ ds: 'loans' }) },
+    { type: 'task', q: 'Loan defaults: find the threshold T at which the model classifies at least 80% of the defaults in the test set correctly (sensitivity ≥ 80%).', hint: 'Lower T in section 3.',
+      check: () => R && S.ds === 'loans' && evalSet(testPts()).sens >= 0.8 }
+  ]);
+  $('stepper').addEventListener('click', e => { const b = e.target.closest('button'); if (b && b.dataset.a === 'reset') stepped = true; });
+
+  /* ==================================================================
+     state, start
+     ================================================================== */
+  MLS.moduleBar({ id: META.id, title: META.title, section: META.sectionTitle, level: META.level },
+    { tabs: [{ id: 'sim', label: 'Simulation' }, { id: 'lesson', label: 'Lesson' }, { id: 'challenges', label: 'Challenges' }, { id: 'real', label: 'On real data' }] });
+  MLS.state.init({
+    id: META.id,
+    get: () => ({ ds: S.ds, n: S.n, seed: S.seed, T: S.T, cmPct: S.cmPct }),
+    set: o => {
+      if (DS[o.ds]) S.ds = o.ds;
+      if (o.n) Object.keys(o.n).forEach(k => { if (DS[k] && Number.isFinite(o.n[k])) S.n[k] = Math.max(40, Math.min(600, o.n[k])); });
+      if (Number.isFinite(o.seed)) S.seed = o.seed;
+      if (Number.isFinite(o.T)) S.T = Math.max(0.01, Math.min(0.99, o.T));
+      if (typeof o.cmPct === 'boolean') S.cmPct = o.cmPct;
+    }
+  });
+  $('fourCast').href = MLS.APP.fourCastUrl;
+  window.__mls = { S, get R() { return R; }, get D() { return D; } };
+  document.addEventListener('mls:theme', () => refresh(false));
+  full();
+})();
+</script>
+</body>
+</html>

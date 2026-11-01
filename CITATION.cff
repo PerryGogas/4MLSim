@@ -1,0 +1,23 @@
+cff-version: 1.2.0
+message: "If you use 4MLSim in teaching, a thesis or a publication, please cite it as below."
+title: "4MLSim: Machine Learning Simulation Lab"
+type: software
+authors:
+  - family-names: Gogas
+    given-names: Periklis
+    affiliation: "Department of Economics, Democritus University of Thrace"
+version: 1.0.0
+date-released: 2026-11-01
+license: MIT
+repository-code: "https://github.com/PerryGogas/4MLSim"
+url: "https://perrygogas.github.io/4MLSim/"
+keywords:
+  - machine learning
+  - teaching
+  - simulation
+  - economics
+  - gradient descent
+  - neural networks
+  - clustering
+  - reinforcement learning
+  - econometrics

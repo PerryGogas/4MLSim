@@ -1,0 +1,370 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>K-Means Clustering | 4MLSim</title>
+  <meta name="theme-color" content="#1B2340">
+  <link rel="manifest" href="../manifest.json">
+  <link rel="icon" type="image/svg+xml" href="../assets/img/icon.svg">
+  <link rel="apple-touch-icon" href="../assets/img/apple-touch-icon.png">
+  <link rel="stylesheet" href="../assets/vendor/temml.css">
+  <link rel="stylesheet" href="../assets/css/4mlsim.css">
+  <script src="../assets/vendor/temml.min.js"></script>
+  <script src="../assets/js/core.js"></script>
+  <script src="../assets/js/stats.js"></script>
+  <script src="../assets/js/plot.js"></script>
+  <script src="../assets/js/modules.js"></script>
+  <script src="../assets/js/core-ml.js"></script>
+  <script src="../assets/js/classify-ui.js"></script>
+  <script src="../assets/js/clust-ui.js"></script>
+</head>
+<body>
+<div class="page">
+  <header id="mlsHeader" data-variant="compact"></header>
+  <div class="mod-top" id="mlsTop"><div id="mlsModBar"></div><div id="mlsTabs"></div></div>
+
+  <div class="intro-box" id="mlsIntro">
+    <h3>What this module shows</h3>
+    <div class="intro-cols">
+      <div>
+        <p>A supermarket knows how much each customer spends and how often they visit, but nobody has told it which <b>types</b> of customers it has. <b>Clustering</b> finds groups in data without labels: this is <b>unsupervised</b> learning.</p>
+        <p><b>K-means</b> puts k centers in the data and repeats two steps: assign every observation to the nearest center, then move every center to the mean of its observations. It stops when nothing changes.</p>
+      </div>
+      <div>
+        <p><b>How to use it</b></p>
+        <ol>
+          <li>Press <b>Step</b> and watch the two steps one at a time: assign, then move the centers.</li>
+          <li>Read the elbow and silhouette charts to choose k.</li>
+          <li>Try a random start, the card payments without standardizing, and the moons: where does k-means fail?</li>
+        </ol>
+      </div>
+    </div>
+  </div>
+
+  <!-- ===================== SIMULATION ===================== -->
+  <section data-panel="sim">
+    <div class="mod-grid">
+      <aside class="side" aria-label="Controls">
+        <div class="card">
+          <div class="card-head"><h3>1. Data<button type="button" class="help" data-help="data">?</button></h3></div>
+          <select id="ds" aria-label="Data set"><option value="customers">Supermarket customers (spending, visits)</option><option value="payments">Card payments (hour, amount)</option><option value="blobs3">Generic: three round groups</option><option value="elong">Generic: stretched groups</option><option value="moonsU">Generic: moons</option></select>
+          <div class="field-row"><label for="n">Observations<button type="button" class="help" data-help="n">?</button></label><output id="nVal"></output></div>
+          <input type="range" id="n" min="40" max="300" step="10" value="150">
+          <div class="field-row"><label for="seed">Random seed<button type="button" class="help" data-help="seed">?</button></label></div>
+          <div class="inline-inputs"><input type="number" id="seed" min="1" max="99999" step="1" value="1" aria-label="Random seed"><button type="button" class="btn-ghost btn-icon" id="newSeed" title="New random data" style="flex:0 0 auto">&#127922;</button></div>
+        </div>
+        <div class="card">
+          <div class="card-head"><h3>2. K-means<button type="button" class="help" data-help="km">?</button></h3></div>
+          <div class="field-row"><label for="k">Number of clusters k<button type="button" class="help" data-help="k">?</button></label><output id="kVal"></output></div>
+          <input type="range" id="k" min="1" max="8" step="1" value="3">
+          <div class="field-row"><label>Starting centers<button type="button" class="help" data-help="init">?</button></label></div>
+          <div class="seg full" role="group" aria-label="Starting centers"><button type="button" data-init="pp">k-means++</button><button type="button" data-init="random">Random points</button></div>
+          <label class="check" style="margin-top:12px"><input type="checkbox" id="std"> Standardize the inputs<button type="button" class="help" data-help="std">?</button></label>
+        </div>
+        <div class="card">
+          <div class="card-head"><h3>3. Run it step by step<button type="button" class="help" data-help="run">?</button></h3></div>
+          <div id="stepper"></div>
+          <p class="note" id="stepNote"></p>
+          <div id="pseudo"></div>
+        </div>
+      </aside>
+
+      <main class="main">
+        <div class="story" id="story"></div>
+        <div class="stat-grid" id="stats" style="margin-top:12px"></div>
+        <div id="statusLine" class="status-line" style="margin:10px 0"></div>
+        <div class="fig-grid">
+          <div id="figMap" class="fig-wide"></div>
+          <div id="figW"></div>
+          <div id="figSilPlot"></div>
+          <div id="figElbow"></div>
+          <div id="figSil"></div>
+        </div>
+      </main>
+    </div>
+  </section>
+
+  <!-- ===================== LESSON ===================== -->
+  <section data-panel="lesson" class="card lesson" hidden>
+    <div id="mlsMathCtl"></div>
+    <p class="lvl-only-intuition note" style="margin-bottom:8px">Showing the intuition only. Choose <b>Formulas</b> or <b>Deep dive</b> above to add the mathematics.</p>
+
+    <h4>Clustering: groups without labels</h4>
+    <p>In classification every observation comes with its class (failed or healthy bank). In <b>clustering</b> there are no labels: the algorithm must discover groups of similar observations on its own. Typical uses: customer segments for marketing, types of firms or countries, market regimes, grouping of stocks.</p>
+
+    <h4>The k-means algorithm</h4>
+    <ol>
+      <li>Choose the number of clusters <b>k</b> and k starting centers.</li>
+      <li><b>Assign</b> every observation to the nearest center (the plane is split into k regions with straight borders).</li>
+      <li><b>Update</b>: move every center to the mean (the centroid) of its observations.</li>
+      <li>Repeat steps 2 and 3 until no observation changes cluster.</li>
+    </ol>
+    <p>Each step lowers (or keeps) the <b>within-cluster sum of squares</b> (WCSS): the total squared distance of the observations from their centers. So k-means always stops, but possibly at a poor solution that depends on the start.</p>
+
+    <h4>Good starts: k-means++</h4>
+    <p>Random starting points can fall in the same group. <b>k-means++</b> picks the first center at random and every next center far from the ones already chosen (with probability proportional to the squared distance). In practice k-means is also run from several starts and the solution with the lowest WCSS is kept (here: 5 starts in the elbow chart).</p>
+
+    <h4>How many clusters?</h4>
+    <ul>
+      <li><b>Elbow</b>: WCSS always falls as k grows (with k = n it is 0). Look for the k after which it falls only slowly.</li>
+      <li><b>Silhouette</b>: for each observation, compare a = its mean distance to its own cluster with b = its mean distance to the nearest other cluster. Close to 1: well inside its cluster; near 0: on a border; negative: probably in the wrong cluster. Choose the k with the highest mean silhouette.</li>
+      <li>Above all, the clusters must make sense for the question (can marketing use 3 segments, or 8?).</li>
+    </ul>
+
+    <h4>Scaling and limits</h4>
+    <p>K-means uses distances, so an input measured in large numbers (amount in €) dominates one measured in small numbers (hour of the day): <b>standardize</b> the inputs first (see the Feature Scaling module). K-means also assumes round groups of similar size: it cuts moons and stretched groups with straight lines. DBSCAN and Gaussian mixtures handle such shapes.</p>
+
+    <div class="math-block lvl-math"><div class="mb-title">The objective and the silhouette</div>
+      <div class="tex-block">\text{WCSS} = \sum_{j=1}^{k} \sum_{i \in C_j} \lVert x_i - \mu_j \rVert^2, \qquad \mu_j = \frac{1}{|C_j|} \sum_{i \in C_j} x_i</div>
+      <div class="tex-block">s_i = \frac{b_i - a_i}{\max(a_i, b_i)}, \qquad \bar s = \frac{1}{n} \sum_i s_i</div>
+      <p class="note">a<sub>i</sub>: mean distance of observation i to the other members of its cluster; b<sub>i</sub>: the smallest mean distance to the members of another cluster.</p>
+    </div>
+    <div class="math-block deep lvl-deep"><div class="mb-title">Deep dive</div>
+      <p><b>Why it converges.</b> The assign step can only lower WCSS (each point goes to its nearest center), and the mean is the point with the smallest sum of squared distances to a group, so the update step can only lower it too. With finitely many ways to split n points, the algorithm stops at a local minimum. Finding the global minimum is NP-hard.</p>
+      <p><b>k-means++</b> gives a solution whose expected WCSS is within a factor of order log k of the best one, before any iteration.</p>
+      <p><b>Link to Gaussian mixtures.</b> K-means is the limit of a Gaussian mixture with equal, round covariances that shrink to zero: soft assignments become hard ones.</p>
+      <p class="note">References: Lloyd (1982), "Least squares quantization in PCM", <i>IEEE Trans. Information Theory</i>; Arthur and Vassilvitskii (2007), "k-means++: the advantages of careful seeding", <i>SODA</i>; Rousseeuw (1987), "Silhouettes", <i>J. Computational and Applied Mathematics</i>.</p>
+    </div>
+  </section>
+
+  <!-- ===================== CHALLENGES ===================== -->
+  <section data-panel="challenges" class="card" hidden>
+    <div class="card-head"><h3>Challenges</h3><span class="card-sub">Answer the "predict first" questions before testing them in the Simulation tab.</span></div>
+    <div id="challenges"></div>
+  </section>
+
+  <!-- ===================== REAL DATA ===================== -->
+  <section data-panel="real" class="card lesson" hidden>
+    <h4>From the simulation to real data</h4>
+    <ul>
+      <li>Customer segmentation (spending, frequency, recency), grouping countries by macro indicators, grouping stocks by their return patterns.</li>
+      <li>Standardize the inputs; choose k with the elbow, the silhouette and common sense; run several starts (scikit-learn: <code>KMeans(n_clusters=k, n_init=10)</code>).</li>
+      <li>Describe each cluster by its center (the average customer of the segment) and give it a name.</li>
+    </ul>
+    <div class="crosslink"><span>&#10140;</span><span><a id="fourCast" target="_blank" rel="noopener"><b>4Cast Lab</b></a> works with your own data for forecasting and classification.</span></div>
+  </section>
+
+  <footer id="mlsFooter"></footer>
+</div>
+
+<script>
+(function () {
+  'use strict';
+  const MLS = window.MLS, ML = MLS.ml, CL = MLS.cls;
+  const META = MLS.moduleMeta('k-means');
+  const $ = id => document.getElementById(id);
+  const F = MLS.fmt, pct = CL.pct;
+
+  const U = MLS.clust, PH = ['start', 'assign', 'update'];
+  const DEFN = { customers: 150, payments: 220, blobs3: 150, elong: 240, moonsU: 160 };
+  const S = { ds: 'customers', n: {}, seed: 1, k: 3, init: 'pp', std: false, step: -1 };
+  let D = null, R = null;
+  const nObs = () => S.n[S.ds] || DEFN[S.ds];
+  const W = () => (S.std ? D.Z : D.X);
+  const back = c => (S.std ? c.map((v, j) => D.sc.mu[j] + D.sc.sd[j] * v) : c);
+  const work = x => (S.std ? D.sc.t(x) : x);
+  const nearest = (x, C) => { let b = 0, bd = Infinity; C.forEach((c, k) => { const d = ML.dist2(x, c); if (d < bd - 1e-15) { bd = d; b = k; } }); return b; };
+
+  function makeData() { D = U.make(S.ds, S.seed, nObs()); }
+  function compute() {
+    const X = W(), k = S.k;
+    const C0 = S.init === 'pp' ? ML.kmeansPP(X, k, S.seed) : ML.kmeansInit(X, k, S.seed).centers;
+    const hist = [{ phase: 'start', centers: C0, labels: null, iter: 0 }];
+    let C = C0, L = null;
+    for (let it = 1; it <= 100; it++) {
+      const L2 = X.map(x => nearest(x, C)), same = L && L2.every((v, i) => v === L[i]);
+      hist.push({ phase: 'assign', centers: C, labels: L2, iter: it, changed: L ? L2.filter((v, i) => v !== L[i]).length : X.length, done: same });
+      if (same) break;
+      L = L2; const p = X[0].length, sum = C.map(() => new Array(p + 1).fill(0));
+      X.forEach((x, i) => { for (let j = 0; j < p; j++) sum[L[i]][j] += x[j]; sum[L[i]][p]++; });
+      const C2 = C.map((c, q) => (sum[q][p] ? sum[q].slice(0, p).map(v => v / sum[q][p]) : c.slice()));
+      hist.push({ phase: 'update', centers: C2, prev: C, labels: L, iter: it }); C = C2;
+    }
+    hist.forEach(h => { h.wcss = h.labels ? X.reduce((s, x, i) => s + ML.dist2(x, h.centers[h.labels[i]]), 0) : NaN; });
+    R = { hist };
+    R.elbow = []; R.sil = [];
+    for (let q = 1; q <= 8; q++) { const b = ML.kmeansBest(X, q, S.seed, 5); R.elbow.push(b.wcss); R.sil.push(q > 1 ? ML.silhouette(X, b.labels).mean : NaN); }
+    let bk = 2; for (let q = 3; q <= 8; q++) if (R.sil[q - 1] > R.sil[bk - 1] + 1e-12) bk = q; R.bestSilK = bk;
+    const last = hist[hist.length - 1]; R.final = last;
+    R.finalSil = k > 1 ? ML.silhouette(X, last.labels) : null;
+  }
+  const cur = () => R.hist[S.step < 0 ? R.hist.length - 1 : Math.min(S.step, R.hist.length - 1)];
+  const atEnd = () => S.step < 0 || S.step >= R.hist.length - 1;
+
+  const pseudo = MLS.pseudo($('pseudo'), ['choose k starting centers', '**repeat**', '  assign every observation to the nearest center', '  move every center to the mean of its observations', '**until** no observation changes cluster']);
+  function updateText() {
+    const h = cur(), card = MLS.statCard, un = S.std ? 'standardized units' : 'original units';
+    const sizes = h.labels ? U.sizes(h.labels, S.k) : null;
+    $('story').innerHTML = '<h3>Data: ' + D.label + '</h3><p>' + D.note + ' <b>' + D.pts.length + ' observations, no labels.</b> K-means with k = ' + S.k + ', ' + (S.init === 'pp' ? 'k-means++ start' : 'random starting points') + (S.std ? ', standardized inputs' : ', inputs as measured') + '.</p>';
+    const sil = atEnd() && R.finalSil ? F(R.finalSil.mean, 3) : (h.labels && S.k > 1 ? F(ML.silhouette(W(), h.labels).mean, 3) : 'n/a');
+    $('stats').innerHTML =
+      card('Iteration', h.iter + (atEnd() ? ' (converged)' : ''), h.phase === 'start' ? 'starting centers' : h.phase === 'assign' ? 'assign step' : 'update step', '', 'st_iter') +
+      card('Within-cluster sum of squares', h.labels ? F(h.wcss, 2) : 'n/a', un, '', 'st_wcss') +
+      card('Mean silhouette', sil, S.k > 1 ? 'from -1 to 1, higher is better' : 'needs k of 2 or more', '', 'st_sil') +
+      card('Cluster sizes', sizes ? sizes.join(', ') : 'n/a', 'observations per cluster', '', 'st_sizes');
+    pseudo.hl(h.phase === 'start' ? 1 : h.phase === 'assign' ? (h.done ? [3, 5] : 3) : 4);
+    $('stepNote').innerHTML = h.phase === 'start' ? 'Step 0: the ' + S.k + ' starting centers. Press <b>Step</b> to assign the observations.' :
+      h.phase === 'assign' ? (h.done ? 'Iteration ' + h.iter + ': no observation changed cluster. <b>Converged.</b>' : 'Iteration ' + h.iter + ', assign: ' + h.changed + ' observation' + (h.changed === 1 ? '' : 's') + ' (re)assigned to the nearest center.') :
+      'Iteration ' + h.iter + ', update: every center moves to the mean of its observations (arrows).';
+    let msg, cls = 'status-line';
+    const bestW = R.elbow[S.k - 1];
+    if (!atEnd()) { msg = 'Press Step, Play or End to continue to convergence.'; }
+    else if (S.ds === 'moonsU' || S.ds === 'elong') { msg = 'K-means splits the plane with straight borders between centers, so it cannot follow ' + (S.ds === 'moonsU' ? 'the two moons' : 'long, stretched groups') + '. Compare DBSCAN or Gaussian mixtures.'; cls += ' bad'; }
+    else if (S.ds === 'payments' && !S.std) { msg = 'Without standardizing, the amount (up to hundreds of €) dominates the distance and the hour (0 to 24) hardly matters. Tick "Standardize the inputs".'; cls += ' bad'; }
+    else if (R.final.wcss > bestW * 1.02) { msg = 'This start ended in a poorer solution: WCSS ' + F(R.final.wcss, 2) + ' versus ' + F(bestW, 2) + ' for the best of 5 k-means++ starts. K-means finds a local minimum.'; cls += ' bad'; }
+    else { msg = 'Converged after ' + R.final.iter + ' iterations. ' + (S.k > 1 ? 'Mean silhouette ' + F(R.finalSil.mean, 3) + '; the highest silhouette is at k = ' + R.bestSilK + '.' : 'With k = 1 there is one cluster, the whole data set.'); cls += ' ok'; }
+    $('statusLine').textContent = msg; $('statusLine').className = cls;
+  }
+
+  const figMap = MLS.figure($('figMap'), { title: 'The clusters and their centers', help: 'figmap', file: 'k-means',
+    plot: { aspect: 0.58, margin: { l: 66, b: 50 }, x: { label: () => D.names[0] }, y: { label: () => D.names[1] } },
+    data: () => { const h = cur(); return { cols: D.names.concat(['Cluster']), rows: D.pts.map((p, i) => p.x.concat([h.labels ? h.labels[i] + 1 : ''])) }; } });
+  function drawMap() {
+    const P = figMap.plot, h = cur(), ink = MLS.color('chart-ink'), C = h.centers.map(back);
+    P.setX(D.dom.x[0], D.dom.x[1]); P.setY(D.dom.y[0], D.dom.y[1]);
+    P.draw(P => {
+      if (h.labels) U.regions(P, D.dom, x => nearest(work(x), h.centers), S.k);
+      const tip = (p, i) => D.names[0] + ': ' + F(p.x[0], 2) + '<br>' + D.names[1] + ': ' + F(p.x[1], 2) + (h.labels ? '<br><b>Cluster ' + (h.labels[i] + 1) + '</b>' : '');
+      P.points(D.pts, { x: p => p.x[0], y: p => p.x[1], color: (p, i) => (h.labels ? U.color(h.labels[i]) : MLS.color('chart-muted')), r: 4.3, opacity: 0.9, tip });
+      if (h.phase === 'update') h.prev.map(back).forEach((c, k) => P.arrow(c[0], c[1], C[k][0], C[k][1], { color: ink, width: 2 }));
+      P.points(C.map((c, k) => ({ x: c[0], y: c[1], k })), { color: d => U.color(d.k), shape: 'cross', r: 11, ringColor: ink, tip: d => '<b>Center of cluster ' + (d.k + 1) + '</b><br>' + D.names[0] + ': ' + F(d.x, 2) + '<br>' + D.names[1] + ': ' + F(d.y, 2) });
+    });
+    figMap.legend(U.legend(S.k, h.labels ? U.sizes(h.labels, S.k) : null, [{ label: 'Center', color: ink, shape: 'cross' }].concat(h.phase === 'update' ? [{ label: 'Center moves to the mean', color: ink, line: true }] : [])));
+    figMap.caption('Shaded: the region of each center (every point in it is closest to that center); the borders are straight lines. Crosses: the centers. Hover over a point or a center for its values.');
+  }
+  const figW = MLS.figure($('figW'), { title: 'WCSS by iteration', help: 'figw', file: 'k-means-wcss', plot: { aspect: 0.62, margin: { l: 70, b: 48 }, x: { label: 'Iteration' }, y: { label: 'Within-cluster sum of squares' } } });
+  function drawW() {
+    const P = figW.plot, hs = R.hist.filter(h => h.labels), shown = R.hist.indexOf(cur()), c1 = MLS.color('series-1'), ink = MLS.color('chart-ink');
+    const pts = hs.map(h => [h.iter + (h.phase === 'update' ? 0.5 : 0), h.wcss, R.hist.indexOf(h)]);
+    const v = pts.map(p => p[1]); P.setX(0.5, Math.max(2, R.final.iter + 0.5)); P.setY(...MLS.niceDomain(Math.min(...v), Math.max(...v), 0.12));
+    P.draw(P => {
+      P.line(pts.map(p => [p[0], p[1]]), { color: c1, width: 2 });
+      P.points(pts.map(p => ({ x: p[0], y: p[1], i: p[2] })), { color: d => (d.i <= shown ? c1 : MLS.color('chart-muted')), r: d => (d.i === shown ? 6.5 : 4), tip: d => (R.hist[d.i].phase === 'assign' ? 'After the assign step ' : 'After the update step ') + R.hist[d.i].iter + '<br>WCSS ' + F(d.y, 3), highlight: d => d.i === shown });
+    });
+    figW.caption('Whole numbers: after the assign step; halves: after the update step. Each step lowers the WCSS or keeps it the same.');
+  }
+  const figElbow = MLS.figure($('figElbow'), { title: 'Elbow: WCSS by k', help: 'figelbow', file: 'k-means-elbow', plot: { aspect: 0.62, margin: { l: 70, b: 48 }, x: { label: 'Number of clusters k' }, y: { label: 'WCSS (best of 5 starts)' } } });
+  function drawElbow() {
+    const P = figElbow.plot, c1 = MLS.color('series-1'), c2 = MLS.color('series-2');
+    P.setX(0.5, 8.5); P.setY(0, Math.max(...R.elbow) * 1.08);
+    P.draw(P => {
+      P.line(R.elbow.map((w, i) => [i + 1, w]), { color: c1, width: 2 });
+      P.points(R.elbow.map((w, i) => ({ x: i + 1, y: w })), { color: d => (d.x === S.k ? c2 : c1), r: d => (d.x === S.k ? 7 : 4.5), tip: d => 'k = ' + d.x + '<br>WCSS ' + F(d.y, 2) + (d.x > 1 ? '<br>Fall from k = ' + (d.x - 1) + ': ' + F(R.elbow[d.x - 2] - d.y, 2) : '') });
+    });
+    figElbow.caption('WCSS always falls as k grows. Look for the elbow: the k after which adding a cluster helps little. Orange: the current k.');
+  }
+  const figSil = MLS.figure($('figSil'), { title: 'Mean silhouette by k', help: 'figsil', file: 'k-means-silhouette', plot: { aspect: 0.62, margin: { l: 70, b: 48 }, x: { label: 'Number of clusters k' }, y: { label: 'Mean silhouette' } } });
+  function drawSil() {
+    const P = figSil.plot, c3 = MLS.color('series-3'), c2 = MLS.color('series-2'), v = R.sil.slice(1);
+    P.setX(1.5, 8.5); P.setY(Math.min(0, Math.min(...v) - 0.05), Math.min(1, Math.max(...v) + 0.1));
+    P.draw(P => {
+      v.forEach((s, i) => P.rect(i + 2 - 0.32, 0, i + 2 + 0.32, s, { fill: MLS.rgba(i + 2 === R.bestSilK ? c3 : MLS.color('chart-muted'), i + 2 === S.k ? 0.95 : 0.55), stroke: i + 2 === S.k ? c2 : 'none', width: 2 }));
+      v.forEach((s, i) => P.text(i + 2, s, F(s, 2), { anchor: 'middle', dy: -6, size: 11 }));
+    });
+    figSil.caption('The best k by this measure is ' + R.bestSilK + ' (green). Outlined: the current k.');
+  }
+  const figSilPlot = MLS.figure($('figSilPlot'), { title: 'Silhouette of every observation', help: 'figsilplot', file: 'k-means-silhouette-plot', plot: { aspect: 0.62, margin: { l: 70, b: 48 }, x: { label: 'Silhouette' }, y: { label: 'Observations, by cluster', ticks: false } } });
+  function drawSilPlot() {
+    const P = figSilPlot.plot, sil = R.finalSil;
+    if (!sil || !atEnd()) { P.setX(-1, 1); P.setY(0, 1); P.draw(P => P.note(S.k < 2 ? 'Needs k of 2 or more' : 'Run k-means to the end')); figSilPlot.caption(''); return; }
+    const L = R.final.labels, order = D.pts.map((_, i) => i).sort((a, b) => L[a] - L[b] || sil.s[b] - sil.s[a]), n = order.length, gap = 3;
+    P.setX(Math.min(-0.2, Math.min(...sil.s) - 0.05), 1); P.setY(0, n + gap * S.k);
+    P.draw(P => {
+      let y = n + gap * S.k, prev = -1;
+      order.forEach(i => { if (L[i] !== prev) { y -= gap; prev = L[i]; } y -= 1; P.rect(0, y, sil.s[i], y + 0.9, { fill: U.color(L[i]) }); });
+      P.vline(sil.mean, { color: MLS.color('chart-ink'), width: 1.6, dash: '5 4' });
+      P.text(sil.mean, n + gap * S.k, 'mean ' + F(sil.mean, 2), { dx: 4, dy: 12, size: 11.5 });
+    });
+    figSilPlot.legend(U.legend(S.k, U.sizes(L, S.k)));
+    figSilPlot.caption('One bar per observation, sorted within its cluster. Long bars: well inside their cluster. Bars below 0: closer to another cluster.');
+  }
+
+  function syncUI() {
+    $('ds').value = S.ds; $('n').value = nObs(); $('nVal').textContent = nObs(); $('seed').value = S.seed;
+    $('k').value = S.k; $('kVal').textContent = S.k; $('std').checked = S.std;
+    MLS.$$('[data-init]').forEach(b => b.setAttribute('aria-pressed', String(b.dataset.init === S.init)));
+  }
+  function render() { syncUI(); updateText(); drawMap(); drawW(); drawElbow(); drawSil(); drawSilPlot(); figMap.refreshTable(); if (ch) ch.check(); MLS.state.save(); }
+  function refresh() { compute(); render(); }
+  const full = () => { makeData(); refresh(); };
+  const restart = () => { S.step = 0; refresh(); };
+  MLS.stepper($('stepper'), { speed: 2, runMax: 500,
+    step: () => { if (S.step < 0 || S.step >= R.hist.length - 1) return false; S.step++; return true; },
+    reset: () => { S.step = 0; }, after: () => render() });
+  $('ds').onchange = e => { S.ds = e.target.value; S.step = -1; full(); };
+  $('n').addEventListener('input', e => ($('nVal').textContent = e.target.value));
+  $('n').onchange = e => { S.n[S.ds] = +e.target.value; S.step = -1; full(); };
+  $('seed').onchange = e => { S.seed = Math.max(1, Math.round(+e.target.value) || 1); S.step = -1; full(); };
+  $('newSeed').onclick = () => { S.seed = MLS.newSeed(); S.step = -1; full(); };
+  $('k').addEventListener('input', e => ($('kVal').textContent = e.target.value));
+  $('k').onchange = e => { S.k = +e.target.value; restart(); };
+  MLS.$$('[data-init]').forEach(b => (b.onclick = () => { S.init = b.dataset.init; restart(); }));
+  $('std').onchange = e => { S.std = e.target.checked; S.step = -1; refresh(); };
+
+  MLS.registerHelp({
+    data: { title: 'Data', html: '<b>Supermarket customers</b>: yearly spending and visits per month. <b>Card payments</b>: hour of the day and amount; a few scattered payments are unusual. <b>Generic</b>: round groups, stretched groups and moons. All simulated, without labels.' },
+    n: { title: 'Observations', html: 'How many observations are simulated.' },
+    seed: { title: 'Random seed', html: 'Fixes the random numbers: the same seed gives the same data and the same starting centers.' },
+    km: { title: 'K-means', html: 'Repeat: assign every observation to the nearest center, then move every center to the mean of its observations.' },
+    k: { title: 'Number of clusters k', html: 'K-means needs k in advance. Use the elbow and silhouette charts, and common sense, to choose it.' },
+    init: { title: 'Starting centers', html: '<b>k-means++</b>: the first center at random, each next one far from those already chosen. <b>Random points</b>: k observations picked at random; can end in a poor solution.' },
+    std: { title: 'Standardize the inputs', html: 'Subtract the mean and divide by the standard deviation of each input before computing distances, so that no input dominates because of its units. The chart still shows the original units.' },
+    run: { title: 'Step by step', html: '<b>Step</b>: one assign or one update step. <b>Play</b>: run on. <b>End</b>: run to convergence. <b>Reset</b>: back to the starting centers.' },
+    st_iter: { title: 'Iteration', html: 'One iteration = one assign step and one update step. Converged: an assign step changed no observation.' },
+    st_wcss: { title: 'Within-cluster sum of squares (WCSS)', html: 'The sum of the squared distances of all observations from their cluster centers: what k-means makes as small as it can. In standardized units when the inputs are standardized.' },
+    st_sil: { title: 'Mean silhouette', html: 'The average silhouette of all observations: close to 1, compact and well separated clusters; near 0, overlapping clusters.' },
+    st_sizes: { title: 'Cluster sizes', html: 'How many observations each cluster has, in the order of the legend colours.' },
+    figmap: { title: 'The clusters', html: 'Each observation is coloured by its cluster, each region by its center. The crosses are the centers; arrows show the update step.' },
+    figw: { title: 'WCSS by iteration', html: 'The objective after every assign and update step. It never rises.' },
+    figelbow: { title: 'Elbow chart', html: 'The best WCSS of 5 k-means++ starts for k from 1 to 8. The "elbow" is the k after which the curve flattens.' },
+    figsil: { title: 'Silhouette by k', html: 'The mean silhouette of the best solution for each k from 2 to 8.' },
+    figsilplot: { title: 'Silhouette plot', html: 'The silhouette of each observation for the current solution, sorted within each cluster. Short or negative bars mark observations near a border or in the wrong cluster.' }
+  });
+
+  function setup(o) { Object.assign(S, { step: -1 }, o); MLS.pickTab('sim'); full(); window.scrollTo({ top: 0, behavior: 'smooth' }); }
+  const ch = MLS.challenges($('challenges'), META.id, [
+    { type: 'predict', q: 'After every observation has been assigned to its nearest center, each center moves to...',
+      options: ['the observation farthest from it', 'the mean of the observations assigned to it', 'a new random point'], answer: 1,
+      explain: 'The update step moves each center to the centroid (the mean) of its cluster: the point with the smallest sum of squared distances to its members.',
+      tryIt: () => setup({ ds: 'customers', k: 3, step: 2 }) },
+    { type: 'task', q: 'Card payments: standardize the inputs, then set k to the value with the highest mean silhouette.', hint: 'Choose the card payments, tick "Standardize the inputs", read the "Mean silhouette by k" chart and move the k slider.',
+      check: () => R && S.ds === 'payments' && S.std && S.k === R.bestSilK },
+    { type: 'predict', q: 'Moons with k = 2. K-means will...',
+      options: ['find the two moons exactly', 'find nothing: all points in one cluster', 'cut across the moons with a straight border'], answer: 2,
+      explain: 'K-means regions are separated by straight lines halfway between centers, so curved groups are cut in the wrong place.',
+      tryIt: () => setup({ ds: 'moonsU', k: 2, std: false }) },
+    { type: 'predict', q: 'Card payments (hour 0 to 24, amount up to hundreds of €) without standardizing. Which input decides the clusters?',
+      options: ['The amount, because its numbers are much larger', 'The hour of the day', 'Both equally'], answer: 0,
+      explain: 'Distances add squared differences: a difference of 100 € counts far more than a difference of 10 hours. Standardizing puts both inputs on the same scale.',
+      tryIt: () => setup({ ds: 'payments', k: 3, std: false }) },
+    { type: 'task', q: 'Random starting points: find a seed where k-means ends with a WCSS at least 2% above the best of 5 k-means++ starts.', hint: 'Choose "Random points", k = 3 or more, on the three round groups, and try several seeds with the dice.',
+      check: () => R && S.init === 'random' && R.final.wcss > R.elbow[S.k - 1] * 1.02 },
+    { type: 'predict', q: 'As k grows from 1 to 8, the WCSS of the best solution...',
+      options: ['always falls, so the smallest WCSS cannot be used to choose k', 'rises after the true number of groups', 'stays the same'], answer: 0,
+      explain: 'More centers always fit the data at least as closely; with k = n the WCSS is 0. That is why we look for the elbow or use the silhouette.',
+      tryIt: () => setup({ ds: 'blobs3', k: 3 }) }
+  ]);
+  const STATE = {
+    get: () => ({ ds: S.ds, n: S.n, seed: S.seed, k: S.k, init: S.init, std: S.std }),
+    set: o => {
+      if (DEFN[o.ds]) S.ds = o.ds;
+      if (o.n) Object.keys(o.n).forEach(q => { if (DEFN[q] && Number.isFinite(o.n[q])) S.n[q] = Math.max(40, Math.min(300, o.n[q])); });
+      if (Number.isFinite(o.seed)) S.seed = o.seed;
+      if (Number.isFinite(o.k)) S.k = Math.max(1, Math.min(8, o.k));
+      if (['pp', 'random'].includes(o.init)) S.init = o.init;
+      if (typeof o.std === 'boolean') S.std = o.std;
+    }
+  };
+  const start = full;
+  MLS.moduleBar({ id: META.id, title: META.title, section: META.sectionTitle, level: META.level },
+    { tabs: [{ id: 'sim', label: 'Simulation' }, { id: 'lesson', label: 'Lesson' }, { id: 'challenges', label: 'Challenges' }, { id: 'real', label: 'On real data' }] });
+  MLS.state.init({ id: META.id, get: STATE.get, set: STATE.set });
+  const fc = $('fourCast'); if (fc) fc.href = MLS.APP.fourCastUrl;
+  window.__mls = { S, get R() { return R; }, get D() { return D; } };
+  document.addEventListener('mls:theme', () => refresh());
+  start();
+})();
+</script>
+</body>
+</html>

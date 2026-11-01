@@ -1,0 +1,379 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>K-Nearest Neighbors | 4MLSim</title>
+  <meta name="theme-color" content="#1B2340">
+  <link rel="manifest" href="../manifest.json">
+  <link rel="icon" type="image/svg+xml" href="../assets/img/icon.svg">
+  <link rel="apple-touch-icon" href="../assets/img/apple-touch-icon.png">
+  <link rel="stylesheet" href="../assets/vendor/temml.css">
+  <link rel="stylesheet" href="../assets/css/4mlsim.css">
+  <script src="../assets/vendor/temml.min.js"></script>
+  <script src="../assets/js/core.js"></script>
+  <script src="../assets/js/stats.js"></script>
+  <script src="../assets/js/plot.js"></script>
+  <script src="../assets/js/modules.js"></script>
+  <script src="../assets/js/core-ml.js"></script>
+  <script src="../assets/js/classify-ui.js"></script>
+</head>
+<body>
+<div class="page">
+  <header id="mlsHeader" data-variant="compact"></header>
+  <div class="mod-top" id="mlsTop"><div id="mlsModBar"></div><div id="mlsTabs"></div></div>
+
+  <div class="intro-box" id="mlsIntro">
+    <h3>What this module shows</h3>
+    <div class="intro-cols">
+      <div>
+        <p><b>K-nearest neighbours (KNN)</b> classifies a new observation by a <b>vote of the k closest</b> training observations. There is no equation and no estimation: the training data themselves are the model.</p>
+        <p>Three choices matter: the number of neighbours <b>k</b>, how <b>distance</b> is measured, and whether the inputs are <b>standardized</b> so that both count equally.</p>
+      </div>
+      <div>
+        <p><b>How to use it</b></p>
+        <ol>
+          <li>Click anywhere on the chart to place a new observation (the star) and see its k nearest neighbours vote.</li>
+          <li>Move k and watch the boundary change from jagged to smooth.</li>
+          <li>Choose k by 4-fold cross-validation on the training set, then read the test accuracy.</li>
+          <li>Click any <b>?</b> for help, then try the <b>Challenges</b>.</li>
+        </ol>
+      </div>
+    </div>
+  </div>
+
+  <!-- ===================== SIMULATION ===================== -->
+  <section data-panel="sim">
+    <div class="mod-grid">
+      <aside class="side" aria-label="Controls">
+        <div class="card">
+          <div class="card-head"><h3>1. Data<button type="button" class="help" data-help="data">?</button></h3></div>
+          <select id="ds" aria-label="Data set">
+            <option value="banks">Bank failures (2 classes)</option>
+            <option value="cycle">Recession / normal / growth (3 classes)</option>
+          </select>
+          <div class="field-row"><label for="n">Observations<button type="button" class="help" data-help="n">?</button></label><output id="nVal"></output></div>
+          <input type="range" id="n" min="40" max="400" step="20" value="200">
+          <div class="field-row"><label for="seed">Random seed<button type="button" class="help" data-help="seed">?</button></label></div>
+          <div class="inline-inputs"><input type="number" id="seed" min="1" max="99999" step="1" value="1" aria-label="Random seed"><button type="button" class="btn-ghost btn-icon" id="newSeed" title="New random data" style="flex:0 0 auto">&#127922;</button></div>
+          <p class="note" id="dataNote"></p>
+        </div>
+        <div class="card">
+          <div class="card-head"><h3>2. The model<button type="button" class="help" data-help="model">?</button></h3></div>
+          <div class="field-row"><label for="k">Neighbours k<button type="button" class="help" data-help="k">?</button></label><output id="kVal"></output></div>
+          <input type="range" id="k" min="1" max="40" step="1" value="5">
+          <div class="field-row"><label>Distance<button type="button" class="help" data-help="dist">?</button></label></div>
+          <div class="seg full" role="group" aria-label="Distance"><button type="button" data-dist="euclid">Euclidean</button><button type="button" data-dist="manhattan">Manhattan</button></div>
+          <label class="check"><input type="checkbox" id="scale" checked> Standardize the inputs<button type="button" class="help" data-help="scale">?</button></label>
+          <button type="button" class="btn-secondary" id="useBest" style="width:100%;margin-top:12px">Use the k chosen by cross-validation</button>
+          <p class="note" id="bestNote"></p>
+        </div>
+      </aside>
+
+      <main class="main">
+        <div class="story" id="story"></div>
+        <div class="stat-grid" id="stats" style="margin-top:12px"></div>
+        <div id="statusLine" class="status-line" style="margin:10px 0"></div>
+        <div class="fig-grid">
+          <div id="figMap" class="fig-wide"></div>
+          <div class="card" id="nbCard"></div>
+          <div id="figK"></div>
+        </div>
+      </main>
+    </div>
+  </section>
+
+  <!-- ===================== LESSON ===================== -->
+  <section data-panel="lesson" class="card lesson" hidden>
+    <div id="mlsMathCtl"></div>
+    <p class="lvl-only-intuition note" style="margin-bottom:8px">Showing the intuition only. Choose <b>Formulas</b> or <b>Deep dive</b> above to add the mathematics.</p>
+
+    <h4>How KNN classifies</h4>
+    <ol>
+      <li>Measure the distance from the new observation to every training observation.</li>
+      <li>Rank the distances from shortest to longest (ascending order).</li>
+      <li>The <b>k first neighbours vote</b>; the class with most votes wins. (Usually for classification, but it also works for regression: the forecast is the average of the k neighbours.)</li>
+    </ol>
+    <p>KNN learns nothing in advance: it keeps the training data and does all the work when a new observation arrives. That is why it is called a "lazy" learner.</p>
+
+    <h4>Choosing k</h4>
+    <ul>
+      <li><b>k = 1</b>: each point copies its single nearest neighbour. Every training observation is its own nearest neighbour, so the training accuracy is 100%, but the boundary follows every noisy point: <b>overfitting</b>.</li>
+      <li><b>Very large k</b>: the vote is taken over almost all the data, so every point gets the majority class: <b>underfitting</b>.</li>
+      <li>For 2 classes choose an <b>odd k</b>, so there are no ties. (Ties here go to the class of the closest neighbour among the tied classes.)</li>
+      <li>k is chosen by <b>4-fold cross-validation on the training set</b>: for each k, train on 3 folds, validate on the fourth, average the accuracy. The test set is used once, at the end, for the chosen k.</li>
+    </ul>
+
+    <h4>Distance and scaling</h4>
+    <p>Distances add up differences in the inputs. If one input is measured in large numbers (a PMI around 50) and the other in small numbers (a change in unemployment of about 1 point), the large one dominates the distance and the small one is almost ignored. <b>Standardizing</b> each input (subtract the mean, divide by the standard deviation of the training set) makes both count equally. See the Feature Scaling module.</p>
+    <div class="math-block lvl-math"><div class="mb-title">Distances between observations a and b</div>
+      <div class="tex-block">\text{Euclidean: } d(a,b) = \sqrt{\textstyle\sum_j (a_j - b_j)^2}, \qquad \text{Manhattan: } d(a,b) = \textstyle\sum_j |a_j - b_j|</div>
+      <div class="tex-block">\text{standardized input: } z_j = \frac{x_j - \bar x_j}{s_j} \quad (\bar x_j,\ s_j \text{ from the training set})</div>
+      <p class="note">On the chart, the neighbourhood of the star is a circle (Euclidean) or a diamond (Manhattan) in standardized units; in the original units it is stretched into an ellipse.</p>
+    </div>
+
+    <h4>Advantages and disadvantages</h4>
+    <ul>
+      <li><b>Advantages</b>: simple and intuitive; no assumptions about the shape of the boundary; easy to add new data.</li>
+      <li><b>Disadvantages</b>: slow on large data sets (it computes the distance to every training observation); sensitive to the scale of the inputs and to useless inputs; weak with many inputs (distances become similar, the curse of dimensionality).</li>
+    </ul>
+
+    <div class="math-block deep lvl-deep"><div class="mb-title">Deep dive</div>
+      <p><b>Weighted KNN.</b> Closer neighbours can get larger votes, e.g. weights 1 / d. This also removes most ties.</p>
+      <p><b>Consistency.</b> As the sample grows, with k → ∞ and k / n → 0, the KNN error tends to the lowest possible (Bayes) error (Stone, 1977). With k = 1 the error is at most twice the Bayes error in the limit (Cover and Hart, 1967).</p>
+      <p><b>Curse of dimensionality.</b> With many inputs, the nearest and the farthest neighbours are at almost the same distance, so "nearest" loses its meaning. Feature selection or dimension reduction (PCA) helps.</p>
+      <p class="note">References: Cover and Hart (1967), "Nearest neighbor pattern classification", <i>IEEE Transactions on Information Theory</i> 13(1); Stone (1977), "Consistent nonparametric regression", <i>Annals of Statistics</i> 5(4); Hastie, Tibshirani and Friedman (2009), <i>The Elements of Statistical Learning</i>, ch. 13.</p>
+    </div>
+  </section>
+
+  <!-- ===================== CHALLENGES ===================== -->
+  <section data-panel="challenges" class="card" hidden>
+    <div class="card-head"><h3>Challenges</h3><span class="card-sub">Answer the "predict first" questions before testing them in the Simulation tab.</span></div>
+    <div id="challenges"></div>
+  </section>
+
+  <!-- ===================== REAL DATA ===================== -->
+  <section data-panel="real" class="card lesson" hidden>
+    <h4>From the simulation to real data</h4>
+    <ul>
+      <li>Always standardize the inputs (with the training set's mean and standard deviation) unless they are already in the same units.</li>
+      <li>Choose k by cross-validation on the training set; report the test accuracy once.</li>
+      <li>Keep the number of inputs small and relevant: useless inputs add noise to every distance.</li>
+      <li>Applications in economics and finance: classifying the phase of the business cycle from indicators, credit decisions by similarity to past borrowers, recommendations ("customers like you bought..."), and analogue forecasting (find past periods that look like today).</li>
+    </ul>
+    <div class="crosslink"><span>&#10140;</span><span><a id="fourCast" target="_blank" rel="noopener"><b>4Cast Lab</b></a> includes KNN for classification and regression on your own data, with scaling and the choice of k.</span></div>
+  </section>
+
+  <footer id="mlsFooter"></footer>
+</div>
+
+<script>
+(function () {
+  'use strict';
+  const MLS = window.MLS, ML = MLS.ml, CL = MLS.cls;
+  const META = MLS.moduleMeta('knn');
+  const $ = id => document.getElementById(id);
+  const F = MLS.fmt, pct = CL.pct;
+  const DSN = { banks: { gen: ML.DATA.banks, n: 200, unit: 'banks', one: 'bank' }, cycle: { gen: ML.DATA.cycle, n: 150, unit: 'months', one: 'month' } };
+
+  const S = { ds: 'banks', n: {}, seed: 1, k: 5, dist: 'euclid', scale: true, q: {} };
+  let D = null, R = null;
+  const nObs = () => S.n[S.ds] || DSN[S.ds].n, w = () => DSN[S.ds].unit;
+
+  /* ==================================================================
+     data and model
+     ================================================================== */
+  function makeData() {
+    const gd = DSN[S.ds].gen, g = gd.gen(ML.rng(S.seed), nObs()), test = ML.split(g.X.length, S.seed);
+    const pts = g.X.map((x, i) => ({ x, y: g.y[i], te: test[i], id: i }));
+    D = { pts, names: g.names, classes: g.classes, K: g.classes.length, dom: CL.domain(pts) };
+  }
+  const trainPts = () => D.pts.filter(p => !p.te), testPts = () => D.pts.filter(p => p.te);
+  /* vote of the k nearest training points; ties go to the class of the closest neighbour among the tied classes */
+  function makeModel(k, scale, dist) {
+    const tr = trainPts(), sc = scale ? ML.scaler(tr.map(p => p.x)) : { mu: [0, 0], sd: [1, 1], t: x => x.slice() };
+    const Z = tr.map(p => sc.t(p.x)), near = dist === 'manhattan' ? ML.manhattanNearest : ML.nearest, K = D.K;
+    const vote = x => {
+      const z = sc.t(x), nb = near(Z, z, Math.min(k, Z.length)), c = new Array(K).fill(0);
+      nb.forEach(i => c[tr[i].y]++);
+      const top = Math.max(...c), tied = c.map((v, q) => (v === top ? q : -1)).filter(q => q >= 0);
+      const win = tied.length === 1 ? tied[0] : tr[nb.find(i => tied.includes(tr[i].y))].y;
+      return { nb, c, win, z };
+    };
+    return { sc, Z, tr, vote, near,
+      prob: x => { const v = vote(x), p = v.c.map(q => q / v.nb.length); p[v.win] += 1e-9; return p; },
+      dist: (a, b) => (dist === 'manhattan' ? a.reduce((s, v, j) => s + Math.abs(v - b[j]), 0) : Math.sqrt(a.reduce((s, v, j) => s + (v - b[j]) ** 2, 0))) };
+  }
+  const accOf = (m, pts) => pts.filter(p => m.vote(p.x).win === p.y).length / pts.length;
+  function compute() {
+    const tr = trainPts(), te = testPts(), K = D.K, kmax = Math.min(40, tr.length - Math.ceil(tr.length / 4));
+    R = { curve: [] };
+    /* accuracy by k: training set, 4-fold cross-validation on the training set, test set */
+    const near = S.dist === 'manhattan' ? ML.manhattanNearest : ML.nearest;
+    const sc = S.scale ? ML.scaler(tr.map(p => p.x)) : null;
+    const Ztr = tr.map(p => (sc ? sc.t(p.x) : p.x.slice())), ytr = tr.map(p => p.y);
+    for (let k = 1; k <= kmax; k++) {
+      const m = makeModel(k, S.scale, S.dist);
+      R.curve.push({ k, tr: accOf(m, tr), cv: ML.knnCV(Ztr, ytr, K, k, 4, near), te: accOf(m, te) });
+    }
+    let best = R.curve[0]; R.curve.forEach(c => { if (c.cv > best.cv + 1e-12) best = c; });
+    R.best = best.k;
+    if (S.k > kmax) S.k = kmax;
+    R.m = makeModel(S.k, S.scale, S.dist);
+    R.cur = R.curve[S.k - 1];
+    /* the same k with the other scaling choice, for the comparison in the status line */
+    R.other = accOf(makeModel(S.k, !S.scale, S.dist), te);
+    R.grid = CL.regionGrid(D.dom, R.m.prob, 90, 66);
+    R.kmax = kmax;
+  }
+  /* default star: halfway between the class centres, where the vote is interesting */
+  const query = () => S.q[S.ds + ':' + S.seed] || (() => { const tr = trainPts(), cm = D.classes.map((_, k) => { const a = tr.filter(p => p.y === k); return [MLS.mean(a.map(p => p.x[0])), MLS.mean(a.map(p => p.x[1]))]; }); const a = cm[0], b = cm[1]; return [(a[0] + b[0]) / 2, (a[1] + b[1]) / 2]; })();
+
+  /* ==================================================================
+     text
+     ================================================================== */
+  function updateText() {
+    const c = R.cur, nTr = trainPts().length, nTe = testPts().length;
+    $('story').innerHTML = '<h3>Data: ' + (S.ds === 'banks' ? 'Bank failures' : 'Recession / normal / growth') + '</h3><p>' + (S.ds === 'banks' ? 'Banks described by the debt-to-equity ratio and the Tier 1 capital ratio; about 30% failed.' : 'Months of an economy described by the purchasing managers\' index (PMI) and the change in the unemployment rate over 12 months; three classes.') +
+      ' <b>' + nTr + ' ' + w() + ' in the training set (filled), ' + nTe + ' in the test set (rings).</b> Each new observation is classified by a vote of its <b>k = ' + S.k + '</b> nearest training observations.</p>';
+    const card = MLS.statCard;
+    $('stats').innerHTML =
+      card('Accuracy, training set', pct(c.tr), nTr + ' ' + w() + ', k = ' + S.k, '', 'st_tr') +
+      card('Accuracy, 4-fold cross-validation', pct(c.cv), 'training set, 4 validation folds', '', 'st_cv') +
+      card('Accuracy, test set', pct(c.te), nTe + ' new ' + w() + ', used once', '', 'st_te') +
+      card('Best k by cross-validation', String(R.best), 'CV accuracy ' + pct(R.curve[R.best - 1].cv), '', 'st_best');
+    let msg, cls = 'status-line';
+    if (S.k === 1) { msg = 'k = 1: every training observation is its own nearest neighbour, so the training accuracy is ' + pct(c.tr) + ' but cross-validation gives only ' + pct(c.cv) + ': the boundary follows noise (overfitting).'; cls += ' bad'; }
+    else if (S.k > 2 * R.best + 10 && c.cv < R.curve[R.best - 1].cv - 0.02) { msg = 'k = ' + S.k + ' is large: the vote is taken over a big neighbourhood and the boundary is too smooth (underfitting). Cross-validation prefers k = ' + R.best + '.'; cls += ' bad'; }
+    else { msg = 'With k = ' + S.k + ': cross-validation accuracy ' + pct(c.cv) + ', test accuracy ' + pct(c.te) + '. ' + (S.k === R.best ? 'This is the k chosen by cross-validation.' : 'Cross-validation prefers k = ' + R.best + '.'); cls += ' ok'; }
+    if (!S.scale) msg += ' Inputs not standardized: test accuracy ' + pct(c.te) + ' (standardized: ' + pct(R.other) + ').';
+    $('statusLine').textContent = msg; $('statusLine').className = cls;
+    $('bestNote').innerHTML = 'Cross-validation on the training set chooses <b>k = ' + R.best + '</b>.' + (D.K === 2 && S.k % 2 === 0 ? ' With 2 classes an odd k avoids ties.' : '');
+    $('dataNote').textContent = 'Click on the chart to move the star (a new ' + DSN[S.ds].one + ').';
+  }
+
+  /* ==================================================================
+     charts
+     ================================================================== */
+  const figMap = MLS.figure($('figMap'), {
+    title: 'The data, the predicted classes and one new observation', help: 'figmap', file: 'knn-map',
+    plot: { aspect: 0.6, margin: { l: 66, b: 50 }, x: { label: () => D.names[0] }, y: { label: () => D.names[1] }, onClick: (x, y) => { S.q[S.ds + ':' + S.seed] = [+x.toFixed(3), +y.toFixed(3)]; refresh(false); } },
+    data: () => ({ cols: [D.names[0], D.names[1], 'Actual class', 'Predicted class', 'Set'], rows: D.pts.map(p => [p.x[0], p.x[1], D.classes[p.y], D.classes[R.m.vote(p.x).win], p.te ? 'test' : 'training']) })
+  });
+  function drawMap() {
+    const P = figMap.plot, ink = MLS.color('chart-ink'), mu = MLS.color('chart-muted'), q = query(), v = R.m.vote(q), m = R.m;
+    P.setX(D.dom.x[0], D.dom.x[1]); P.setY(D.dom.y[0], D.dom.y[1]);
+    P.draw(P => {
+      CL.drawRegions(P, R.grid, D.dom, D.K, null);
+      /* the neighbourhood: radius = distance to the k-th neighbour, drawn in the original units */
+      const rad = m.dist(v.z, m.Z[v.nb[v.nb.length - 1]]), shape = [];
+      for (let t = 0; t <= 120; t++) { const a = 2 * Math.PI * t / 120; let u = Math.cos(a), s = Math.sin(a); if (S.dist === 'manhattan') { const n1 = Math.abs(u) + Math.abs(s); u /= n1; s /= n1; } shape.push([m.sc.mu[0] + (v.z[0] + rad * u) * m.sc.sd[0], m.sc.mu[1] + (v.z[1] + rad * s) * m.sc.sd[1]]); }
+      P.line(shape, { color: ink, width: 1.6, dash: '5 4' });
+      v.nb.forEach(i => P.segment(q[0], q[1], m.tr[i].x[0], m.tr[i].x[1], { color: ink, width: 1.1, opacity: 0.7 }));
+      const tip = p => '<b>' + (p.te ? 'Test set' : 'Training set') + '</b><br>' + D.names[0] + ': ' + F(p.x[0], 2) + '<br>' + D.names[1] + ': ' + F(p.x[1], 2) + '<br>Actual: <b>' + MLS.esc(D.classes[p.y]) + '</b><br>KNN: ' + MLS.esc(D.classes[m.vote(p.x).win]);
+      const nbSet = new Set(v.nb.map(i => m.tr[i]));
+      P.points(trainPts(), { x: p => p.x[0], y: p => p.x[1], color: p => CL.color(p.y), r: 4.6, tip, highlight: p => nbSet.has(p) });
+      P.points(testPts(), { x: p => p.x[0], y: p => p.x[1], color: p => CL.color(p.y), r: 5.2, hollow: true, tip });
+      P.points([{ x: q[0], y: q[1] }], { color: CL.color(v.win), shape: 'star', r: 10, ringColor: ink, tip: () => '<b>New observation</b><br>' + D.names[0] + ': ' + F(q[0], 2) + '<br>' + D.names[1] + ': ' + F(q[1], 2) + '<br>Votes: ' + v.c.map((c, k) => MLS.esc(D.classes[k]) + ' ' + c).join(', ') + '<br>Classified as <b>' + MLS.esc(D.classes[v.win]) + '</b>' });
+    });
+    figMap.legend(D.classes.map((c, k) => { const a = D.pts.filter(p => p.y === k); return { label: MLS.esc(c) + ' (' + a.filter(p => !p.te).length + ' training, ' + a.filter(p => p.te).length + ' test)', color: CL.color(k) }; })
+      .concat([{ label: 'filled = training set, ring = test set', color: 'transparent', stroke: mu }, { label: 'New observation (click to move)', color: mu, shape: 'star' }, { label: 'Its ' + S.k + ' nearest neighbours (circled)', color: ink, line: true, dash: '5 4' }]));
+    figMap.caption('The background shows the class KNN predicts at every point (paler = a closer vote). The dashed outline contains the ' + S.k + ' nearest training observations of the star' + (S.scale ? '; distances are measured on standardized inputs, so the outline is stretched in the original units.' : '.') + ' Click anywhere to move the star.');
+  }
+  function drawNb() {
+    const q = query(), v = R.m.vote(q), m = R.m;
+    const rows = v.nb.map((i, r) => { const p = m.tr[i]; return '<tr><td>' + (r + 1) + '</td><td>' + F(p.x[0], 2) + '</td><td>' + F(p.x[1], 2) + '</td><td style="white-space:nowrap;text-align:left"><span style="display:inline-block;width:9px;height:9px;border-radius:50%;margin-right:5px;background:' + CL.color(p.y) + '"></span>' + MLS.esc(D.classes[p.y]) + '</td><td>' + F(m.dist(v.z, m.Z[i]), 3) + '</td></tr>'; }).slice(0, 15);
+    $('nbCard').innerHTML = '<div class="card-head"><h3>The ' + S.k + ' nearest neighbours of the star' + MLS.helpBtn('nbtable') + '</h3></div>' +
+      '<p style="margin:0 0 8px;font-size:14.5px">Votes: ' + v.c.map((c, k) => '<b>' + MLS.esc(D.classes[k]) + ' ' + c + '</b>').join(', ') + ' &rarr; classified as <b>' + MLS.esc(D.classes[v.win]) + '</b>.</p>' +
+      '<div class="fig-table" style="max-height:330px"><table class="tbl"><thead><tr><th>Rank</th><th>' + MLS.esc(D.names[0]) + '</th><th>' + MLS.esc(D.names[1]) + '</th><th>Class</th><th>Distance' + (S.scale ? ' (standardized)' : '') + '</th></tr></thead><tbody>' + rows.join('') + '</tbody></table></div>' +
+      (v.nb.length > 15 ? '<p class="note">First 15 of ' + v.nb.length + ' shown.</p>' : '');
+  }
+  const figK = MLS.figure($('figK'), { title: 'Accuracy by k', help: 'figk', file: 'knn-accuracy-by-k',
+    plot: { aspect: 0.72, margin: { l: 62, b: 50 }, x: { label: 'Neighbours k' }, y: { label: 'Accuracy', fmt: v => (100 * v).toFixed(0) + '%' } },
+    data: () => ({ cols: ['k', 'Training set', '4-fold CV (training set)', 'Test set'], rows: R.curve.map(c => [c.k, c.tr, c.cv, c.te]) }) });
+  function drawK() {
+    const P = figK.plot, c1 = MLS.color('series-1'), c2 = MLS.color('series-7'), c3 = MLS.color('series-2'), mu = MLS.color('chart-muted');
+    const all = R.curve.flatMap(c => [c.tr, c.cv, c.te]);
+    P.setX(0.5, R.kmax + 0.5); P.setY(Math.max(0, Math.min(...all) - 0.05), 1.01);
+    P.draw(P => {
+      P.vline(S.k, { color: mu, width: 1.4, dash: '4 3' }); P.text(S.k, 1.01, 'k = ' + S.k, { anchor: 'middle', dy: 14, size: 11.5, color: mu });
+      P.line(R.curve.map(c => [c.k, c.tr]), { color: c1, width: 1.8 });
+      P.line(R.curve.map(c => [c.k, c.cv]), { color: c2, width: 2.6 });
+      P.line(R.curve.map(c => [c.k, c.te]), { color: c3, width: 1.6, dash: '6 3' });
+      const b = R.curve[R.best - 1];
+      P.points([{ x: b.k, y: b.cv }], { color: c2, r: 7, shape: 'diamond', tip: () => 'Best k by cross-validation: ' + b.k + '<br>CV accuracy ' + pct(b.cv) });
+      P.crosshair([{ name: 'Training set', color: c1, pts: R.curve.map(c => [c.k, c.tr]) }, { name: '4-fold CV', color: c2, pts: R.curve.map(c => [c.k, c.cv]) }, { name: 'Test set', color: c3, pts: R.curve.map(c => [c.k, c.te]) }], v => 'k = ' + Math.round(v), v => pct(v));
+    });
+    figK.legend([{ label: 'Training set', color: c1, line: true }, { label: '4-fold cross-validation (chooses k)', color: c2, line: true }, { label: 'Test set (only for teaching)', color: c3, line: true, dash: '6 3' }, { label: 'Best k by CV = ' + R.best, color: c2, shape: 'diamond' }]);
+    figK.caption('Small k: training accuracy near 100% but lower cross-validation accuracy (overfitting). Large k: both fall (underfitting). k is chosen where cross-validation is highest; the test line is shown only for teaching, it is not used to choose.');
+  }
+
+  /* ==================================================================
+     controls
+     ================================================================== */
+  function syncUI() {
+    $('ds').value = S.ds; $('n').value = nObs(); $('nVal').textContent = nObs(); $('seed').value = S.seed;
+    $('k').max = R ? R.kmax : 40; $('k').value = S.k; $('kVal').textContent = S.k; $('scale').checked = S.scale;
+    MLS.$$('[data-dist]').forEach(b => b.setAttribute('aria-pressed', String(b.dataset.dist === S.dist)));
+  }
+  function refresh(re) { if (re !== false) compute(); syncUI(); updateText(); drawMap(); drawNb(); drawK(); figMap.refreshTable(); if (ch) ch.check(); MLS.state.save(); }
+  const full = () => { makeData(); refresh(); };
+  $('ds').onchange = e => { S.ds = e.target.value; full(); };
+  $('n').addEventListener('input', e => ($('nVal').textContent = e.target.value));
+  $('n').onchange = e => { S.n[S.ds] = +e.target.value; full(); };
+  $('seed').onchange = e => { S.seed = Math.max(1, Math.round(+e.target.value) || 1); full(); };
+  $('newSeed').onclick = () => { S.seed = MLS.newSeed(); full(); };
+  $('k').addEventListener('input', e => ($('kVal').textContent = e.target.value));
+  $('k').onchange = e => { S.k = +e.target.value; refresh(); };
+  MLS.$$('[data-dist]').forEach(b => (b.onclick = () => { S.dist = b.dataset.dist; refresh(); }));
+  $('scale').onchange = e => { S.scale = e.target.checked; refresh(); };
+  $('useBest').onclick = () => { S.k = R.best; refresh(); };
+
+  MLS.registerHelp({
+    data: { title: 'Data', html: '<b>Bank failures</b>: two financial ratios, failed or healthy (2 classes). <b>Recession / normal / growth</b>: the PMI and the change in unemployment (3 classes). Simulated data; a new seed gives a new sample.' },
+    n: { title: 'Observations', html: '80% form the training set (the neighbours that vote), 20% the test set.' },
+    model: { title: 'The model', html: 'KNN has no coefficients: the training observations are the model. The choices are k, the distance and the scaling of the inputs.' },
+    k: { title: 'Neighbours k', html: 'How many nearest training observations vote. k = 1 copies the single nearest neighbour (overfitting); a very large k gives every point the majority class (underfitting). With 2 classes use an odd k. Ties go to the class of the closest neighbour among the tied classes.' },
+    dist: { title: 'Distance', html: '<b>Euclidean</b>: the straight-line distance, √(Δx1² + Δx2²); its neighbourhood is a circle. <b>Manhattan</b>: |Δx1| + |Δx2|, like walking along city blocks; its neighbourhood is a diamond.' },
+    scale: { title: 'Standardize the inputs', html: 'Subtract each input\'s mean and divide by its standard deviation (both from the training set), so both inputs count equally in the distance. Without it, the input with the larger numbers dominates.' },
+    st_tr: { title: 'Accuracy, training set', html: 'Share of training observations classified correctly, each one voting with itself among its neighbours. With k = 1 it is always 100%.' },
+    st_cv: { title: 'Accuracy, 4-fold cross-validation', html: 'The training set is cut into 4 folds of consecutive observations. Each fold is classified by the other 3; the accuracy over all 4 validation folds is used to choose k. The test set is not used.' },
+    st_te: { title: 'Accuracy, test set', html: 'Share of the test observations (new data) classified correctly with the current k. In practice it is computed once, for the k chosen by cross-validation.' },
+    st_best: { title: 'Best k by cross-validation', html: 'The k with the highest 4-fold cross-validation accuracy on the training set (the smallest such k if several tie).' },
+    figmap: { title: 'The data and the predicted classes', html: 'Points: the observations, coloured by their actual class (filled = training set, ring = test set). Background: the class KNN predicts there. Star: a new observation; lines join it to its k nearest training observations (circled), and the dashed outline is the neighbourhood. Click to move the star.' },
+    nbtable: { title: 'The nearest neighbours', html: 'The k training observations closest to the star, ranked by distance from shortest to longest, and the vote.' },
+    figk: { title: 'Accuracy by k', html: 'Accuracy for k = 1 to the largest k: on the training set, in 4-fold cross-validation on the training set, and on the test set. The diamond marks the k chosen by cross-validation.' }
+  });
+
+  const isBanks = () => S.ds === 'banks';
+  function setup(o) { Object.assign(S, o); MLS.pickTab('sim'); full(); window.scrollTo({ top: 0, behavior: 'smooth' }); }
+  const ch = MLS.challenges($('challenges'), META.id, [
+    { type: 'predict', q: 'With k = 1, the accuracy on the training set will be...',
+      options: ['about the same as on the test set', '100%: every training observation is its own nearest neighbour', 'about 50%'], answer: 1,
+      explain: 'Each training observation finds itself at distance 0 and copies its own class. The cross-validation and test accuracies show the truth: the boundary follows every noisy point.',
+      tryIt: () => setup({ ds: 'banks', k: 1 }) },
+    { type: 'predict', q: 'Bank failures: k is set as large as possible, so almost all training banks vote. The model will...',
+      options: ['call almost every bank healthy, the majority class', 'find every failed bank', 'be the most accurate'], answer: 0,
+      explain: 'When nearly everyone votes, the majority class (healthy, about 70%) wins everywhere except near the failed cluster. The boundary becomes too smooth: underfitting.',
+      tryIt: () => setup({ ds: 'banks', k: 40 }) },
+    { type: 'predict', q: 'Why choose an odd k with 2 classes?',
+      options: ['Odd numbers are faster', 'It gives a smoother boundary', 'To avoid ties: with an even k the vote can be 2 against 2'], answer: 2,
+      explain: 'With an odd number of voters and 2 classes, one class always has more votes. With an even k a tie needs a rule; here it goes to the class of the closest neighbour.',
+      tryIt: () => setup({ ds: 'banks', k: 4 }) },
+    { type: 'task', q: 'Set k to the value chosen by 4-fold cross-validation on the training set.', hint: 'Use the button in section 2, or find the diamond on the accuracy chart.',
+      check: () => R && S.k === R.best },
+    { type: 'predict', q: 'Recession / normal / growth, inputs NOT standardized. The PMI is around 50; the change in unemployment around 1. Which input dominates the distance?',
+      options: ['The change in unemployment', 'The PMI: its differences are much larger numbers', 'Both equally'], answer: 1,
+      explain: 'Distances add up the differences. A PMI difference of 5 points outweighs an unemployment difference of 0.5, so the second input is almost ignored. Standardizing fixes this.',
+      tryIt: () => setup({ ds: 'cycle', scale: false, k: 5 }) },
+    { type: 'task', q: 'Recession / normal / growth: find a k for which turning off the standardization lowers the test accuracy by at least 5 points.', hint: 'Untick "Standardize the inputs" and compare with the status line.',
+      check: () => R && S.ds === 'cycle' && !S.scale && R.other - R.cur.te >= 0.05 },
+    { type: 'predict', q: 'You switch from Euclidean to Manhattan distance. The neighbourhood outline of the star becomes...',
+      options: ['a diamond (in standardized units)', 'a bigger circle', 'a straight line'], answer: 0,
+      explain: 'Manhattan distance |Δx1| + |Δx2| is constant along a diamond, as walking along city blocks. In the original units the diamond is stretched by the scaling.',
+      tryIt: () => setup({ dist: 'manhattan' }) }
+  ]);
+
+  MLS.moduleBar({ id: META.id, title: META.title, section: META.sectionTitle, level: META.level },
+    { tabs: [{ id: 'sim', label: 'Simulation' }, { id: 'lesson', label: 'Lesson' }, { id: 'challenges', label: 'Challenges' }, { id: 'real', label: 'On real data' }] });
+  MLS.state.init({
+    id: META.id,
+    get: () => ({ ds: S.ds, n: S.n, seed: S.seed, k: S.k, dist: S.dist, scale: S.scale, q: S.q }),
+    set: o => {
+      if (DSN[o.ds]) S.ds = o.ds;
+      if (o.n) Object.keys(o.n).forEach(k => { if (DSN[k] && Number.isFinite(o.n[k])) S.n[k] = Math.max(40, Math.min(400, o.n[k])); });
+      if (Number.isFinite(o.seed)) S.seed = o.seed;
+      if (Number.isFinite(o.k)) S.k = Math.max(1, Math.min(40, Math.round(o.k)));
+      if (o.dist === 'euclid' || o.dist === 'manhattan') S.dist = o.dist;
+      if (typeof o.scale === 'boolean') S.scale = o.scale;
+      if (o.q && typeof o.q === 'object') S.q = o.q;
+    }
+  });
+  $('fourCast').href = MLS.APP.fourCastUrl;
+  window.__mls = { S, get R() { return R; }, get D() { return D; } };
+  document.addEventListener('mls:theme', () => refresh(false));
+  full();
+})();
+</script>
+</body>
+</html>

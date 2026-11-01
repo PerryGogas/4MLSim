@@ -1,0 +1,89 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>4MLSim | Machine Learning Simulation Lab</title>
+  <meta name="description" content="Interactive machine learning simulations for teaching, by Professor Periklis Gogas, EMEF Lab.">
+  <meta name="theme-color" content="#1B2340">
+  <link rel="manifest" href="manifest.json">
+  <link rel="icon" type="image/svg+xml" href="assets/img/icon.svg">
+  <link rel="icon" type="image/png" sizes="32x32" href="assets/img/favicon-32.png">
+  <link rel="apple-touch-icon" href="assets/img/apple-touch-icon.png">
+  <link rel="stylesheet" href="assets/css/4mlsim.css">
+  <script src="assets/js/core.js"></script>
+  <script src="assets/js/modules.js"></script>
+</head>
+<body>
+<div class="page">
+  <header id="mlsHeader" data-variant="full"></header>
+
+  <section class="hero">
+    <p>Interactive simulations that open up the inside of machine learning algorithms. Change the data, move the sliders, step through the algorithm and see what happens, from linear regression to neural networks and language models. Everything runs in your browser, also offline once installed.</p>
+    <div id="continueBox"></div>
+  </section>
+
+  <div class="toolbar">
+    <input type="search" id="search" placeholder="Search modules (e.g. tree, clustering, overfitting)" aria-label="Search modules">
+    <div class="seg" role="group" aria-label="Filter by level">
+      <button type="button" data-level="all" aria-pressed="true">All levels</button>
+      <button type="button" data-level="Intro" aria-pressed="false">Intro</button>
+      <button type="button" data-level="Intermediate" aria-pressed="false">Intermediate</button>
+      <button type="button" data-level="Advanced" aria-pressed="false">Advanced</button>
+    </div>
+    <span class="note" id="readyNote" style="margin:0"></span>
+  </div>
+
+  <main id="sections"></main>
+
+  <footer id="mlsFooter"></footer>
+</div>
+
+<script>
+(function () {
+  const MLS = window.MLS;
+  let level = 'all', query = '';
+
+  function card(m) {
+    const tags = '<div class="mc-tags"><span class="tag lvl-' + m.level.toLowerCase() + '">' + m.level + '</span>' +
+      (m.status === 'ready' ? '' : '<span class="soon">In development</span>') + '</div>';
+    const inner = '<div class="mc-top"><div class="mc-ico">' + MLS.moduleIcon(m.icon) + '</div><h3>' + m.title + '</h3></div><p>' + m.blurb + '</p>' + tags;
+    if (m.status !== 'ready') return '<div class="mod-card planned" aria-disabled="true">' + inner + '</div>';
+    return '<a class="mod-card" ' + MLS.navAttrs('modules/' + m.id + '.html') + '>' + inner + '</a>';
+  }
+
+  function render() {
+    const host = document.getElementById('sections');
+    const q = query.trim().toLowerCase();
+    let html = '', shown = 0;
+    MLS.SECTIONS.forEach(s => {
+      const mods = MLS.MODULES.filter(m => m.section === s.id &&
+        (level === 'all' || m.level === level) &&
+        (!q || (m.title + ' ' + m.blurb + ' ' + s.title).toLowerCase().includes(q)));
+      if (!mods.length) return;
+      shown += mods.length;
+      html += '<section class="section-block"><div class="section-head"><h2>' + s.title + '</h2><span class="count">' + s.blurb + '</span></div>' +
+        '<div class="mod-cards">' + mods.map(card).join('') + '</div></section>';
+    });
+    host.innerHTML = html || '<div class="empty">No module matches “' + MLS.esc(query) + '”.</div>';
+  }
+
+  document.getElementById('search').addEventListener('input', e => { query = e.target.value; render(); });
+  MLS.$$('[data-level]').forEach(b => b.onclick = () => {
+    level = b.dataset.level;
+    MLS.$$('[data-level]').forEach(x => x.setAttribute('aria-pressed', String(x === b)));
+    render();
+  });
+
+  const all = MLS.MODULES.filter(m => !m.tool), ready = all.filter(m => m.status === 'ready');
+  document.getElementById('readyNote').textContent = ready.length + ' of ' + all.length + ' simulations ready.';
+
+  const last = MLS.moduleMeta(MLS.store.get('lastModule', ''));
+  if (last && last.status === 'ready') {
+    document.getElementById('continueBox').innerHTML = '<a class="btn btn-secondary" ' + MLS.navAttrs('modules/' + last.id + '.html') + '>Continue: ' + last.title + ' &rarr;</a>';
+  }
+  render();
+})();
+</script>
+</body>
+</html>

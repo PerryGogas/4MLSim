@@ -1,0 +1,459 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Bias-Variance Tradeoff | 4MLSim</title>
+  <meta name="theme-color" content="#1B2340">
+  <link rel="manifest" href="../manifest.json">
+  <link rel="icon" type="image/svg+xml" href="../assets/img/icon.svg">
+  <link rel="apple-touch-icon" href="../assets/img/apple-touch-icon.png">
+  <link rel="stylesheet" href="../assets/vendor/temml.css">
+  <link rel="stylesheet" href="../assets/css/4mlsim.css">
+  <script src="../assets/vendor/temml.min.js"></script>
+  <script src="../assets/js/core.js"></script>
+  <script src="../assets/js/stats.js"></script>
+  <script src="../assets/js/plot.js"></script>
+  <script src="../assets/js/modules.js"></script>
+</head>
+<body>
+<div class="page">
+  <header id="mlsHeader" data-variant="compact"></header>
+  <div class="mod-top" id="mlsTop"><div id="mlsModBar"></div><div id="mlsTabs"></div></div>
+
+  <div class="intro-box" id="mlsIntro">
+    <h3>What this module shows</h3>
+    <div class="intro-cols">
+      <div>
+        <p>Imagine collecting a new sample of workers many times and re-estimating the same model on each sample. The fitted curves differ from sample to sample. Two things can go wrong:</p>
+        <ul>
+          <li><b>Bias</b>: on average over all samples, the curve misses the true relationship. Too simple a model is biased (underfitting).</li>
+          <li><b>Variance</b>: the curve jumps around from sample to sample. Too flexible a model has high variance (overfitting).</li>
+        </ul>
+        <p>The expected prediction error of a model on new data is <b>bias² + variance + noise</b>. The noise belongs to the data and is the same for every model; bias² and variance belong to the model, so the prediction error changes when the model changes. Raising complexity lowers bias but raises variance: the best model balances the two.</p>
+      </div>
+      <div>
+        <p><b>How to use it</b></p>
+        <ol>
+          <li>Each thin blue line is the model fitted on one sample. Press <b>Play</b> to add samples one at a time.</li>
+          <li>Move the <b>complexity</b> slider and watch the cloud of curves: narrow but off target, or centred but spread out.</li>
+          <li>The decomposition chart shows bias², variance and their sum for every complexity.</li>
+          <li>Click the curves chart to look at the predictions at one value of x.</li>
+        </ol>
+      </div>
+    </div>
+  </div>
+
+  <!-- ===================== SIMULATION ===================== -->
+  <section data-panel="sim">
+    <div class="mod-grid">
+      <aside class="side" aria-label="Controls">
+        <div class="card">
+          <div class="card-head"><h3>1. Data-generating process<button type="button" class="help" data-help="dataset">?</button></h3></div>
+          <label class="field" for="ds">True relationship</label>
+          <select id="ds">
+            <option value="wage">Labour: wages over the career</option>
+            <option value="sales">Marketing: sales and advertising</option>
+            <option value="sine">Synthetic: sine wave</option>
+          </select>
+          <div class="field-row"><label for="n">Observations per sample<button type="button" class="help" data-help="n">?</button></label><output id="nVal"></output></div>
+          <input type="range" id="n" min="10" max="200" step="5" value="25">
+          <div class="field-row"><label for="noise">Noise<button type="button" class="help" data-help="noise">?</button></label><output id="noiseVal"></output></div>
+          <input type="range" id="noise" min="0.2" max="3" step="0.1" value="1">
+          <div class="field-row"><label for="seed">Random seed<button type="button" class="help" data-help="seed">?</button></label></div>
+          <div class="inline-inputs"><input type="number" id="seed" min="1" max="99999" step="1" value="2026" aria-label="Random seed"><button type="button" class="btn-ghost btn-icon" id="newSeed" title="New random samples" style="flex:0 0 auto">&#127922;</button></div>
+          <p class="note" id="dataNote"></p>
+        </div>
+
+        <div class="card">
+          <div class="card-head"><h3>2. Model</h3></div>
+          <label class="field" for="model">Model family<button type="button" class="help" data-help="model">?</button></label>
+          <select id="model">
+            <option value="poly">Polynomial regression (degree d)</option>
+            <option value="knn">K-nearest neighbours (k)</option>
+          </select>
+          <div class="field-row"><label for="cx" id="cxLabel">Complexity</label><output id="cxVal"></output></div>
+          <input type="range" id="cx" min="0" max="10" step="1" value="1">
+          <p class="note" id="cxNote"></p>
+        </div>
+
+        <div class="card">
+          <div class="card-head"><h3>3. Repeated samples<button type="button" class="help" data-help="repeat">?</button></h3></div>
+          <div class="field-row"><label for="R">Number of samples</label><output id="RVal"></output></div>
+          <input type="range" id="R" min="10" max="100" step="5" value="50">
+          <div id="stepper" style="margin-top:8px"></div>
+          <p class="note" id="shownNote"></p>
+        </div>
+      </aside>
+
+      <main class="main">
+        <div class="stat-grid" id="stats"></div>
+        <div id="statusLine" class="status-line"></div>
+        <div class="fig-grid">
+          <div id="figFits" class="fig-wide"></div>
+          <div id="figDecomp"></div>
+          <div id="figPoint"></div>
+        </div>
+      </main>
+    </div>
+  </section>
+
+  <!-- ===================== LESSON ===================== -->
+  <section data-panel="lesson" class="card lesson" hidden>
+    <div id="mlsMathCtl"></div>
+    <p class="lvl-only-intuition note" style="margin-bottom:8px">Showing the intuition only. Choose <b>Formulas</b> or <b>Deep dive</b> above to add the mathematics.</p>
+
+    <h4>The thought experiment</h4>
+    <p>An estimator is a rule that turns a sample into a fitted model. Because the sample is random, the fitted model is random too. Econometrics asks the same question about a coefficient (its <b>sampling distribution</b>); here we ask it about a whole prediction curve. The simulation draws many samples from the same population and refits the model on each.</p>
+
+    <h4>Bias and variance, like darts</h4>
+    <ul>
+      <li><b>Low bias, low variance</b>: darts close together around the bull's eye. The ideal.</li>
+      <li><b>High bias, low variance</b>: darts close together but away from the centre. A model that is too simple, for example a straight line for a curved wage profile: every sample gives almost the same wrong line.</li>
+      <li><b>Low bias, high variance</b>: darts centred on the bull's eye on average, but scattered. A very flexible model: right on average, but any single fit can be far off.</li>
+    </ul>
+    <p>The <b>noise</b> is the part of y that no model can predict (luck, unmeasured factors). It sets a floor under the prediction error.</p>
+    <div class="math-block lvl-math"><div class="mb-title">The decomposition at a point x₀</div>
+      <div class="tex-block">E\bigl[(y_0-\hat f(x_0))^2\bigr] = \underbrace{\bigl(E[\hat f(x_0)]-f(x_0)\bigr)^2}_{\text{bias}^2} + \underbrace{E\bigl[(\hat f(x_0)-E[\hat f(x_0)])^2\bigr]}_{\text{variance}} + \underbrace{\sigma^2}_{\text{noise}}</div>
+      <p class="note">The expectation is over repeated training samples and the noise of the new observation y₀. The cards average each term over the range of x.</p>
+    </div>
+
+    <h4>The tradeoff</h4>
+    <p>Making a model more flexible (higher polynomial degree, fewer neighbours) lets it follow the true curve more closely, so the bias falls. But it also lets it follow the noise of each particular sample, so the variance rises. The sum is U-shaped. This is the same U-shape as the test error in the Polynomial Overfitting module: there you saw one sample; here you see why.</p>
+    <ul>
+      <li><b>More observations</b> per sample reduce the variance, so the best complexity moves up.</li>
+      <li><b>More noise</b> raises the variance of flexible models (and the noise floor), so the best complexity moves down.</li>
+      <li>The bias depends on the model family and the true curve, not on the sample size.</li>
+    </ul>
+
+    <h4>Econometrics and machine learning</h4>
+    <p>Classical econometrics prizes <b>unbiased</b> estimators: under the Gauss-Markov assumptions OLS has the smallest variance among unbiased linear estimators. Machine learning cares about the <b>total</b> prediction error, so it accepts some bias when that buys a larger fall in variance. Ridge and lasso regression (see the Regularization module) do exactly that. Omitted-variable bias is a bias problem; adding many weak or collinear regressors is a variance problem.</p>
+    <div class="math-block lvl-math"><div class="mb-title">Two examples</div>
+      <div class="tex-block">\text{k-nearest neighbours: } \operatorname{Var}\hat f(x_0) \approx \frac{\sigma^2}{k}, \qquad \text{OLS with } p \text{ regressors: } \frac{1}{n}\sum_i \operatorname{Var}\hat f(x_i) = \frac{p\,\sigma^2}{n}</div>
+    </div>
+
+    <div class="math-block deep lvl-deep"><div class="mb-title">Deep dive</div>
+      <p><b>Derivation.</b> Write <span class="tex">y_0 = f(x_0)+\varepsilon_0</span> with <span class="tex">E\varepsilon_0=0</span>, <span class="tex">\operatorname{Var}\varepsilon_0=\sigma^2</span>, independent of the training sample. Adding and subtracting <span class="tex">\bar f(x_0)=E\hat f(x_0)</span>, the cross terms vanish because <span class="tex">\varepsilon_0</span> is independent of <span class="tex">\hat f</span> and <span class="tex">E[\hat f(x_0)-\bar f(x_0)]=0</span>.</p>
+      <p><b>What the simulation computes.</b> With R samples and a grid of x values, bias² is the squared gap between the average of the R fitted curves and the true curve, and the variance is the average squared distance of the R curves from their average, both averaged over the grid. Their sum plus σ² is compared with a direct simulation: the mean squared error of each fitted curve on a large fresh test sample, averaged over the R fits.</p>
+      <p><b>Beyond the U.</b> For models with more parameters than observations (large neural networks, interpolating kernel methods) the test error can fall again after the interpolation point: the "double descent" curve (Belkin, Hsu, Ma and Mandal, 2019). The decomposition still holds; the variance of the minimum-norm interpolator shrinks as parameters are added.</p>
+      <p class="note">References: Geman, Bienenstock and Doursat (1992), "Neural networks and the bias/variance dilemma", <i>Neural Computation</i> 4(1); Hastie, Tibshirani and Friedman (2009), <i>The Elements of Statistical Learning</i>, §7.3; James, Witten, Hastie and Tibshirani (2021), <i>An Introduction to Statistical Learning</i>, §2.2; Belkin et al. (2019), <i>PNAS</i> 116(32).</p>
+    </div>
+  </section>
+
+  <!-- ===================== CHALLENGES ===================== -->
+  <section data-panel="challenges" class="card" hidden>
+    <div class="card-head"><h3>Challenges</h3><span class="card-sub">Answer the "predict first" questions before testing them in the Simulation tab.</span></div>
+    <div id="challenges"></div>
+  </section>
+
+  <!-- ===================== REAL DATA ===================== -->
+  <section data-panel="real" class="card lesson" hidden>
+    <h4>From the simulation to real data</h4>
+    <ul>
+      <li>With real data you see only one sample, so bias and variance cannot be measured directly. Cross-validation estimates their sum (the expected test error) and is how the complexity is chosen in practice.</li>
+      <li>The bootstrap (resampling your own data with replacement) imitates "new samples": refitting on bootstrap samples and looking at the spread of predictions estimates the variance part. Random forests use exactly this idea to reduce variance.</li>
+      <li>When data are scarce, as with many macroeconomic series, prefer simpler models: variance dominates.</li>
+    </ul>
+    <div class="crosslink"><span>&#10140;</span><span>On your own data, <a id="fourCast" target="_blank" rel="noopener"><b>4Cast Lab</b></a> lets you compare simple and flexible models by their out-of-sample errors.</span></div>
+  </section>
+
+  <footer id="mlsFooter"></footer>
+</div>
+
+<script>
+(function () {
+  'use strict';
+  const MLS = window.MLS;
+  const META = MLS.moduleMeta('bias-variance');
+  const $ = id => document.getElementById(id);
+  const F = MLS.fmt, G = (v, s) => MLS.fmtSig(v, s || 3);
+
+  const DS = {
+    wage: { xl: 'Experience (years)', yl: 'Hourly wage (€)', xr: [0, 40], sd: 1.8, f: e => 9 + 0.9 * e - 0.016 * e * e,
+      story: 'Wages over the career: a concave (quadratic) profile plus noise. Every sample is a fresh group of workers from the same labour market.' },
+    sales: { xl: 'Advertising spend (k€ per month)', yl: 'Sales (k€ per month)', xr: [0, 100], sd: 9, f: a => 60 + 45 * Math.log(1 + a / 10),
+      story: 'Sales with diminishing returns to advertising. Every sample is a fresh set of months.' },
+    sine: { xl: 'x', yl: 'y', xr: [0, 1], sd: 0.3, f: x => Math.sin(2 * Math.PI * x),
+      story: 'y = sin(2πx) plus noise: a curve with two turns, hard for simple models.' }
+  };
+  const KS = [40, 30, 20, 15, 10, 7, 5, 4, 3, 2, 1];          /* knn: from simple (large k) to complex */
+  const NGRID = 200, NTEST = 2000;
+
+  const S = { ds: 'wage', n: 25, noise: 1, seed: 2026, model: 'poly', deg: 1, k: 10, R: 50, shown: 50, x0: null };
+  let B = null;          /* simulated samples and decomposition cache */
+  let C = null;          /* results for the current complexity */
+
+  /* ------------------------------------------------------------------
+     models
+     ------------------------------------------------------------------ */
+  function knnPredictor(x, y, k) {
+    const o = x.map((v, i) => i).sort((a, b) => x[a] - x[b]), xs = o.map(i => x[i]), ys = o.map(i => y[i]), n = xs.length;
+    k = Math.min(k, n);
+    return x0 => {
+      let lo = 0, hi = n; while (lo < hi) { const m = (lo + hi) >> 1; if (xs[m] < x0) lo = m + 1; else hi = m; }
+      let l = lo - 1, r = lo, s = 0;
+      for (let t = 0; t < k; t++) { if (r >= n || (l >= 0 && x0 - xs[l] <= xs[r] - x0)) { s += ys[l]; l--; } else { s += ys[r]; r++; } }
+      return s / k;
+    };
+  }
+  function predictor(sample, model, c) {
+    if (model === 'poly') { const d = Math.min(c, sample.x.length - 2); return MLS.polyFit(sample.x, sample.y, d, B.lo, B.hi).f; }
+    return knnPredictor(sample.x, sample.y, c);
+  }
+  const cxList = () => (S.model === 'poly' ? Array.from({ length: Math.min(10, S.n - 2) + 1 }, (_, d) => d) : KS.filter(k => k <= S.n));
+  const curCx = () => (S.model === 'poly' ? S.deg : S.k);
+  const cxName = c => (S.model === 'poly' ? 'degree ' + c : 'k = ' + c);
+
+  /* ------------------------------------------------------------------
+     simulation
+     ------------------------------------------------------------------ */
+  function simulate() {
+    const d = DS[S.ds], sd = d.sd * S.noise, lo = d.xr[0], hi = d.xr[1];
+    const samples = [];
+    for (let r = 0; r < S.R; r++) {
+      const g = MLS.rng(S.seed * 1009 + r * 7919 + 1), x = [], y = [];
+      for (let i = 0; i < S.n; i++) { const xi = g.uniform(lo, hi); x.push(xi); y.push(d.f(xi) + g.normal(0, sd)); }
+      samples.push({ x, y });
+    }
+    const grid = Array.from({ length: NGRID }, (_, j) => lo + (hi - lo) * (j + 0.5) / NGRID);
+    const tg = MLS.rng(S.seed * 7 + 3), test = { x: [], y: [] };
+    /* new points spread evenly over x; each x appears twice with noise +e and −e (antithetic pairs), and the noise is
+       rescaled so that its mean square is exactly σ²: the check is then free of luck in the test noise */
+    const half = NTEST / 2, eps = Array.from({ length: half }, () => tg.normal(0, 1)), es = Math.sqrt(MLS.mean(eps.map(e => e * e)));
+    for (let i = 0; i < half; i++) { const xi = lo + (hi - lo) * (i + 0.5) / half, e = sd * eps[i] / es; test.x.push(xi, xi); test.y.push(d.f(xi) + e, d.f(xi) - e); }
+    B = { d, sd, lo, hi, samples, grid, truth: grid.map(d.f), test, decomp: {} };
+  }
+  /* bias², variance (averaged over the grid) and the simulated test MSE for complexity c using the first m samples */
+  function decompose(c, m) {
+    const preds = [], testMse = [];
+    for (let r = 0; r < m; r++) {
+      const f = predictor(B.samples[r], S.model, c);
+      preds.push(B.grid.map(f));
+      testMse.push(B.test.x.reduce((s, x, i) => s + (B.test.y[i] - f(x)) ** 2, 0) / NTEST);
+    }
+    const mean = B.grid.map((_, j) => preds.reduce((s, p) => s + p[j], 0) / m);
+    const bias2 = MLS.mean(mean.map((v, j) => (v - B.truth[j]) ** 2));
+    const vari = MLS.mean(B.grid.map((_, j) => preds.reduce((s, p) => s + (p[j] - mean[j]) ** 2, 0) / m));
+    return { c, preds, mean, bias2, vari, noise: B.sd * B.sd, total: bias2 + vari + B.sd * B.sd, sim: MLS.mean(testMse) };
+  }
+  function allDecomp() {
+    const key = S.model;
+    if (!B.decomp[key]) B.decomp[key] = cxList().map(c => { const r = decompose(c, S.R); delete r.preds; return r; });
+    return B.decomp[key];
+  }
+  function compute() { C = decompose(curCx(), Math.max(1, Math.min(S.shown, S.R))); C.all = allDecomp(); C.best = C.all.reduce((a, r) => (r.total < a.total ? r : a)); }
+
+  /* ------------------------------------------------------------------
+     stats and status
+     ------------------------------------------------------------------ */
+  const card = MLS.statCard;
+  function updateStats() {
+    const m = Math.min(S.shown, S.R), big = Math.max(C.bias2, C.vari);
+    $('stats').innerHTML =
+      card('Bias²', F(C.bias2, 3), 'average miss of the mean curve, squared', C.bias2 > 2 * C.vari ? 'bad' : '', 'st_bias') +
+      card('Variance', F(C.vari, 3), 'spread of the curves across samples', C.vari > 2 * C.bias2 ? 'bad' : '', 'st_var') +
+      card('Noise σ²', F(C.noise, 3), 'no model can remove this', '', 'st_noise') +
+      card('Prediction error of this model', F(C.total, 3), 'expected MSE on new data = bias² + variance + noise', C.c === C.best.c ? 'good' : '', 'st_total') +
+      card('Check: measured on new data', F(C.sim, 3), 'MSE of the fitted models on ' + NTEST + ' new points', '', 'st_sim');
+    let msg, cls = 'status-line';
+    if (m < 5) msg = 'Only ' + m + ' sample' + (m > 1 ? 's' : '') + ' so far: the variance cannot be judged yet. Press Play or End to draw more.';
+    else if (C.bias2 > 2 * C.vari) { msg = '⚠ High bias (underfitting): the curves agree with each other but miss the true relationship. Bias² is ' + F(C.bias2 / Math.max(C.vari, 1e-12), 1) + '× the variance. More complexity would help.'; cls += ' bad'; }
+    else if (C.vari > 2 * C.bias2) { msg = '⚠ High variance (overfitting): on average the curves are close to the truth, but each sample gives a very different curve. Variance is ' + F(C.vari / Math.max(C.bias2, 1e-12), 1) + '× bias².' + (C.c !== C.best.c ? ' Less complexity would help.' : ''); cls += ' bad'; }
+    else msg = 'Bias² and variance are of similar size.';
+    if (m >= 5 && C.c === C.best.c) { msg = '✓ ' + cxName(C.c).replace(/^./, ch => ch.toUpperCase()) + ' gives the lowest expected test error: the best balance of bias and variance. ' + (cls.includes('bad') ? '' : ''); cls = 'status-line ok'; }
+    $('statusLine').textContent = msg; $('statusLine').className = cls;
+    $('shownNote').innerHTML = 'Showing <b>' + m + '</b> of ' + S.R + ' samples of ' + S.n + ' observations. The cards use the samples shown; the decomposition chart uses all ' + S.R + '.';
+  }
+
+  /* ------------------------------------------------------------------
+     figures
+     ------------------------------------------------------------------ */
+  const col = () => ({ s1: MLS.color('series-1'), s2: MLS.color('series-2'), tru: MLS.color('series-3'), ink: MLS.color('chart-ink'), mu: MLS.color('chart-muted'), s4: MLS.color('series-4') });
+  const figFits = MLS.figure($('figFits'), {
+    title: 'The model fitted on each sample', help: 'figfits', file: 'bias-variance-fits',
+    plot: { aspect: 0.42, margin: { l: 66 }, x: { label: () => B.d.xl }, y: { label: () => B.d.yl },
+      onClick: x => { S.x0 = +x.toPrecision(4); drawFits(); drawPoint(); figPoint.refreshTable(); MLS.state.save(); } },
+    data: () => ({ cols: [B.d.xl, 'True f(x)', 'Average fit'].concat(C.preds.slice(0, 50).map((_, r) => 'Sample ' + (r + 1))), rows: B.grid.map((x, j) => [x, B.truth[j], C.mean[j]].concat(C.preds.slice(0, 50).map(p => p[j]))) })
+  });
+  const figDecomp = MLS.figure($('figDecomp'), {
+    title: 'Bias², variance and expected error', help: 'figdecomp', file: 'bias-variance-decomposition',
+    plot: { aspect: 0.72, margin: { l: 62 }, x: { label: () => (S.model === 'poly' ? 'Polynomial degree (more complex →)' : 'Neighbours k (more complex →)'), fmt: v => cxTick(v) }, y: { label: 'Mean squared error' },
+      onClick: x => { const L = cxList(), i = Math.max(0, Math.min(L.length - 1, Math.round(x))); setCx(L[i]); } },
+    data: () => ({ cols: [S.model === 'poly' ? 'Degree' : 'k', 'Bias²', 'Variance', 'Noise', 'Expected prediction error (MSE)', 'Measured on new data'], rows: C.all.map(r => [r.c, r.bias2, r.vari, r.noise, r.total, r.sim]) })
+  });
+  const figPoint = MLS.figure($('figPoint'), {
+    title: 'Predictions at one value of x', help: 'figpoint', file: 'bias-variance-at-x0',
+    plot: { aspect: 0.72, margin: { l: 40 }, x: { label: 'Predicted y at x₀' }, y: { ticks: false, label: 'Samples' } },
+    data: () => ({ cols: ['Sample', 'Prediction at x₀'], rows: pointPreds().map((v, r) => [r + 1, v]) })
+  });
+  function cxTick(v) { const L = cxList(), i = Math.round(v); if (Math.abs(v - i) > 1e-9 || i < 0 || i >= L.length) return ''; return String(L[i]); }
+  const x0 = () => (S.x0 !== null && S.x0 >= B.lo && S.x0 <= B.hi ? S.x0 : B.lo + 0.75 * (B.hi - B.lo));
+  function pointPreds() { const m = Math.min(S.shown, S.R), out = []; for (let r = 0; r < m; r++) out.push(predictor(B.samples[r], S.model, curCx())(x0())); return out; }
+
+  function drawFits() {
+    const P = figFits.plot, c = col(), m = Math.min(S.shown, S.R);
+    const all = B.truth.concat(C.mean); B.samples.slice(0, Math.min(m, 30)).forEach(s => all.push(...s.y));
+    const yd = MLS.niceDomain(MLS.stat.min(all), MLS.stat.max(all), 0.1);
+    P.setX(B.lo, B.hi); P.setY(yd[0], yd[1]);
+    const last = B.samples[m - 1], fl = predictor(last, S.model, curCx());
+    P.draw(P => {
+      P.vline(x0(), { color: c.mu, dash: '2 4', width: 1.2 });
+      C.preds.forEach(p => P.line(B.grid.map((x, j) => [x, p[j]]), { color: c.s1, width: 1.1, opacity: m > 30 ? 0.22 : 0.35 }));
+      P.points(last.x.map((x, i) => ({ x, y: last.y[i] })), { color: c.s2, r: 3.6, opacity: 0.9 });
+      P.fn(fl, { color: c.s2, width: 2, samples: 300 });
+      P.line(B.grid.map((x, j) => [x, B.truth[j]]), { color: c.tru, width: 2.4, dash: '7 5' });
+      P.line(B.grid.map((x, j) => [x, C.mean[j]]), { color: c.ink, width: 3 });
+    });
+    figFits.legend([{ label: 'Fit on one sample (each thin line)', color: c.s1, line: true, width: 1.2 }, { label: 'Latest sample and its fit', color: c.s2, line: true }, { label: 'Average of all fits', color: c.ink, line: true, width: 3 }, { label: 'True relationship', color: c.tru, line: true, dash: '7 5' }, { label: 'x₀ (click to move)', color: c.mu, line: true, dash: '2 4', width: 1.2 }]);
+    figFits.caption('Bias: the gap between the black average and the green truth. Variance: how widely the thin blue lines spread around the black average. ' + (S.model === 'knn' ? 'K-nearest neighbours predicts by averaging the y of the k closest observations.' : ''));
+  }
+  function drawDecomp() {
+    const P = figDecomp.plot, c = col(), L = cxList(), A = C.all;
+    const ci = L.indexOf(curCx()), bi = L.indexOf(C.best.c);
+    const top = Math.min(Math.max(...A.map(r => r.total)), Math.max(A[0].total, 2.5 * C.best.total)) * 1.08;
+    P.setX(-0.4, L.length - 0.6); P.setY(0, top);
+    const ln = key => A.map((r, i) => [i, r[key]]);   /* values above the top are clipped by the chart */
+    P.crosshair([{ name: 'Bias²', color: c.s1, pts: A.map((r, i) => [i, r.bias2]) }, { name: 'Variance', color: c.s2, pts: A.map((r, i) => [i, r.vari]) }, { name: 'Prediction error', color: c.ink, pts: A.map((r, i) => [i, r.total]) }], v => cxName(L[Math.round(v)] !== undefined ? L[Math.round(v)] : ''), v => F(v, 3));
+    P.draw(P => {
+      P.hline(A[0].noise, { color: c.mu, dash: '3 4', width: 1.4 });
+      if (ci >= 0) P.vline(ci, { color: c.ink, dash: '5 4', width: 1.3 });
+      P.line(ln('bias2'), { color: c.s1, width: 2.4 }); P.line(ln('vari'), { color: c.s2, width: 2.4 });
+      P.line(ln('total'), { color: c.ink, width: 3 });
+      P.points(ln('sim').filter(p => p[1] <= top).map(p => ({ x: p[0], y: p[1] })), { color: c.ink, r: 3.4, hollow: true });
+      P.points([{ x: bi, y: Math.min(C.best.total, top * 0.99) }], { color: c.tru, shape: 'star', r: 8 });
+    });
+    figDecomp.legend([{ label: 'Bias²', color: c.s1, line: true }, { label: 'Variance', color: c.s2, line: true }, { label: 'Noise σ²', color: c.mu, line: true, dash: '3 4', width: 1.4 }, { label: 'Prediction error = bias² + variance + noise', color: c.ink, line: true, width: 3 }, { label: 'Measured on new data', color: 'none', stroke: c.ink, shape: 'circle' }, { label: 'Lowest expected error', color: c.tru, shape: 'star' }]);
+    figDecomp.caption('Click to choose a complexity. Hollow circles: the test MSE measured directly; they sit on the black line, confirming the decomposition.' + (A.some(r => r.total > top) ? ' Lines leaving the top: errors too large to show (hover for values).' : ''));
+  }
+  function drawPoint() {
+    const P = figPoint.plot, c = col(), v = pointPreds(), t = B.d.f(x0()), mn = MLS.mean(v), sd = Math.sqrt(MLS.mean(v.map(p => (p - mn) ** 2)));
+    const lo = Math.min(t, ...v), hi = Math.max(t, ...v), xd = MLS.niceDomain(lo, hi, 0.12);
+    P.setX(xd[0], xd[1]); P.setY(0, 1);
+    const g = MLS.rng(17);
+    P.draw(P => {
+      P.rect(mn - sd, 0, mn + sd, 1, { fill: MLS.rgba(c.s2, 0.12) });
+      P.points(v.map((p, i) => ({ x: p, y: 0.12 + 0.76 * g.random(), i })), { color: c.s1, r: 4, opacity: 0.8, tip: d => 'Sample ' + (d.i + 1) + '<br>Prediction: ' + F(d.x, 3) });
+      P.vline(t, { color: c.tru, width: 2.6, dash: '7 5' });
+      P.vline(mn, { color: c.ink, width: 2.6 });
+    });
+    figPoint.legend([{ label: 'Prediction from one sample', color: c.s1 }, { label: 'True value f(x₀)', color: c.tru, line: true, dash: '7 5' }, { label: 'Average prediction', color: c.ink, line: true }, { label: '± 1 standard deviation', color: MLS.rgba(c.s2, 0.35), box: true }]);
+    figPoint.caption('At x₀ = <b>' + F(x0(), 2) + '</b>: bias = average − truth = <b>' + F(mn - t, 3) + '</b>; standard deviation across samples = <b>' + F(sd, 3) + '</b> (variance ' + F(sd * sd, 3) + '). Click the top chart to move x₀.');
+  }
+
+  /* ------------------------------------------------------------------
+     controls
+     ------------------------------------------------------------------ */
+  function syncUI() {
+    $('ds').value = S.ds; $('n').value = S.n; $('nVal').textContent = S.n; $('noise').value = S.noise; $('noiseVal').textContent = F(S.noise, 1) + '×';
+    $('seed').value = S.seed; $('model').value = S.model; $('R').value = S.R; $('RVal').textContent = S.R;
+    const L = cxList();
+    if (S.model === 'poly') { $('cxLabel').firstChild.textContent = 'Polynomial degree d'; $('cx').min = 0; $('cx').max = L.length - 1; $('cx').step = 1; $('cx').value = S.deg; $('cxVal').textContent = S.deg; $('cxNote').innerHTML = 'Higher degree = more complex. Degree 0 predicts the average everywhere.'; }
+    else { $('cxLabel').firstChild.textContent = 'Neighbours k'; $('cx').min = 0; $('cx').max = L.length - 1; $('cx').step = 1; $('cx').value = L.indexOf(S.k); $('cxVal').textContent = 'k = ' + S.k; $('cxNote').innerHTML = 'Fewer neighbours = more complex. k = 1 copies the y of the single closest observation. Slider: from k = ' + L[0] + ' (left) to k = 1 (right).'; }
+    if (!$('cxLabel').querySelector('.help')) $('cxLabel').insertAdjacentHTML('beforeend', MLS.helpBtn('complexity'));
+    $('dataNote').innerHTML = B.d.story + ' Noise standard deviation σ = <b>' + F(B.sd, 2) + '</b>.';
+  }
+  function fixCx() {
+    const L = cxList();
+    if (S.model === 'poly') S.deg = Math.min(S.deg, L[L.length - 1]);
+    else if (!L.includes(S.k)) S.k = L.reduce((a, k) => (Math.abs(k - S.k) < Math.abs(a - S.k) ? k : a), L[0]);
+  }
+  function refresh(resim) {
+    if (resim !== false || !B) simulate();
+    fixCx(); S.shown = Math.min(S.shown, S.R);
+    compute(); syncUI(); updateStats(); drawFits(); drawDecomp(); drawPoint();
+    figFits.refreshTable(); figDecomp.refreshTable(); figPoint.refreshTable();
+    if (ch) ch.check();
+    MLS.state.save();
+  }
+  const light = () => refresh(false);
+  function setCx(c) { stepper.stop(); if (S.model === 'poly') S.deg = c; else S.k = c; light(); }
+  const resim = () => { stepper.stop(); refresh(); };
+  $('ds').onchange = e => { S.ds = e.target.value; S.x0 = null; resim(); };
+  $('n').oninput = e => { S.n = +e.target.value; resim(); };
+  $('noise').oninput = e => { S.noise = +e.target.value; resim(); };
+  $('seed').onchange = e => { S.seed = Math.max(1, Math.round(+e.target.value) || 1); resim(); };
+  $('newSeed').onclick = () => { S.seed = MLS.newSeed(); resim(); };
+  $('model').onchange = e => { S.model = e.target.value; stepper.stop(); light(); };
+  $('cx').oninput = e => { const L = cxList(); setCx(S.model === 'poly' ? +e.target.value : L[+e.target.value]); };
+  $('R').oninput = e => { S.R = +e.target.value; S.shown = S.R; resim(); };
+  const stepper = MLS.stepper($('stepper'), {
+    speed: 6, runMax: 200,
+    step: () => { if (S.shown >= S.R) return false; S.shown++; return S.shown < S.R; },
+    reset: () => { S.shown = 1; },
+    after: () => light()
+  });
+
+  /* ------------------------------------------------------------------
+     help
+     ------------------------------------------------------------------ */
+  MLS.registerHelp({
+    dataset: { title: 'Data-generating process', html: 'The population the samples come from: a true curve f(x) plus random noise. In real life we see one sample; here the computer draws as many as we like from the same population.' },
+    n: { title: 'Observations per sample', html: 'The size of each training sample. Larger samples reduce the variance of every model (the curves agree more), but do not remove the bias of a model that is too simple.' },
+    noise: { title: 'Noise', html: 'Scales the standard deviation σ of the random part of y. It raises the noise floor σ² and the variance of flexible models.' },
+    seed: { title: 'Random seed', html: 'Fixes all the random samples, so everyone sees the same curves. The dice draws a completely new set of samples.' },
+    model: { title: 'Model family', html: '<b>Polynomial regression</b>: OLS on x, x², ..., x<sup>d</sup>. <b>K-nearest neighbours</b>: the prediction at x is the average y of the k observations closest to x; no equation is estimated. Both can be made simple or flexible.' },
+    complexity: { title: 'Complexity', html: 'How flexible the model is. For polynomials, a higher degree; for k-nearest neighbours, a smaller k (each prediction relies on fewer, closer points). More complexity: lower bias, higher variance.' },
+    repeat: { title: 'Repeated samples', html: 'How many independent samples are drawn and fitted. More samples give more accurate estimates of bias² and variance; they do not change the true values. <b>Play</b> adds samples one at a time; <b>Reset</b> goes back to one sample; <b>End</b> shows them all.' },
+    st_bias: { title: 'Bias²', html: 'The squared gap between the average fitted curve (over all samples) and the true curve, averaged over x. It measures systematic error: what the model gets wrong even with endless samples of this size.' },
+    st_var: { title: 'Variance', html: 'How much the fitted curve changes from one sample to another: the average squared distance between each sample\'s curve and the average curve, averaged over x.' },
+    st_noise: { title: 'Noise σ²', html: 'The variance of the random part of y. Even the true curve has this mean squared error on new data.' },
+    st_total: { title: 'Expected prediction error (MSE)', html: 'How large, on average, the squared error is when <b>this model</b> (this family and complexity, estimated on a sample of this size) predicts a new observation. It equals bias² + variance + noise.<br><br><b>Why does it change with the model?</b> Only the noise σ² belongs to the data and is the same for every model. Bias² and variance describe the model: a straight line misses the curve (bias), a very flexible curve changes from sample to sample (variance). Different models, different prediction errors; the best model is the one with the smallest.<br><br><b>Is it known?</b> In real work, no: we do not know the true relationship, so bias² and variance cannot be computed and the prediction error is estimated with a test set or cross-validation. Here the computer generated the data, so it knows the truth and can compute every term exactly.' },
+    st_sim: { title: 'Check on new data', html: 'A direct check of the card on the left: each sample\'s fitted model predicts ' + NTEST + ' new observations and the squared errors are averaged. It should be close to the expected prediction error (up to simulation noise).' },
+    figfits: { title: 'Fits on many samples', html: 'Each thin blue line is the model estimated on one sample. Orange: the latest sample and its fit. Black: the average of all fitted lines. Green dashed: the true relationship. A tight bundle away from green = bias; a wide bundle around green = variance.' },
+    figdecomp: { title: 'Decomposition by complexity', html: 'For every complexity: bias² (blue, falls), variance (orange, rises), the noise floor (grey) and their sum, the expected prediction error of each model (black), with its minimum marked by a star. Uses all samples. Click to choose a complexity.' },
+    figpoint: { title: 'Predictions at x₀', html: 'Each dot is the prediction one sample\'s model makes at the single value x₀. The distance between the black line (average) and the green line (truth) is the bias at x₀; the width of the shaded band (± 1 standard deviation) shows the variance.' }
+  });
+
+  /* ------------------------------------------------------------------
+     challenges
+     ------------------------------------------------------------------ */
+  function setup(o) { stepper.stop(); Object.assign(S, o); S.shown = S.R; MLS.pickTab('sim'); refresh(); window.scrollTo({ top: 0, behavior: 'smooth' }); }
+  const ch = MLS.challenges($('challenges'), META.id, [
+    { type: 'predict', q: 'Wage data, straight line (degree 1). If each sample has 200 workers instead of 25, the bias² will...',
+      options: ['fall to almost zero', 'stay about the same, while the variance falls', 'rise', 'become equal to the variance'], answer: 1,
+      explain: 'A straight line cannot follow a concave wage profile no matter how much data it gets: the bias is a property of the model family. More data only makes the lines agree with each other more closely (lower variance) around the same wrong average line.',
+      tryIt: () => setup({ ds: 'wage', model: 'poly', deg: 1, n: 25, noise: 1 }) },
+    { type: 'predict', q: 'K-nearest neighbours with k = 1 (each prediction copies the closest observation). Compared with k = 20, it has...',
+      options: ['higher bias and lower variance', 'lower bias and lower variance', 'lower bias and higher variance', 'the same bias and variance'], answer: 2,
+      explain: 'With k = 1 the prediction follows each sample\'s noise exactly, so curves differ wildly between samples (variance about σ²). But on average they track the true curve closely (small bias). With k = 20 the prediction averages many points: smooth and stable, but it flattens the curve, especially near the edges (bias).',
+      tryIt: () => setup({ ds: 'wage', model: 'knn', k: 1, n: 25, noise: 1 }) },
+    { type: 'predict', q: 'You double the number of samples (from 50 to 100). The true bias² and variance of degree 6...',
+      options: ['do not change: more samples only make our estimates of them more accurate', 'both halve', 'both double'], answer: 0,
+      explain: 'Bias and variance describe the estimator for samples of a given size. Drawing more samples is like running more repetitions of an experiment: the estimates settle down, but the quantities themselves stay put. To lower the variance you need larger samples, not more of them.',
+      tryIt: () => setup({ ds: 'wage', model: 'poly', deg: 6, R: 50 }) },
+    { type: 'predict', q: 'Triple the noise. Which terms grow?',
+      options: ['Only the noise σ²', 'Only the bias²', 'The noise σ² and the variance; the bias² hardly changes'], answer: 2,
+      explain: 'More noise in y means each sample\'s fit is pushed around more (higher variance) and the floor σ² rises. The bias is the error of the average fit, and the noise averages out across samples, so it barely changes. As a result the best complexity moves down.',
+      tryIt: () => setup({ ds: 'wage', model: 'poly', deg: 4, noise: 1 }) },
+    { type: 'task', q: 'Wage data, polynomial: choose the degree with the lowest prediction error.', hint: 'Click the star in the decomposition chart.',
+      check: () => S.ds === 'wage' && S.model === 'poly' && C && C.c === C.best.c },
+    { type: 'task', q: 'Find a setting where the variance is more than 10 times the bias².', hint: 'A flexible model (high degree or k = 1) with small samples.',
+      check: () => C && C.vari > 10 * C.bias2 && Math.min(S.shown, S.R) >= 10 },
+    { type: 'task', q: 'Sine wave, k-nearest neighbours: find the k with the lowest prediction error.', hint: 'Switch the data and the model, then click the star.',
+      check: () => S.ds === 'sine' && S.model === 'knn' && C && C.c === C.best.c }
+  ]);
+
+  /* ------------------------------------------------------------------
+     state
+     ------------------------------------------------------------------ */
+  MLS.moduleBar({ id: META.id, title: META.title, section: META.sectionTitle, level: META.level },
+    { tabs: [{ id: 'sim', label: 'Simulation' }, { id: 'lesson', label: 'Lesson' }, { id: 'challenges', label: 'Challenges' }, { id: 'real', label: 'On real data' }] });
+  MLS.state.init({
+    id: META.id,
+    get: () => ({ ds: S.ds, n: S.n, noise: S.noise, seed: S.seed, model: S.model, deg: S.deg, k: S.k, R: S.R, x0: S.x0 }),
+    set: o => {
+      if (DS[o.ds]) S.ds = o.ds;
+      if (['poly', 'knn'].includes(o.model)) S.model = o.model;
+      ['n', 'noise', 'seed', 'deg', 'k', 'R'].forEach(k => { if (Number.isFinite(o[k])) S[k] = o[k]; });
+      if (Number.isFinite(o.x0)) S.x0 = o.x0;
+      S.shown = S.R;
+    }
+  });
+  $('fourCast').href = MLS.APP.fourCastUrl;
+  window.__mls = { S, get B() { return B; }, get C() { return C; } };
+  document.addEventListener('mls:theme', () => light());
+  refresh();
+})();
+</script>
+</body>
+</html>

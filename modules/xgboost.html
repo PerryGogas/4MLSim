@@ -1,0 +1,220 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>XGBoost | 4MLSim</title>
+  <meta name="theme-color" content="#1B2340">
+  <link rel="manifest" href="../manifest.json">
+  <link rel="icon" type="image/svg+xml" href="../assets/img/icon.svg">
+  <link rel="apple-touch-icon" href="../assets/img/apple-touch-icon.png">
+  <link rel="stylesheet" href="../assets/vendor/temml.css">
+  <link rel="stylesheet" href="../assets/css/4mlsim.css">
+  <script src="../assets/vendor/temml.min.js"></script>
+  <script src="../assets/js/core.js"></script>
+  <script src="../assets/js/stats.js"></script>
+  <script src="../assets/js/plot.js"></script>
+  <script src="../assets/js/modules.js"></script>
+  <script src="../assets/js/core-ml.js"></script>
+  <script src="../assets/js/classify-ui.js"></script>
+  <script src="../assets/js/trees-ui.js"></script>
+  <script src="../assets/js/boost-ui.js"></script>
+</head>
+<body>
+<div class="page">
+  <header id="mlsHeader" data-variant="compact"></header>
+  <div class="mod-top" id="mlsTop"><div id="mlsModBar"></div><div id="mlsTabs"></div></div>
+
+  <div class="intro-box" id="mlsIntro">
+    <h3>What this module shows</h3>
+    <div class="intro-cols">
+      <div>
+        <p><b>XGBoost</b> (extreme gradient boosting) is essentially a decision "enhancer": like gradient boosting it adds small trees one after another, each correcting the errors left. It starts with a simple prediction (a probability of 0.5 for everyone, or the average) and builds each tree with exact formulas from the <b>gradients g</b> and <b>curvatures h</b> of the errors.</p>
+        <p>Two penalties keep the trees small: <b>λ</b> shrinks the leaf values and <b>γ</b> removes splits that gain too little. It is one of the most efficient algorithms and almost always among the best on tabular data.</p>
+      </div>
+      <div>
+        <p><b>How to use it</b></p>
+        <ol>
+          <li>Press <b>Reset</b>, then <b>Step</b>, and read the tree of each round: G, H and the gain of every split.</li>
+          <li>Follow the numbers of the first split in the box under the tree.</li>
+          <li>Raise λ and γ and watch the trees shrink and the test result change.</li>
+          <li>Compare training and test results by round.</li>
+        </ol>
+      </div>
+    </div>
+  </div>
+
+  <!-- ===================== SIMULATION ===================== -->
+  <section data-panel="sim">
+    <div class="mod-grid">
+      <aside class="side" aria-label="Controls">
+        <div class="card">
+          <div class="card-head"><h3>1. Task and data<button type="button" class="help" data-help="task">?</button></h3></div>
+          <div class="seg full" role="group" aria-label="Task"><button type="button" data-task="reg">Regression</button><button type="button" data-task="class">Classification</button></div>
+          <select id="ds" aria-label="Data set" style="margin-top:10px"></select>
+          <div class="field-row"><label for="n">Observations<button type="button" class="help" data-help="n">?</button></label><output id="nVal"></output></div>
+          <input type="range" id="n" min="40" max="400" step="20" value="100">
+          <div class="field-row"><label for="seed">Random seed<button type="button" class="help" data-help="seed">?</button></label></div>
+          <div class="inline-inputs"><input type="number" id="seed" min="1" max="99999" step="1" value="1" aria-label="Random seed"><button type="button" class="btn-ghost btn-icon" id="newSeed" title="New random data" style="flex:0 0 auto">&#127922;</button></div>
+        </div>
+        <div class="card">
+          <div class="card-head"><h3>2. Settings<button type="button" class="help" data-help="settings">?</button></h3></div>
+          <div id="params"></div>
+        </div>
+        <div class="card">
+          <div class="card-head"><h3>3. Round by round<button type="button" class="help" data-help="steps">?</button></h3></div>
+          <div id="stepper"></div>
+          <p class="note" id="stepNote"></p>
+        </div>
+      </aside>
+
+      <main class="main">
+        <div class="story" id="story"></div>
+        <div class="stat-grid" id="stats" style="margin-top:12px"></div>
+        <div id="statusLine" class="status-line" style="margin:10px 0"></div>
+        <div class="fig-grid">
+          <div id="figMain" class="fig-wide"></div>
+          <div id="figRes"></div>
+          <div id="figErr"></div>
+          <div id="figTree" class="fig-wide"></div>
+          <div class="card fig-wide" id="numCard" hidden></div>
+        </div>
+      </main>
+
+    </div>
+  </section>
+
+  <!-- ===================== LESSON ===================== -->
+  <section data-panel="lesson" class="card lesson" hidden>
+    <div id="mlsMathCtl"></div>
+    <p class="lvl-only-intuition note" style="margin-bottom:8px">Showing the intuition only. Choose <b>Formulas</b> or <b>Deep dive</b> above to add the mathematics.</p>
+
+    <h4>The algorithm</h4>
+    <ol>
+      <li><b>Initialization</b>: start with a simple prediction, e.g. a probability of 0.5 for all observations (classification) or the average (regression).</li>
+      <li>For every observation compute the <b>gradient g</b> (the direction and size of its error: forecast − actual, or probability − actual) and the <b>curvature h</b> (1 for squared error; p(1 − p) for classification).</li>
+      <li>Grow a small tree. For every possible split, sum g and h on each side (G<sub>L</sub>, H<sub>L</sub>, G<sub>R</sub>, H<sub>R</sub>) and compute the <b>gain</b>; keep the split with the largest gain.</li>
+      <li>Each leaf gets the weight <b>w = −G / (H + λ)</b>: the best correction for the observations in it.</li>
+      <li>Remove (prune) splits whose gain is below <b>γ</b>; add the tree multiplied by the learning rate <b>η</b>; repeat.</li>
+    </ol>
+    <div class="math-block lvl-math"><div class="mb-title">Leaf weight and split gain (as in the xgboost library)</div>
+      <div class="tex-block">w^* = -\frac{G}{H + \lambda}, \qquad \text{Gain} = \frac{G_L^2}{H_L + \lambda} + \frac{G_R^2}{H_R + \lambda} - \frac{(G_L + G_R)^2}{H_L + H_R + \lambda}</div>
+      <div class="tex-block">\text{squared error: } g_i = \hat y_i - y_i,\ h_i = 1; \qquad \text{classification: } g_i = p_i - y_i,\ h_i = p_i (1 - p_i)</div>
+      <p class="note">A split is kept if its gain is above γ (the library prunes bottom-up after growing the tree). A leaf must also have H ≥ the minimum child weight.</p>
+    </div>
+
+    <h4>Comparison with random forests</h4>
+    <ul>
+      <li><b>Random forest</b>: many trees trained in parallel and independently; the final decision is a vote (or average). Deep trees, little tuning.</li>
+      <li><b>XGBoost</b>: trees trained in sequence, each correcting the previous ones; small trees, more settings to tune, usually higher accuracy. In the lecture example of US GDP forecasting, XGBoost also ranks the top 15 inputs by importance.</li>
+    </ul>
+
+    <h4>The settings</h4>
+    <ul>
+      <li><b>η (learning rate)</b>: the share of each tree that is added. Smaller: more rounds, better generalization.</li>
+      <li><b>λ</b>: pulls the leaf weights towards 0 (like ridge regression). Larger λ: smaller corrections, smoother model.</li>
+      <li><b>γ</b>: the minimum gain for a split to stay. Larger γ: fewer, more useful splits.</li>
+      <li><b>Depth</b> and <b>minimum child weight</b>: limit the size of each tree.</li>
+    </ul>
+
+    <div class="math-block deep lvl-deep"><div class="mb-title">Deep dive</div>
+      <p><b>Second-order approximation.</b> XGBoost approximates the loss of each observation around the current forecast by a parabola (Taylor expansion with g and h). The objective of a tree with leaf weights w becomes Σ<sub>leaves</sub> [G w + ½ (H + λ) w²] + γ T, which is minimized by w* = −G/(H + λ) and gives the gain formula (the paper writes it with a factor ½ and subtracts γ; the library compares the gain without the ½ to γ, as here).</p>
+      <p><b>Engineering.</b> The library adds sparsity-aware splits for missing values, histogram and approximate split finding for big data, column subsampling and parallel computing; results here match xgboost's exact method.</p>
+      <p class="note">References: Chen and Guestrin (2016), "XGBoost: a scalable tree boosting system", <i>KDD</i>; Friedman (2001), "Greedy function approximation: a gradient boosting machine", <i>Annals of Statistics</i> 29(5).</p>
+    </div>
+  </section>
+  <!-- ===================== CHALLENGES ===================== -->
+  <section data-panel="challenges" class="card" hidden>
+    <div class="card-head"><h3>Challenges</h3><span class="card-sub">Answer the "predict first" questions before testing them in the Simulation tab.</span></div>
+    <div id="challenges"></div>
+  </section>
+
+
+  <!-- ===================== REAL DATA ===================== -->
+  <section data-panel="real" class="card lesson" hidden>
+    <h4>From the simulation to real data</h4>
+    <ul>
+      <li>XGBoost (and its relatives LightGBM and CatBoost) win most competitions on tabular data: credit scoring, fraud, demand and GDP forecasting.</li>
+      <li>Typical tuning: η 0.01 to 0.1 with early stopping on validation data, depth 3 to 8, λ and γ by cross-validation, plus row and column subsampling.</li>
+      <li>Use the library's importance measures, or better SHAP values, to explain the predictions (see the Explainability module).</li>
+    </ul>
+    <div class="crosslink"><span>&#10140;</span><span><a id="fourCast" target="_blank" rel="noopener"><b>4Cast Lab</b></a> trains XGBoost models on your own data and shows the variable importance.</span></div>
+  </section>
+
+  <footer id="mlsFooter"></footer>
+</div>
+
+<script>
+(function () {
+  'use strict';
+  const MLS = window.MLS, ML = MLS.ml, F = MLS.fmt;
+  const leaf = (t, x) => { let nd = t; while (nd.left) nd = x[nd.feat] < nd.thr ? nd.left : nd.right; return nd.w; };
+  let lam = 1, gam = 0;
+  MLS.boost.page({
+    id: 'xgboost',
+    defaults: { rounds: 100, eta: 0.1, depth: 2, lambda: 1, gamma: 0, minChild: 1 },
+    params: [
+      { key: 'rounds', label: 'Rounds (trees)', help: 'p_rounds', min: 1, max: 200 },
+      { key: 'eta', label: 'Learning rate η', help: 'p_eta', list: [0.05, 0.1, 0.2, 0.3, 0.5, 1] },
+      { key: 'depth', label: 'Maximum depth', help: 'p_depth', min: 1, max: 6 },
+      { key: 'lambda', label: 'λ (shrinks the leaf weights)', help: 'p_lambda', list: [0, 0.5, 1, 2, 5, 10, 50] },
+      { key: 'gamma', label: 'γ (minimum gain of a split)', help: 'p_gamma', list: [0, 0.5, 1, 2, 5, 10, 50] },
+      { key: 'minChild', label: 'Minimum child weight (H)', help: 'p_mcw', list: [0, 1, 2, 5, 10, 20] }
+    ],
+    fit: (X, y, cls, S) => { lam = S.lambda; gam = S.gamma; return ML.xgboost(X, y, { rounds: S.rounds, eta: S.eta, depth: S.depth, lambda: S.lambda, gamma: S.gamma, minChild: S.minChild, classify: cls }); },
+    leafValue: leaf,
+    treeLines: (nd, open, D) => (open ? [D.short[nd.feat] + ' < ' + F(nd.thr, 2) + '?', 'gain ' + F(nd.gain, 2), 'G ' + F(nd.G, 2) + ', H ' + F(nd.H, 2)]
+      : [(nd.pruned ? 'pruned: ' : '') + 'w = ' + F(nd.w, 3), 'G ' + F(nd.G, 2) + ', H ' + F(nd.H, 2), 'n = ' + nd.n]),
+    treeTip: (nd, open, D) => (open ? 'Question: <b>' + D.names[nd.feat] + ' &lt; ' + F(nd.thr, 2) + '?</b><br>Gain ' + F(nd.gain, 4) + ' (above γ = ' + gam + ', so the split stays)<br>G = ' + F(nd.G, 4) + ', H = ' + F(nd.H, 4) + '<br>' + nd.n + ' training ' + D.unit
+      : '<b>Leaf</b>: w = −G / (H + λ) = −(' + F(nd.G, 3) + ') / (' + F(nd.H, 3) + ' + ' + lam + ') = <b>' + F(nd.w, 4) + '</b><br>' + nd.n + ' training ' + D.unit + (nd.pruned ? '<br>Split on ' + D.names[nd.pruned.feat] + ' pruned: gain ' + F(nd.pruned.gain, 3) + ' &lt; γ = ' + gam : '')),
+    treeCaption: (D, R, m) => 'Each box shows the sums of the gradients (G) and curvatures (H) of its training ' + D.unit + '. Splits show their gain; leaves their weight w = −G / (H + λ), which is multiplied by η = ' + F(R.model.eta, 2) + ' and added to the ' + (D.task === 'class' ? 'score (log-odds)' : 'forecast') + '. Hover over a box for the numbers.',
+    numbers: (R, D, m) => {
+      const t = R.model.trees[m - 1];
+      const start = D.task === 'class' ? 'Start: probability 0.5 for everyone (score 0).' : 'Start: the training average, ' + F(R.model.F0, 3) + '.';
+      if (!t.left) return '<div class="card-head"><h3>The numbers of tree ' + m + MLS.helpBtn('nums') + '</h3></div><p style="margin:0">' + start + ' Tree ' + m + ' has no split' + (t.pruned ? ': the best split had gain ' + F(t.pruned.gain, 3) + ', below γ = ' + gam + ', and was pruned' : '') + '. Its single leaf: w = −G / (H + λ) = −(' + F(t.G, 3) + ') / (' + F(t.H, 3) + ' + ' + lam + ') = <b>' + F(t.w, 4) + '</b>.</p>';
+      const L = t.left, Rr = t.right, a = L.G * L.G / (L.H + lam), b = Rr.G * Rr.G / (Rr.H + lam), c = t.G * t.G / (t.H + lam);
+      return '<div class="card-head"><h3>The numbers of the first split of tree ' + m + MLS.helpBtn('nums') + '</h3></div>' +
+        '<p style="margin:0 0 6px">' + start + ' Question: <b>' + MLS.esc(D.names[t.feat]) + ' &lt; ' + F(t.thr, 2) + '?</b> (' + L.n + ' ' + D.unit + ' yes, ' + Rr.n + ' no)</p>' +
+        '<div class="fig-table" style="max-height:none"><table class="tbl"><thead><tr><th></th><th>G (sum of g)</th><th>H (sum of h)</th><th>G² / (H + λ)</th></tr></thead><tbody>' +
+        '<tr><td>Left (yes)</td><td>' + F(L.G, 3) + '</td><td>' + F(L.H, 3) + '</td><td>' + F(a, 3) + '</td></tr>' +
+        '<tr><td>Right (no)</td><td>' + F(Rr.G, 3) + '</td><td>' + F(Rr.H, 3) + '</td><td>' + F(b, 3) + '</td></tr>' +
+        '<tr><td>Before the split</td><td>' + F(t.G, 3) + '</td><td>' + F(t.H, 3) + '</td><td>' + F(c, 3) + '</td></tr></tbody></table></div>' +
+        '<p class="note">Gain = ' + F(a, 3) + ' + ' + F(b, 3) + ' − ' + F(c, 3) + ' = <b>' + F(t.gain, 3) + '</b> (λ = ' + lam + ', kept because it is above γ = ' + gam + '). If these two groups were leaves, their weights would be −G / (H + λ): ' + F(-L.G / (L.H + lam), 3) + ' and ' + F(-Rr.G / (Rr.H + lam), 3) + '.</p>';
+    },
+    help: {
+      settings: { title: 'Settings', html: 'Rounds and learning rate as in gradient boosting, the size of each tree (depth, minimum child weight), and the two penalties λ and γ.' },
+      p_rounds: { title: 'Rounds', html: 'How many trees are added one after another.' },
+      p_eta: { title: 'Learning rate η', html: 'Each tree\'s leaf weights are multiplied by η before they are added. The xgboost default is 0.3.' },
+      p_depth: { title: 'Maximum depth', html: 'The largest number of questions in each tree (xgboost default 6; small trees are often enough).' },
+      p_lambda: { title: 'λ', html: 'Added to H in the leaf weight w = −G / (H + λ) and in the gain. Larger λ: smaller leaf weights and gains, a more cautious model (default 1).' },
+      p_gamma: { title: 'γ', html: 'The minimum gain a split needs to stay. Splits below γ are pruned after the tree is grown (from the bottom up). Default 0.' },
+      p_mcw: { title: 'Minimum child weight', html: 'Each new leaf must have H (the sum of the curvatures) at least this large. For squared error H is the number of observations; for classification each observation adds p(1 − p), at most 0.25.' },
+      nums: { title: 'The numbers', html: 'For the first question of the tree: the sums of g and h on each side, the terms of the gain formula, the gain, and the leaf weights the two groups would get.' }
+    },
+    challenges: api => [
+      { type: 'predict', q: 'XGBoost on bank failures starts with what prediction?',
+        options: ['A probability of 0.5 for every bank', 'The share of failed banks', 'Nothing until the first tree'], answer: 0,
+        explain: 'As in the lecture, XGBoost starts from a simple prediction, a probability of 0.5 for all observations (score 0). The first tree moves failed and healthy banks apart.',
+        tryIt: () => api.setup({ task: 'class', m: 0 }) },
+      { type: 'predict', q: 'A leaf has G = −6 and H = 5, with λ = 1. Its weight w is...',
+        options: ['−1.2', '1.0', '6'], answer: 1,
+        explain: 'w = −G / (H + λ) = 6 / (5 + 1) = 1. With λ = 0 it would be 1.2: λ pulls the weight towards 0.',
+        tryIt: () => api.setup({ task: 'reg', m: 1 }) },
+      { type: 'predict', q: 'You raise γ from 0 to 50 on the temperature data. The trees will...',
+        options: ['grow deeper', 'lose the splits with small gains: fewer splits, simpler trees', 'not change'], answer: 1,
+        explain: 'γ is the minimum gain for a split to stay. Splits that improve the fit only a little are pruned, so the trees become smaller.',
+        tryIt: () => api.setup({ task: 'reg', gamma: 50, m: 10 }) },
+      { type: 'task', q: 'Find settings with which the very first tree has no split at all (one leaf).', hint: 'Raise γ (and perhaps λ or the minimum child weight), then press Reset and Step.',
+        check: () => api.R && api.cur() >= 1 && !api.R.model.trees[0].left },
+      { type: 'predict', q: 'Random forest or XGBoost: which one trains its trees in sequence, each correcting the previous?',
+        options: ['Random forest', 'Both', 'XGBoost'], answer: 2,
+        explain: 'A random forest trains its trees in parallel and independently, then lets them vote. XGBoost adds trees one after another, each fitted to the remaining errors.',
+        tryIt: () => api.setup({ task: 'class' }) },
+      { type: 'task', q: 'Regression: make XGBoost overfit, with the final test RMSE at least 10% above the best test RMSE.', hint: 'Large η, deep trees, λ = 0, many rounds.',
+        check: () => api.R && !api.isC() && api.cur() === api.R.M && api.R.curve[api.R.M].te >= 1.1 * api.R.bestTe.te }
+    ]
+  });
+})();
+</script>
+</body>
+</html>

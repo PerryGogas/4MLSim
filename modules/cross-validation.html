@@ -1,0 +1,482 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Cross-Validation | 4MLSim</title>
+  <meta name="theme-color" content="#1B2340">
+  <link rel="manifest" href="../manifest.json">
+  <link rel="icon" type="image/svg+xml" href="../assets/img/icon.svg">
+  <link rel="apple-touch-icon" href="../assets/img/apple-touch-icon.png">
+  <link rel="stylesheet" href="../assets/vendor/temml.css">
+  <link rel="stylesheet" href="../assets/css/4mlsim.css">
+  <script src="../assets/vendor/temml.min.js"></script>
+  <script src="../assets/js/core.js"></script>
+  <script src="../assets/js/stats.js"></script>
+  <script src="../assets/js/plot.js"></script>
+  <script src="../assets/js/modules.js"></script>
+  <style>
+    .cv-steps { display:flex; align-items:center; gap:8px; flex-wrap:wrap; }
+    .cv-steps .stepno { font-weight:800; font-size:14px; margin-left:auto; }
+    .step-box { background:var(--card); border:2px solid var(--tint-border); border-radius:10px; padding:12px 16px; box-shadow:var(--shadow); min-height:132px; }
+    #stats .stat { min-height:136px; }
+    .step-box h3 { font-size:17px; margin:0 0 4px; color:var(--heading); }
+    .step-box p { margin:0; font-size:14.5px; line-height:1.6; }
+    .obs-legend { display:flex; gap:16px; flex-wrap:wrap; font-size:13.5px; margin-top:6px; }
+    .obs-legend span.sw { display:inline-block; width:13px; height:13px; border-radius:3px; margin-right:6px; vertical-align:-2px; }
+    .tbl tr.cur td { background:var(--tint); font-weight:700; }
+  </style>
+</head>
+<body>
+<div class="page">
+  <header id="mlsHeader" data-variant="compact"></header>
+  <div class="mod-top" id="mlsTop"><div id="mlsModBar"></div><div id="mlsTabs"></div></div>
+
+  <div class="intro-box" id="mlsIntro">
+    <h3>What this module shows</h3>
+    <div class="intro-cols">
+      <div>
+        <p>How do we choose a model (here: the degree of a polynomial for wages and experience) and report how well it predicts, honestly? With three kinds of data:</p>
+        <ul>
+          <li>The <b>training set</b> (e.g. observations 1-16): used to fit the models and, through <b>cross-validation</b>, to choose among them.</li>
+          <li>Inside it, the <b>validation fold</b>: in each round of cross-validation one fold (e.g. 13-16) is left out of the fit and used to measure the error.</li>
+          <li>The <b>test (hold-out) set</b> (e.g. 17-20): locked away, used <b>once</b> at the very end to report the performance of the chosen model.</li>
+        </ul>
+      </div>
+      <div>
+        <p><b>How to use it</b></p>
+        <ol>
+          <li>Press <b>Next step</b> and follow the numbered observations from the full data set to the final test.</li>
+          <li>The box at the top of the page explains each step.</li>
+          <li>Change the number of observations, the test share, the number of folds or the degree, and start again.</li>
+          <li>Click any <b>?</b> for help, then try the <b>Challenges</b>.</li>
+        </ol>
+      </div>
+    </div>
+  </div>
+
+  <!-- ===================== SIMULATION ===================== -->
+  <section data-panel="sim">
+    <div class="mod-grid">
+      <aside class="side" aria-label="Controls">
+        <div class="card">
+          <div class="card-head"><h3>1. Data and split<button type="button" class="help" data-help="data">?</button></h3></div>
+          <div class="field-row"><label for="n">Number of observations<button type="button" class="help" data-help="n">?</button></label><output id="nVal"></output></div>
+          <input type="range" id="n" min="10" max="200" step="1" value="20">
+          <div class="field-row"><label for="share">Test (hold-out) set share<button type="button" class="help" data-help="share">?</button></label><output id="shareVal"></output></div>
+          <input type="range" id="share" min="0.1" max="0.4" step="0.05" value="0.2">
+          <div class="field-row"><label for="k">Number of folds<button type="button" class="help" data-help="k">?</button></label><output id="kVal"></output></div>
+          <input type="range" id="k" min="2" max="10" step="1" value="4">
+          <div class="field-row"><label for="seed">Random seed<button type="button" class="help" data-help="seed">?</button></label></div>
+          <div class="inline-inputs"><input type="number" id="seed" min="1" max="99999" step="1" value="2026" aria-label="Random seed"><button type="button" class="btn-ghost btn-icon" id="newSeed" title="New random sample" style="flex:0 0 auto">&#127922;</button></div>
+          <p class="note" id="splitNote"></p>
+        </div>
+        <div class="card">
+          <div class="card-head"><h3>2. Model<button type="button" class="help" data-help="model">?</button></h3></div>
+          <div class="field-row"><label for="deg">Polynomial degree to cross-validate</label><output id="degVal"></output></div>
+          <input type="range" id="deg" min="0" max="6" step="1" value="1">
+          <p class="note">Steps 4 to the CV score use this degree. Later, every degree from 0 to <span id="dmaxTxt">6</span> is compared.</p>
+        </div>
+        <div class="card">
+          <div class="card-head"><h3>3. Steps<button type="button" class="help" data-help="steps">?</button></h3></div>
+          <div class="btn-row fill">
+            <button type="button" class="btn-ghost btn-small" id="back">&#9664; Back</button>
+            <button type="button" class="btn-secondary btn-small" id="next">Next step &#9654;</button>
+          </div>
+          <div class="btn-row fill" style="margin-top:6px">
+            <button type="button" class="btn-ghost btn-small" id="restart">&#8634; Start again</button>
+            <button type="button" class="btn-ghost btn-small" id="toEnd">Go to the end &#9197;</button>
+          </div>
+          <ol class="note" id="stepList" style="margin:10px 0 0 18px;line-height:1.55"></ol>
+        </div>
+      </aside>
+
+      <main class="main">
+        <div class="step-box" id="stepBox"></div>
+        <div class="stat-grid" id="stats"></div>
+        <div class="fig-grid">
+          <div id="figMap" class="fig-wide"></div>
+          <div id="figData" class="fig-wide"></div>
+          <div class="res-card" id="tblCard">
+            <h3 id="tblTitle">Cross-validation results<button type="button" class="help" data-help="table">?</button></h3>
+            <div class="fig-table" style="max-height:none"><table class="tbl" id="cvTable"></table></div>
+          </div>
+          <div id="figDeg"></div>
+        </div>
+      </main>
+    </div>
+  </section>
+
+  <!-- ===================== LESSON ===================== -->
+  <section data-panel="lesson" class="card lesson" hidden>
+    <div id="mlsMathCtl"></div>
+    <p class="lvl-only-intuition note" style="margin-bottom:8px">Showing the intuition only. Choose <b>Formulas</b> or <b>Deep dive</b> above to add the mathematics.</p>
+
+    <h4>The terms, with ten observations</h4>
+    <p>Number the observations 1 to 10.</p>
+    <ul>
+      <li><b>Full set</b>: 1-10.</li>
+      <li><b>Training set</b>: 1-8. Used to fit the models and, with cross-validation, to choose the model and its settings (hyperparameters).</li>
+      <li><b>Test (hold-out) set</b>: 9-10. Never used while choosing; touched once at the very end. "Test set" always means this set, never a fold inside cross-validation.</li>
+      <li><b>Folds</b> (4 folds of the training set): F1 = 1-2, F2 = 3-4, F3 = 5-6, F4 = 7-8.</li>
+      <li>In each round of cross-validation the fold left out is the <b>validation fold</b>, the other three are the <b>fitting part</b>:
+        <ol>
+          <li>fit on 3-8, validate on 1-2;</li>
+          <li>fit on 1-2 and 5-8, validate on 3-4;</li>
+          <li>fit on 1-4 and 7-8, validate on 5-6;</li>
+          <li>fit on 1-6, validate on 7-8.</li>
+        </ol>
+      </li>
+      <li><b>CV score</b> = the average of the four validation-fold scores. The model and its settings are chosen by the CV score only.</li>
+      <li>The chosen model is <b>refitted on the whole training set</b> (1-8) and evaluated <b>once</b> on the test set (9-10). That result is the performance we report.</li>
+    </ul>
+    <div class="math-block lvl-math"><div class="mb-title">CV score with k folds</div>
+      <div class="tex-block">\text{CV}_k = \frac1k\sum_{j=1}^{k} \text{MSE}_j, \qquad \text{MSE}_j = \frac{1}{n_j}\sum_{i\in F_j}\bigl(y_i - \hat f^{(-j)}(x_i)\bigr)^2</div>
+      <p class="note"><span class="tex">\hat f^{(-j)}</span> is the model fitted without fold <span class="tex">F_j</span>; <span class="tex">n_j</span> is the number of observations in that fold.</p>
+    </div>
+
+    <h4>Why not simply use the test set to choose?</h4>
+    <p>If we tried several degrees on the test set and kept the best, the reported test error would be the best of several lucky draws: too optimistic. The test set must play the role of data that did not exist when the model was chosen. Cross-validation gives us a "test-like" error for every candidate model using only the training set.</p>
+
+    <h4>Why several folds and not one validation set?</h4>
+    <p>A single validation set is small and its error depends a lot on which observations happen to be in it. With k folds every training observation is used for validation exactly once, and the average of k errors is much steadier. Typical choices are k = 5 or 10; with very small samples, leave-one-out (k = number of training observations) is also used.</p>
+
+    <h4>After choosing: refit, then test once</h4>
+    <p>Each round of cross-validation fitted the model on only part of the training set. Once the degree is chosen, the model is fitted again on the <b>whole</b> training set, which uses all the information available, and only this final model is evaluated on the test set.</p>
+
+    <div class="math-block deep lvl-deep"><div class="mb-title">Deep dive</div>
+      <p><b>Bias and variance of the CV estimate.</b> Each fold model is fitted on (k − 1)/k of the training set, so the CV score slightly overstates the error of the model fitted on the whole training set; the bias falls as k grows. Leave-one-out is almost unbiased, but its folds overlap heavily, so its errors are strongly correlated and the average can be variable; 5 or 10 folds are a good compromise (Kohavi, 1995).</p>
+      <p><b>The standard error</b> of the CV score is usually computed as the standard deviation of the fold scores divided by √k. It ignores the correlation between folds and so understates the true uncertainty (Bengio and Grandvalet, 2004). The "1-SE rule" uses it to prefer simpler models.</p>
+      <p><b>Nested cross-validation.</b> When there is too little data for a separate test set, an outer CV loop can play the role of the test set and an inner loop chooses the model in each outer training set.</p>
+      <p class="note">References: Stone (1974), <i>JRSS B</i> 36(2); Kohavi (1995), IJCAI; Hastie, Tibshirani and Friedman (2009), <i>The Elements of Statistical Learning</i>, §7.10; James, Witten, Hastie and Tibshirani (2021), <i>An Introduction to Statistical Learning</i>, §5.1; Bengio and Grandvalet (2004), <i>JMLR</i> 5.</p>
+    </div>
+  </section>
+
+  <!-- ===================== CHALLENGES ===================== -->
+  <section data-panel="challenges" class="card" hidden>
+    <div class="card-head"><h3>Challenges</h3><span class="card-sub">Answer the "predict first" questions before testing them in the Simulation tab.</span></div>
+    <div id="challenges"></div>
+  </section>
+
+  <!-- ===================== REAL DATA ===================== -->
+  <section data-panel="real" class="card lesson" hidden>
+    <h4>From the simulation to real data</h4>
+    <ul>
+      <li>Split off the test (hold-out) set first, before looking at the data in any way, and do not use it until the final evaluation.</li>
+      <li>Everything that learns from data (scaling, choosing variables, filling missing values, tuning) belongs inside the cross-validation loop, refitted on each fitting part. Otherwise information leaks from the validation fold (see the Data Leakage module).</li>
+      <li>With cross-sectional data, shuffle the observations before forming folds. With time series, use walk-forward validation instead (see the Time-Series Validation module).</li>
+      <li>In scikit-learn: train_test_split for the test set, then cross_val_score or GridSearchCV with KFold on the training set.</li>
+    </ul>
+    <div class="crosslink"><span>&#10140;</span><span><a id="fourCast" target="_blank" rel="noopener"><b>4Cast Lab</b></a> uses the same scheme on your own data: a final test period, and cross-validation inside the training period to choose the models.</span></div>
+  </section>
+
+  <footer id="mlsFooter"></footer>
+</div>
+
+<script>
+(function () {
+  'use strict';
+  const MLS = window.MLS;
+  const META = MLS.moduleMeta('cross-validation');
+  const $ = id => document.getElementById(id);
+  const F = MLS.fmt;
+
+  const S = { n: 20, share: 0.2, k: 4, deg: 1, seed: 2026, step: 0 };
+  let D = null, R = null;
+  const wageF = e => 9 + 0.9 * e - 0.016 * e * e;
+
+  /* ------------------------------------------------------------------
+     data, split and folds (observations are numbered 1..n in random order)
+     ------------------------------------------------------------------ */
+  function build() {
+    const r = MLS.rng(S.seed), x = [], y = [];
+    for (let i = 0; i < S.n; i++) { const xi = +r.uniform(0, 40).toFixed(1); x.push(xi); y.push(+(wageF(xi) + r.normal(0, 1.8)).toFixed(2)); }
+    const nTe = Math.max(2, Math.round(S.n * S.share)), nTr = S.n - nTe;
+    S.k = Math.max(2, Math.min(S.k, Math.floor(nTr / 2)));
+    /* folds: consecutive blocks of the training numbers, sizes as equal as possible */
+    const folds = [], base = Math.floor(nTr / S.k), extra = nTr % S.k; let start = 0;
+    for (let j = 0; j < S.k; j++) { const sz = base + (j < extra ? 1 : 0); folds.push(Array.from({ length: sz }, (_, t) => start + t)); start += sz; }
+    const tr = Array.from({ length: nTr }, (_, i) => i), te = Array.from({ length: nTe }, (_, i) => nTr + i);
+    const minFit = nTr - Math.max(...folds.map(f => f.length));
+    const dmax = Math.max(0, Math.min(6, minFit - 2));
+    S.deg = Math.min(S.deg, dmax);
+    D = { x, y, nTr, nTe, tr, te, folds, dmax };
+    compute();
+  }
+  const fitPoly = (idx, d) => MLS.polyFit(idx.map(i => D.x[i]), idx.map(i => D.y[i]), d, 0, 40);
+  const mse = (idx, f) => idx.reduce((s, i) => s + (D.y[i] - f(D.x[i])) ** 2, 0) / idx.length;
+  function cvFor(d) {
+    const rounds = D.folds.map((fold, j) => {
+      const fitIdx = D.tr.filter(i => !fold.includes(i)), m = fitPoly(fitIdx, d);
+      return { j, fitIdx, valIdx: fold, f: m.f, mse: mse(fold, m.f) };
+    });
+    const sc = rounds.map(r => r.mse), cv = MLS.mean(sc), sd = Math.sqrt(sc.reduce((s, v) => s + (v - cv) ** 2, 0) / Math.max(1, sc.length - 1));
+    return { d, rounds, cv, se: sd / Math.sqrt(sc.length) };
+  }
+  function compute() {
+    const all = Array.from({ length: D.dmax + 1 }, (_, d) => cvFor(d));
+    const best = all.reduce((a, r) => (r.cv < a.cv ? r : a));
+    const final = fitPoly(D.tr, best.d), testMSE = mse(D.te, final.f), trainMSE = mse(D.tr, final.f);
+    R = { all, cur: all[S.deg], best, final, testMSE, trainMSE };
+  }
+
+  /* ------------------------------------------------------------------
+     the steps
+     ------------------------------------------------------------------ */
+  const range = idx => {           /* [0,1,2,5,6] -> "1-3, 6-7" (1-based) */
+    const a = idx.slice().sort((p, q) => p - q), out = []; let s = a[0], prev = a[0];
+    for (let t = 1; t <= a.length; t++) { if (t < a.length && a[t] === prev + 1) { prev = a[t]; continue; } out.push(s === prev ? String(s + 1) : (s + 1) + '-' + (prev + 1)); s = a[t]; prev = a[t]; }
+    return out.join(' and ');
+  };
+  const nSteps = () => 6 + S.k;          /* 0 full, 1 split, 2 folds, 3..2+k rounds, 3+k CV score, 4+k all degrees, 5+k refit, 6+k test */
+  function stepKind(s) {
+    if (s === 0) return { kind: 'full' };
+    if (s === 1) return { kind: 'split' };
+    if (s === 2) return { kind: 'folds' };
+    if (s <= 2 + S.k) return { kind: 'round', j: s - 3 };
+    if (s === 3 + S.k) return { kind: 'score' };
+    if (s === 4 + S.k) return { kind: 'choose' };
+    if (s === 5 + S.k) return { kind: 'refit' };
+    return { kind: 'test' };
+  }
+  function stepText() {
+    const st = stepKind(S.step), tr = range(D.tr), te = range(D.te), d = S.deg, k = S.k;
+    const fl = D.folds.map((f, j) => 'F' + (j + 1) + ' = ' + range(f)).join(', ');
+    switch (st.kind) {
+      case 'full': return ['The full data set', 'We have <b>' + S.n + ' workers</b>, numbered 1 to ' + S.n + ' (the numbering is random). For each we know years of experience and the hourly wage. We want to choose the polynomial degree that predicts wages best, and to report how well it predicts.'];
+      case 'split': return ['Split off the test (hold-out) set', 'The <b>training set</b> is observations <b>' + tr + '</b> (' + D.nTr + ' workers). The <b>test (hold-out) set</b> is <b>' + te + '</b> (' + D.nTe + ' workers, ' + F(100 * D.nTe / S.n, 0) + '%). The test set is now locked away: it will not be used for fitting or for choosing anything, only once at the very end.'];
+      case 'folds': return ['Split the training set into ' + k + ' folds', 'The training set ' + tr + ' is cut into ' + k + ' folds: <b>' + fl + '</b>. Each fold will be the <b>validation fold</b> once.'];
+      case 'round': { const r = R.cur.rounds[st.j]; return ['Round ' + (st.j + 1) + ' of ' + k + ': fit on ' + range(r.fitIdx) + ', validate on ' + range(r.valIdx), 'A polynomial of degree <b>' + d + '</b> is fitted on the <b>fitting part</b> (' + range(r.fitIdx) + ', blue). It is then used to predict the <b>validation fold</b> F' + (st.j + 1) + ' (' + range(r.valIdx) + ', orange), which it did not see. The vertical lines are the prediction errors. Validation MSE = <b>' + F(r.mse, 3) + '</b>.']; }
+      case 'score': return ['The CV score of degree ' + d, 'The CV score is the <b>average of the ' + k + ' validation MSEs</b>: (' + R.cur.rounds.map(r => F(r.mse, 2)).join(' + ') + ') / ' + k + ' = <b>' + F(R.cur.cv, 3) + '</b>. Every training observation was used for validation exactly once, and the test set was never touched.'];
+      case 'choose': return ['Repeat for every degree and choose', 'The same ' + k + ' rounds are run for every degree from 0 to ' + D.dmax + '. Degree <b>' + R.best.d + '</b> has the lowest CV score (' + F(R.best.cv, 3) + '), so it is chosen. The choice uses the training set only.'];
+      case 'refit': return ['Refit the chosen model on the whole training set', 'Degree <b>' + R.best.d + '</b> is now fitted on <b>all</b> the training observations ' + tr + '. During cross-validation each fit used only ' + (k - 1) + ' of the ' + k + ' folds; the final model uses all of them.'];
+      default: return ['Evaluate once on the test (hold-out) set', 'The final model predicts the test set ' + te + ', which played no role so far. Test MSE = <b>' + F(R.testMSE, 3) + '</b> (RMSE ' + F(Math.sqrt(R.testMSE), 2) + ' € per hour). <b>This is the performance we report.</b> We do not go back and change the model after seeing it.'];
+    }
+  }
+  /* role of observation i at the current step: 'none' | 'train' | 'test' | 'fit' | 'val' */
+  function roleOf(i) {
+    const st = stepKind(S.step);
+    if (st.kind === 'full') return 'none';
+    const isTe = i >= D.nTr;
+    if (isTe) return st.kind === 'test' ? 'testOn' : 'test';
+    if (st.kind === 'round') return D.folds[st.j].includes(i) ? 'val' : 'fit';
+    return 'train';
+  }
+
+  /* ------------------------------------------------------------------
+     rendering
+     ------------------------------------------------------------------ */
+  const col = () => ({ fit: MLS.color('series-1'), val: MLS.color('series-2'), te: MLS.color('chart-muted'), ink: MLS.color('chart-ink'), mu: MLS.color('chart-muted'), g: MLS.color('series-3'), none: MLS.color('series-5') });
+  const roleColor = (ro, c) => ({ none: c.mu, train: c.fit, fit: c.fit, val: c.val, test: c.te, testOn: c.g })[ro];
+  const card = MLS.statCard;
+  function updateTop() {
+    const [t, p] = stepText();
+    $('stepBox').innerHTML = '<div class="cv-steps"><span class="tag">Step ' + (S.step + 1) + ' of ' + (nSteps() + 1) + '</span><h3 style="margin:0">' + t + '</h3></div><p style="margin-top:6px">' + p + '</p>';
+    const st = stepKind(S.step), showCV = S.step >= 3 + S.k, showTest = st.kind === 'test';
+    $('stats').innerHTML =
+      card('Training set', String(D.nTr), 'observations ' + range(D.tr), '', 'st_train') +
+      card('Test (hold-out) set', String(D.nTe), 'observations ' + range(D.te), '', 'st_test') +
+      card('Folds', String(S.k), D.folds.map(f => f.length).join(' + ') + ' observations', '', 'st_folds') +
+      card('CV score, degree ' + S.deg, showCV ? F(R.cur.cv, 3) : '…', showCV ? 'average validation MSE' : 'after the ' + S.k + ' rounds', '', 'st_cv') +
+      card('Test MSE (reported)', showTest ? F(R.testMSE, 3) : 'locked', showTest ? 'chosen degree ' + R.best.d + ', used once' : 'only at the last step', showTest ? 'good' : '', 'st_testmse');
+    $('stepList').innerHTML = ['Full data set', 'Split off the test set', 'Make ' + S.k + ' folds'].concat(Array.from({ length: S.k }, (_, j) => 'Round ' + (j + 1) + ': validate on F' + (j + 1)), ['CV score', 'All degrees: choose', 'Refit on training set', 'Test once'])
+      .map((t, i) => '<li' + (i === S.step ? ' style="font-weight:800;color:var(--accent,inherit)"' : '') + '>' + t + '</li>').join('');
+    $('back').disabled = S.step === 0; $('next').disabled = S.step >= nSteps();
+  }
+  const figMap = MLS.figure($('figMap'), {
+    title: 'Where each observation goes', help: 'figmap', file: 'cv-observation-map',
+    plot: { height: () => 150, margin: { l: 110, r: 16, t: 26, b: 34 }, x: { label: 'Observation number', fmt: v => (S.n <= 40 ? '' : (Math.abs(v - Math.round(v)) < 1e-9 && (Math.round(v) % 10 === 0) ? String(Math.round(v)) : '')) }, y: { ticks: false } },
+    data: () => ({ cols: ['Observation', 'Experience', 'Wage', 'Set', 'Fold'], rows: D.x.map((x, i) => [i + 1, x, D.y[i], i < D.nTr ? 'training' : 'test (hold-out)', i < D.nTr ? 'F' + (D.folds.findIndex(f => f.includes(i)) + 1) : '']) })
+  });
+  function drawMap() {
+    const P = figMap.plot, c = col(), n = S.n, st = stepKind(S.step);
+    P.setX(0.5, n + 0.5); P.setY(0, 1);
+    P.draw(P => {
+      for (let i = 0; i < n; i++) {
+        const ro = roleOf(i), fill = roleColor(ro, c), op = ro === 'none' ? 0.35 : ro === 'test' ? 0.45 : 1;
+        P.rect(i + 0.56, 0.18, i + 1.44, 0.72, { fill, opacity: op, rx: 3 });
+        if (n <= 40) P.text(i + 1, 0.45, String(i + 1), { anchor: 'middle', dy: 4, size: n <= 25 ? 12 : 10, weight: 700, color: '#FFFFFF', halo: false });
+      }
+      P.text(0.5, 0.45, st.kind === 'full' ? 'Full set' : 'Observations', { anchor: 'end', dx: -8, dy: 4, size: 12, weight: 700, halo: false });
+      if (S.step >= 1) {
+        const lab = (a, b, t, colr) => { P.segment(a + 0.56, 0.86, b + 1.44, 0.86, { color: colr, width: 2 }); P.text((a + b) / 2 + 1, 0.86, t, { anchor: 'middle', dy: -5, size: 11.5, weight: 700, color: colr }); };
+        lab(D.nTe ? D.nTr : 0, n - 1, 'Test (hold-out) set', c.ink);
+        if (S.step < 2) lab(0, D.nTr - 1, 'Training set', c.fit);
+        else D.folds.forEach((f, j) => lab(f[0], f[f.length - 1], 'F' + (j + 1), st.kind === 'round' && st.j === j ? c.val : c.fit));
+      }
+    });
+    const cnt = ro => { let m = 0; for (let i = 0; i < n; i++) if (roleOf(i) === ro) m++; return m; };
+    const items = st.kind === 'full' ? [{ label: 'Full set (' + n + ')', color: c.mu, box: true }]
+      : st.kind === 'round' ? [{ label: 'Fitting part (' + cnt('fit') + ')', color: c.fit, box: true }, { label: 'Validation fold F' + (st.j + 1) + ' (' + cnt('val') + ')', color: c.val, box: true }, { label: 'Test (hold-out) set, locked (' + D.nTe + ')', color: c.te, box: true }]
+      : st.kind === 'test' ? [{ label: 'Training set (' + D.nTr + ')', color: c.fit, box: true }, { label: 'Test (hold-out) set, used now (' + D.nTe + ')', color: c.g, box: true }]
+      : [{ label: 'Training set (' + D.nTr + ')', color: c.fit, box: true }, { label: 'Test (hold-out) set, locked (' + D.nTe + ')', color: c.te, box: true }];
+    figMap.legend(items);
+    figMap.caption('');
+  }
+  const figData = MLS.figure($('figData'), {
+    title: 'Data and the model at this step', help: 'figdata', file: 'cv-data',
+    plot: { aspect: 0.38, margin: { l: 60 }, x: { label: 'Experience (years)' }, y: { label: 'Hourly wage (€)' } },
+    data: () => ({ cols: ['Observation', 'Experience', 'Wage', 'Role now'], rows: D.x.map((x, i) => [i + 1, x, D.y[i], roleOf(i)]) })
+  });
+  function drawData() {
+    const P = figData.plot, c = col(), st = stepKind(S.step);
+    const yd = MLS.niceDomain(Math.min(...D.y), Math.max(...D.y), 0.15);
+    P.setX(0, 40); P.setY(yd[0], yd[1]);
+    let f = null, fl = '';
+    if (st.kind === 'round') { f = R.cur.rounds[st.j].f; fl = 'Degree ' + S.deg + ' fitted on the fitting part'; }
+    else if (st.kind === 'score') { fl = ''; }
+    else if (st.kind === 'refit' || st.kind === 'test') { f = R.final.f; fl = 'Chosen degree ' + R.best.d + ', fitted on the whole training set'; }
+    P.draw(P => {
+      if (st.kind === 'score' || st.kind === 'choose') R.cur.rounds.forEach(r => P.fn(r.f, { color: c.fit, width: 1.2, opacity: 0.45, samples: 200 }));
+      if (f) P.fn(f, { color: c.ink, width: 2.6, samples: 300 });
+      const errIdx = st.kind === 'round' ? R.cur.rounds[st.j].valIdx : st.kind === 'test' ? D.te : [];
+      errIdx.forEach(i => P.segment(D.x[i], D.y[i], D.x[i], f(D.x[i]), { color: st.kind === 'test' ? c.g : c.val, width: 2 }));
+      for (let i = 0; i < S.n; i++) {
+        const ro = roleOf(i), colr = roleColor(ro, c), hollow = ro === 'test';
+        P.points([{ x: D.x[i], y: D.y[i], i }], { color: colr, r: S.n > 60 ? 3.6 : 5, shape: ro === 'test' || ro === 'testOn' ? 'square' : 'circle', hollow, opacity: ro === 'none' ? 0.8 : 1,
+          tip: d => '<b>Observation ' + (d.i + 1) + '</b><br>Experience: ' + F(D.x[d.i], 1) + '<br>Wage: ' + F(D.y[d.i], 2) + (f ? '<br>Prediction: ' + F(f(D.x[d.i]), 2) : '') });
+        if (S.n <= 40) P.text(D.x[i], D.y[i], String(i + 1), { dx: 6, dy: -6, size: 10.5, weight: 700, color: colr });
+      }
+    });
+    const leg = [];
+    if (st.kind === 'full') leg.push({ label: 'Observation (number next to it)', color: c.mu });
+    else if (st.kind === 'round') leg.push({ label: 'Fitting part', color: c.fit }, { label: 'Validation fold', color: c.val }, { label: 'Test (hold-out) set, not used', color: c.te, shape: 'square' });
+    else if (st.kind === 'test') leg.push({ label: 'Training set', color: c.fit }, { label: 'Test (hold-out) set, used now', color: c.g, shape: 'square' });
+    else leg.push({ label: 'Training set', color: c.fit }, { label: 'Test (hold-out) set, not used', color: c.te, shape: 'square' });
+    if (f) leg.push({ label: fl, color: c.ink, line: true, width: 2.6 });
+    if (st.kind === 'score' || st.kind === 'choose') leg.push({ label: 'The ' + S.k + ' fits of degree ' + S.deg + ' (one per round)', color: c.fit, line: true, width: 1.2 });
+    if (st.kind === 'round' || st.kind === 'test') leg.push({ label: 'Prediction errors', color: st.kind === 'test' ? c.g : c.val, line: true });
+    figData.legend(leg);
+    figData.caption(S.n > 40 ? 'With more than 40 observations the numbers are not printed; hover over a point to see its number.' : '');
+  }
+  function drawTable() {
+    const st = stepKind(S.step);
+    if (S.step < 3) { $('tblCard').hidden = true; return; }
+    $('tblCard').hidden = false;
+    if (st.kind === 'round' || st.kind === 'score') {
+      $('tblTitle').firstChild.textContent = 'Cross-validation of degree ' + S.deg + ' ';
+      const upto = st.kind === 'round' ? st.j : S.k - 1;
+      $('cvTable').innerHTML = '<thead><tr><th>Round</th><th>Fitting part</th><th>Validation fold</th><th>Validation MSE</th></tr></thead><tbody>' +
+        R.cur.rounds.map((r, j) => '<tr' + (st.kind === 'round' && j === st.j ? ' class="cur"' : '') + '><td class="var">' + (j + 1) + '</td><td style="text-align:left">' + range(r.fitIdx) + '</td><td style="text-align:left">F' + (j + 1) + ' = ' + range(r.valIdx) + '</td><td>' + (j <= upto ? F(r.mse, 3) : '…') + '</td></tr>').join('') +
+        '<tr class="' + (st.kind === 'score' ? 'cur' : '') + '"><td class="var" colspan="3"><b>CV score</b> = average of the ' + S.k + ' validation MSEs</td><td><b>' + (st.kind === 'score' ? F(R.cur.cv, 3) : '…') + '</b></td></tr></tbody>';
+    } else {
+      $('tblTitle').firstChild.textContent = 'CV score of every degree ';
+      $('cvTable').innerHTML = '<thead><tr><th>Degree</th><th>CV score (average validation MSE)</th><th>Standard error</th>' + (st.kind === 'test' ? '<th>Test MSE</th>' : '') + '</tr></thead><tbody>' +
+        R.all.map(r => '<tr' + (r.d === R.best.d ? ' class="cur"' : '') + '><td class="var">' + r.d + (r.d === R.best.d ? ' (chosen)' : '') + '</td><td>' + F(r.cv, 3) + '</td><td>' + F(r.se, 3) + '</td>' + (st.kind === 'test' ? '<td>' + (r.d === R.best.d ? '<b>' + F(R.testMSE, 3) + '</b>' : '<span class="note">not computed</span>') + '</td>' : '') + '</tr>').join('') + '</tbody>';
+    }
+  }
+  const figDeg = MLS.figure($('figDeg'), {
+    title: 'CV score by degree', help: 'figdeg', file: 'cv-score-by-degree',
+    plot: { aspect: 0.72, margin: { l: 58 }, x: { label: 'Polynomial degree', fmt: v => (Math.abs(v - Math.round(v)) < 1e-9 ? String(Math.round(v)) : '') }, y: { label: 'CV score (MSE)' } },
+    data: () => ({ cols: ['Degree', 'CV score', 'SE'], rows: R.all.map(r => [r.d, r.cv, r.se]) })
+  });
+  function drawDeg() {
+    const show = S.step >= 4 + S.k; $('figDeg').hidden = !show; if (!show) return;
+    const P = figDeg.plot, c = col(), A = R.all;
+    const top = Math.min(Math.max(...A.map(r => r.cv + r.se)), 4 * R.best.cv) * 1.1;
+    P.setX(-0.4, D.dmax + 0.4); P.setY(0, top);
+    P.draw(P => {
+      A.forEach(r => P.segment(r.d, r.cv - r.se, r.d, Math.min(top, r.cv + r.se), { color: c.fit, width: 1.6 }));
+      P.line(A.map(r => [r.d, Math.min(r.cv, top * 0.99)]), { color: c.fit, width: 2.4 });
+      P.points(A.map(r => ({ x: r.d, y: Math.min(r.cv, top * 0.99), r })), { color: c.fit, r: 4, tip: d => 'Degree ' + d.r.d + '<br>CV score: ' + F(d.r.cv, 3) });
+      P.points([{ x: R.best.d, y: R.best.cv }], { color: c.g, shape: 'star', r: 9 });
+      if (stepKind(S.step).kind === 'test') P.points([{ x: R.best.d, y: Math.min(R.testMSE, top * 0.99) }], { color: c.g, shape: 'square', r: 6 });
+    });
+    figDeg.legend([{ label: 'CV score ± 1 standard error', color: c.fit, line: true }, { label: 'Chosen degree (lowest CV score)', color: c.g, shape: 'star' }].concat(stepKind(S.step).kind === 'test' ? [{ label: 'Test MSE of the final model', color: c.g, shape: 'square' }] : []));
+    figDeg.caption('Only the training set is used to draw this chart.');
+  }
+
+  /* ------------------------------------------------------------------
+     controls
+     ------------------------------------------------------------------ */
+  function syncUI() {
+    $('n').value = S.n; $('nVal').textContent = S.n; $('share').value = S.share; $('shareVal').textContent = F(100 * S.share, 0) + '%';
+    $('k').max = Math.max(2, Math.min(10, Math.floor(D.nTr / 2))); $('k').value = S.k; $('kVal').textContent = S.k;
+    $('deg').max = D.dmax; $('deg').value = S.deg; $('degVal').textContent = S.deg; $('dmaxTxt').textContent = D.dmax; $('seed').value = S.seed;
+    $('splitNote').innerHTML = 'Training set: <b>' + range(D.tr) + '</b> (' + D.nTr + '). Test (hold-out) set: <b>' + range(D.te) + '</b> (' + D.nTe + '). Folds: ' + D.folds.map((f, j) => 'F' + (j + 1) + ' = ' + range(f)).join(', ') + '.';
+  }
+  function render() {
+    S.step = Math.max(0, Math.min(S.step, nSteps()));
+    syncUI(); updateTop(); drawMap(); drawData(); drawTable(); drawDeg();
+    [figMap, figData, figDeg].forEach(f => f.refreshTable());
+    if (ch) ch.check();
+    MLS.state.save();
+  }
+  const rebuild = () => { build(); render(); };
+  $('n').oninput = e => { S.n = +e.target.value; S.step = Math.min(S.step, 2); rebuild(); };
+  $('share').oninput = e => { S.share = +e.target.value; S.step = Math.min(S.step, 2); rebuild(); };
+  $('k').oninput = e => { S.k = +e.target.value; S.step = Math.min(S.step, 2); rebuild(); };
+  $('deg').oninput = e => { S.deg = +e.target.value; R.cur = R.all[S.deg]; render(); };
+  $('seed').onchange = e => { S.seed = Math.max(1, Math.round(+e.target.value) || 1); rebuild(); };
+  $('newSeed').onclick = () => { S.seed = MLS.newSeed(); rebuild(); };
+  $('next').onclick = () => { S.step++; render(); };
+  $('back').onclick = () => { S.step--; render(); };
+  $('restart').onclick = () => { S.step = 0; render(); };
+  $('toEnd').onclick = () => { S.step = nSteps(); render(); };
+
+  /* ------------------------------------------------------------------
+     help
+     ------------------------------------------------------------------ */
+  MLS.registerHelp({
+    data: { title: 'Data and split', html: 'Simulated workers: hourly wage and years of experience (the true profile is a quadratic plus noise). Observations are numbered 1 to n in random order. The last ones form the test (hold-out) set; the others are the training set, cut into consecutive folds.' },
+    n: { title: 'Number of observations', html: 'The size of the full data set. With up to 40 observations every observation is shown with its number.' },
+    share: { title: 'Test (hold-out) set share', html: 'The share of observations put aside as the test set. They are not used for fitting or for choosing the degree, only once at the end. 20% (observations 17-20 of 20) is the default.' },
+    k: { title: 'Number of folds', html: 'How many parts the training set is cut into. Each part is the validation fold once, so cross-validation fits the model k times.' },
+    seed: { title: 'Random seed', html: 'Fixes the simulated workers. The dice draws a new sample: see how the CV scores and the chosen degree change.' },
+    model: { title: 'Model', html: 'A polynomial in experience: degree 1 is a straight line, degree 2 a parabola, and so on. The steps first cross-validate the degree chosen here; then every degree is cross-validated in the same way and the one with the lowest CV score is chosen.' },
+    steps: { title: 'Steps', html: 'Go forward and back through the procedure: split off the test set, make the folds, run one round per fold, compute the CV score, compare all degrees, refit the chosen one on the whole training set, and evaluate it once on the test set.' },
+    table: { title: 'Results table', html: 'During the rounds: which observations are fitted and which validated in each round, and the validation MSE. Then the CV score of every degree, and finally the test MSE of the chosen model only.' },
+    st_train: { title: 'Training set', html: 'The observations used to fit the models and, through cross-validation, to choose among them.' },
+    st_test: { title: 'Test (hold-out) set', html: 'Observations kept aside and used once, at the very end, to report the performance of the final model.' },
+    st_folds: { title: 'Folds', html: 'The number of folds and their sizes. Each fold is the validation fold in one round.' },
+    st_cv: { title: 'CV score', html: 'The average of the validation MSEs over the k rounds, for the degree being cross-validated. Lower is better.' },
+    st_testmse: { title: 'Test MSE', html: 'The mean squared prediction error of the final model on the test set. It is shown only at the last step, because in practice it is computed only once.' },
+    figmap: { title: 'Where each observation goes', html: 'Each box is one observation, numbered as in the data. The colours show its role at the current step: in the training set or the test set, and during the rounds whether it is in the fitting part or in the validation fold.' },
+    figdata: { title: 'Data and model', html: 'The workers (experience and wage) with their numbers. In each round the curve is fitted on the blue points and the orange points are predicted: the vertical lines are the errors whose squares are averaged into the validation MSE.' },
+    figdeg: { title: 'CV score by degree', html: 'The CV score of each degree with ± 1 standard error. The star marks the lowest score: the chosen degree. At the last step the square shows the test MSE of the final model.' }
+  });
+
+  /* ------------------------------------------------------------------
+     challenges
+     ------------------------------------------------------------------ */
+  function setup(o) { Object.assign(S, o); MLS.pickTab('sim'); rebuild(); window.scrollTo({ top: 0, behavior: 'smooth' }); }
+  const ch = MLS.challenges($('challenges'), META.id, [
+    { type: 'predict', q: '20 observations, test share 20%, 4 folds. In round 2, which observations form the validation fold?',
+      options: ['1-4', '17-20', '5-8', '1-8'], answer: 2,
+      explain: 'The training set is 1-16 and the folds are F1 = 1-4, F2 = 5-8, F3 = 9-12, F4 = 13-16. In round 2 the validation fold is F2 = 5-8 and the model is fitted on 1-4 and 9-16. Observations 17-20 are the test set and never take part.',
+      tryIt: () => setup({ n: 20, share: 0.2, k: 4, step: 4 }) },
+    { type: 'predict', q: 'Over the whole cross-validation, how many times is each training observation used for validation?',
+      options: ['Never', 'Exactly once', 'In every round', 'Twice'], answer: 1,
+      explain: 'Each training observation belongs to exactly one fold, so it is in the validation fold in exactly one of the k rounds and in the fitting part in the other k − 1. (When several degrees are compared, the same folds are reused for each degree.)' },
+    { type: 'predict', q: 'Which data are used to choose the polynomial degree?',
+      options: ['The test (hold-out) set', 'The training set only, through the CV score', 'Both together'], answer: 1,
+      explain: 'The degree is chosen by the CV score, which uses only the training set. The test set is used once, after the choice, to report the performance of the chosen model. Using it to choose would make the reported error too optimistic.' },
+    { type: 'predict', q: 'After choosing the degree, the final model is fitted on...',
+      options: ['the fitting part of the last round', 'the whole training set', 'the whole data set including the test set'], answer: 1,
+      explain: 'The rounds of cross-validation used only part of the training set to fit. The final model uses all of it. The test set stays out, so that it can still give an honest error.' },
+    { type: 'task', q: 'Walk through all the steps until the test set is used.', hint: 'Press Next step until the last step.',
+      check: () => S.step === nSteps() },
+    { type: 'task', q: 'Set 30 observations, a 20% test set and 5 folds. How many observations does each fold have?', hint: 'Training set 24, 5 folds: some folds have one more observation than others.',
+      check: () => S.n === 30 && Math.abs(S.share - 0.2) < 1e-9 && S.k === 5 },
+    { type: 'task', q: 'Find a sample where cross-validation chooses degree 2, the true shape of the wage profile.', hint: 'Use more observations (for example 100) or try other seeds.',
+      check: () => R && R.best.d === 2 }
+  ]);
+
+  /* ------------------------------------------------------------------
+     state
+     ------------------------------------------------------------------ */
+  MLS.moduleBar({ id: META.id, title: META.title, section: META.sectionTitle, level: META.level },
+    { tabs: [{ id: 'sim', label: 'Simulation' }, { id: 'lesson', label: 'Lesson' }, { id: 'challenges', label: 'Challenges' }, { id: 'real', label: 'On real data' }] });
+  MLS.state.init({
+    id: META.id,
+    get: () => ({ n: S.n, share: S.share, k: S.k, deg: S.deg, seed: S.seed, step: S.step }),
+    set: o => { ['n', 'share', 'k', 'deg', 'seed', 'step'].forEach(k => { if (Number.isFinite(o[k])) S[k] = o[k]; }); }
+  });
+  $('fourCast').href = MLS.APP.fourCastUrl;
+  window.__mls = { S, get D() { return D; }, get R() { return R; } };
+  document.addEventListener('mls:theme', () => render());
+  rebuild();
+})();
+</script>
+</body>
+</html>

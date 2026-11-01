@@ -1,0 +1,983 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Gradient Descent | 4MLSim</title>
+  <meta name="theme-color" content="#1B2340">
+  <link rel="manifest" href="../manifest.json">
+  <link rel="icon" type="image/svg+xml" href="../assets/img/icon.svg">
+  <link rel="apple-touch-icon" href="../assets/img/apple-touch-icon.png">
+  <link rel="stylesheet" href="../assets/vendor/temml.css">
+  <link rel="stylesheet" href="../assets/css/4mlsim.css">
+  <script src="../assets/vendor/temml.min.js"></script>
+  <script src="../assets/js/core.js"></script>
+  <script src="../assets/js/stats.js"></script>
+  <script src="../assets/js/plot.js"></script>
+  <script src="../assets/js/modules.js"></script>
+</head>
+<body>
+<div class="page">
+  <header id="mlsHeader" data-variant="compact"></header>
+  <div class="mod-top" id="mlsTop"><div id="mlsModBar"></div><div id="mlsTabs"></div></div>
+
+  <div class="intro-box" id="mlsIntro">
+    <h3>What is gradient descent?</h3>
+    <div class="intro-cols">
+      <div>
+        <p>Machine learning models are <b>trained</b> by choosing the parameters that make a <b>loss</b> (the total prediction error) as small as possible. For most models there is no formula for the best parameters, so they are found step by step with <b>gradient descent</b>:</p>
+        <ol>
+          <li><b>Start</b> with a guess for the parameters.</li>
+          <li>Compute the <b>gradient</b>: the direction in which the loss rises fastest.</li>
+          <li>Take a small step the <b>opposite</b> way. The step size is the <b>learning rate η</b>.</li>
+          <li><b>Repeat</b> until the loss stops falling.</li>
+        </ol>
+        <p style="margin-top:6px">It is how logistic regression, neural networks and large language models are trained.</p>
+      </div>
+      <div>
+        <p><b>Four problems to try</b></p>
+        <ul>
+          <li><b>One parameter</b>: the loss as a curve with valleys and peaks; watch the tangent (the gradient) and each step.</li>
+          <li><b>Straight line</b>: OLS has a formula, so you can check that gradient descent reaches the same answer.</li>
+          <li><b>Logistic regression</b>: no formula exists; gradient descent is how the model is estimated.</li>
+          <li><b>Bumpy surface</b>: several valleys. Where you start decides where you end up, as in neural networks.</li>
+        </ul>
+        <p style="margin-top:6px"><b>How to use it:</b> press <b>Play</b> or <b>Step</b> on the left and watch the charts. Change the learning rate, or click the loss chart to start somewhere else. Click any <b>?</b> for help.</p>
+      </div>
+    </div>
+  </div>
+
+  <!-- ===================== SIMULATION ===================== -->
+  <section data-panel="sim">
+    <div class="mod-grid">
+      <aside class="side" aria-label="Controls">
+        <div class="card">
+          <div class="card-head"><h3>1. Problem<button type="button" class="help" data-help="problem">?</button></h3></div>
+          <div class="seg prob-seg" role="group" aria-label="Problem">
+            <button type="button" data-prob="one">One parameter</button>
+            <button type="button" data-prob="line">Straight line</button>
+            <button type="button" data-prob="logit">Logistic</button>
+            <button type="button" data-prob="bumpy">Bumpy (2 parameters)</button>
+          </div>
+          <div id="oneControls">
+            <label class="field" for="curve">Loss curve<button type="button" class="help" data-help="curve">?</button></label>
+            <select id="curve">
+              <option value="peaks">Valleys and peaks</option>
+              <option value="bowl">Simple bowl (slope of a regression line)</option>
+            </select>
+            <label class="check"><input type="checkbox" id="showTangent" checked> Show the tangent (the gradient)<button type="button" class="help" data-help="tangent">?</button></label>
+            <label class="check"><input type="checkbox" id="showArrows" checked> Show the step arrows<button type="button" class="help" data-help="arrows">?</button></label>
+          </div>
+          <div id="dataControls">
+            <label class="field" for="ds">Dataset<button type="button" class="help" data-help="dataset">?</button></label>
+            <select id="ds"></select>
+            <div class="field-row"><label for="n">Number of observations</label><output id="nVal"></output></div>
+            <input type="range" id="n" min="10" max="400" step="5" value="60">
+            <div class="field-row"><label for="seed">Random seed<button type="button" class="help" data-help="seed">?</button></label></div>
+            <div class="inline-inputs"><input type="number" id="seed" min="1" max="99999" step="1" value="2026" aria-label="Random seed"><button type="button" class="btn-ghost btn-icon" id="newSeed" title="New random seed" style="flex:0 0 auto">&#127922;</button></div>
+          </div>
+          <p class="note" id="probNote"></p>
+        </div>
+
+        <div class="card">
+          <div class="card-head"><h3>2. Gradient descent settings</h3></div>
+          <div class="field-row"><label for="eta">Learning rate η<button type="button" class="help" data-help="eta">?</button></label><output id="etaVal"></output></div>
+          <input type="range" id="eta" min="-6" max="0.6" step="0.05" value="-1">
+          <div class="note" id="etaHint"></div>
+          <div id="dataSettings">
+            <label class="check"><input type="checkbox" id="std" checked> Standardize X first<button type="button" class="help" data-help="std">?</button></label>
+            <label class="field" for="mode">Each step uses<button type="button" class="help" data-help="mode">?</button></label>
+            <select id="mode">
+              <option value="batch">All observations (batch)</option>
+              <option value="mini">A random mini-batch</option>
+              <option value="sgd">One random observation (stochastic)</option>
+            </select>
+            <div id="batchRow" hidden>
+              <div class="field-row"><label for="batch">Mini-batch size</label><output id="batchVal"></output></div>
+              <input type="range" id="batch" min="2" max="64" step="1" value="8">
+            </div>
+            <label class="check"><input type="checkbox" id="micro"> Step through each line of the algorithm<button type="button" class="help" data-help="micro">?</button></label>
+          </div>
+          <p class="note">Starting point: <b id="startTxt"></b>. Click the <span id="startWhere">loss surface</span> to choose another. <a href="#" id="startDefault">Default start</a></p>
+          <details class="stop-rule" id="stopBox">
+            <summary>Stopping rule: <span class="sr-now" id="stopNow"></span></summary>
+            <label class="field" for="stopRule">Stop when<button type="button" class="help" data-help="stoprule">?</button></label>
+            <select id="stopRule">
+              <option value="grad">Gradient is almost zero</option>
+              <option value="loss">Loss stops falling</option>
+            </select>
+            <div class="inline-inputs" style="margin-top:8px;align-items:flex-start">
+              <div class="mini-field"><span class="mf-label"><label for="tol">Tolerance</label><button type="button" class="help" data-help="tol">?</button></span>
+                <select id="tol">
+                  <option value="-2">10⁻²</option><option value="-3">10⁻³</option><option value="-4">10⁻⁴</option><option value="-5">10⁻⁵</option><option value="-6">10⁻⁶</option><option value="-8">10⁻⁸</option><option value="-10">10⁻¹⁰</option>
+                </select></div>
+              <div class="mini-field"><span class="mf-label"><label for="maxIter">Max iterations</label><button type="button" class="help" data-help="maxiter">?</button></span>
+                <input type="number" id="maxIter" min="10" max="50000" step="10" value="10000"></div>
+            </div>
+          </details>
+        </div>
+
+        <div class="card">
+          <div class="card-head"><h3>3. Run<button type="button" class="help" data-help="run">?</button></h3></div>
+          <div id="stepper"></div>
+          <div id="microBox" class="box-info" style="margin-top:10px" hidden></div>
+        </div>
+
+        <div class="card">
+          <div class="card-head"><h3>Pseudocode<button type="button" class="help" data-help="pseudo">?</button></h3></div>
+          <div id="pseudo"></div>
+        </div>
+      </aside>
+
+      <main class="main">
+        <div class="stat-grid" id="stats"></div>
+        <div id="statusLine" class="status-line"></div>
+        <div class="fig-grid" id="figs">
+          <div id="figCurve" class="fig-wide"></div>
+          <div id="figModel" class="fig-wide"></div>
+          <div id="figSurface"></div>
+          <div id="figLoss"></div>
+          <div id="figB"></div>
+        </div>
+      </main>
+    </div>
+  </section>
+
+  <!-- ===================== LESSON ===================== -->
+  <section data-panel="lesson" class="card lesson" hidden>
+    <div id="mlsMathCtl"></div>
+    <p class="lvl-only-intuition note" style="margin-bottom:8px">Showing the intuition only. Choose <b>Formulas</b> or <b>Deep dive</b> above to add the mathematics.</p>
+    <h4>Training means minimizing a loss</h4>
+    <p>A model has parameters (for a straight line: intercept b₀ and slope b₁). A <b>loss function</b> measures how badly the model with those parameters fits the data: the mean squared error for a line, the log-loss for logistic regression. Training means finding the parameters with the smallest loss. If you plot the loss for every possible pair of parameters you get a landscape: the <b>loss surface</b>. Its contour lines are like height lines on a map.</p>
+    <div class="math-block lvl-math"><div class="mb-title">Two common loss functions</div>
+      <div class="tex-block">\text{MSE}(b) = \frac1n\sum_i \bigl(y_i - b_0 - b_1 x_i\bigr)^2 \qquad \text{LogLoss}(b) = -\frac1n\sum_i \bigl[y_i\ln p_i + (1-y_i)\ln(1-p_i)\bigr],\; p_i = \frac{1}{1+e^{-(b_0+b_1x_i)}}</div>
+    </div>
+
+    <h4>Walking downhill in fog</h4>
+    <p>Gradient descent is like walking down a mountain in thick fog: you cannot see the valley, only feel the slope under your feet. The <b>gradient</b> is that slope: it points uphill, so you step the opposite way. Near the bottom the slope flattens, so the steps shrink by themselves and the walk settles.</p>
+    <div class="math-block lvl-math"><div class="mb-title">Gradient and update rule</div>
+      <div class="tex-block">b \leftarrow b - \eta\,\nabla L(b), \qquad \nabla \text{MSE} = \frac{2}{n}\sum_i (\hat y_i - y_i)\begin{pmatrix}1\\ x_i\end{pmatrix}, \qquad \nabla\text{LogLoss} = \frac{1}{n}\sum_i (p_i - y_i)\begin{pmatrix}1\\ x_i\end{pmatrix}</div>
+    </div>
+
+    <h4>The update rule and the learning rate</h4>
+    <p>At every iteration gradient descent calculates</p>
+    <p style="text-align:center;font-size:17px;margin:8px 0"><b>b<sub>new</sub> = b<sub>old</sub> − η × gradient</b></p>
+    <p>With one parameter, the <b>gradient is the first derivative of the loss function with respect to b</b>: the slope of the tangent to the loss curve at the current b. With several parameters it is the vector of partial derivatives, one per parameter. The gradient tells you <b>which way the loss rises and how steeply</b>; the learning rate η decides <b>how far you move the opposite way</b>. For example, with η = 0.1 and a slope of 4 for b₁, you move b₁ down by 0.4. Try the <b>One parameter</b> problem to see the tangent and every step.</p>
+    <p>The learning rate η sets the step length. Too small and the walk takes forever. A little too large and you overshoot the bottom, land on the opposite slope and zig-zag. Much too large and each step lands higher than the last: the algorithm <b>diverges</b>.</p>
+
+    <h4>When does gradient descent stop?</h4>
+    <p>Gradient descent does not know where the minimum is, so it needs a <b>stopping rule</b>. The two common ones: stop when the <b>gradient is almost zero</b> (at a minimum the slope is flat), or stop when the <b>loss stops falling</b> (it changes by less than a small fraction). The threshold is called the <b>tolerance</b>. A <b>maximum number of iterations</b> is a safety limit in case the rule is never met. A loose tolerance saves time but can stop too early, for example on a flat stretch of the loss; a tight tolerance is more precise but slower. Note that the rule can also be met on a peak or a saddle, where the gradient is zero too.</p>
+    <div class="math-block lvl-math"><div class="mb-title">Stopping rules</div>
+      <div class="tex-block">\lVert \nabla L(b_t) \rVert &lt; \varepsilon \qquad\text{or}\qquad \frac{\lvert L(b_{t-1}) - L(b_t)\rvert}{\lvert L(b_{t-1})\rvert} &lt; \varepsilon \qquad\text{or}\qquad t = t_{\max}</div>
+    </div>
+
+    <h4>Why standardize X?</h4>
+    <p>When X is in large units (square metres, euros) the loss surface becomes a long, narrow valley. A step that is safe across the steep walls is tiny along the valley floor, so progress stalls. Standardizing (subtract the mean, divide by the standard deviation) makes the surface round, and gradient descent crosses it in a few steps. The final model is the same; only the route changes.</p>
+
+    <h4>Batch, mini-batch and stochastic</h4>
+    <p>Batch gradient descent uses all observations for every step. Stochastic gradient descent (SGD) uses one random observation and mini-batch a small random group. Each step is far cheaper, which matters with millions of rows, but the direction is noisy, so the path wanders and keeps jittering near the bottom. Deep learning uses mini-batches.</p>
+
+    <h4>Logistic regression: no formula, so we must descend</h4>
+    <p>For a straight line, OLS gives the best parameters with a formula, and gradient descent is only an alternative. For logistic regression no such formula exists. Statistical software uses Newton's method (maximum likelihood); machine learning libraries use gradient descent. Both reach the same estimates, shown by the star.</p>
+
+    <h4>Bumpy surfaces: local minima and saddle points</h4>
+    <p>The loss of a line or a logistic regression is a single bowl (<b>convex</b>): any start leads to the same bottom. The loss of a neural network has many valleys. Gradient descent only goes downhill, so it stops in the valley where it started: a <b>local minimum</b> that may be worse than the <b>global minimum</b>. Between valleys there are <b>saddle points</b>, flat in one direction, where progress slows. That is why neural networks are trained several times from different random starts.</p>
+
+    <div class="math-block deep lvl-deep"><div class="mb-title">Deep dive: when and how fast gradient descent converges</div>
+      <p>For the least-squares loss the Hessian <span class="tex">H = \tfrac{2}{n}X^\top X</span> is constant, and after t batch steps the error along each eigenvector of H shrinks by <span class="tex">(1-\eta\lambda_k)^t</span>. Gradient descent converges if and only if</p>
+      <div class="tex-block">0 &lt; \eta &lt; \frac{2}{\lambda_{\max}(H)},</div>
+      <p>and its speed is set by the condition number <span class="tex">\kappa = \lambda_{\max}/\lambda_{\min}</span>: with the best fixed step the error falls by about <span class="tex">(\kappa-1)/(\kappa+1)</span> per iteration. Standardizing makes <span class="tex">\tfrac1n X^\top X = I</span>, so <span class="tex">\kappa = 1</span> and the minimum is reached in one step with <span class="tex">\eta = 1/2</span>.</p>
+      <div id="deepNumbers" class="box-info" style="margin-top:8px"></div>
+      <p style="margin-top:8px">For the log-loss the Hessian <span class="tex">H(b) = \tfrac1n\sum_i p_i(1-p_i)\,x_i x_i^\top</span> changes with b and is bounded by <span class="tex">\tfrac14\cdot\tfrac1n X^\top X</span>, so a step size safe for least squares with the same X is also safe here. Newton's method uses <span class="tex">b \leftarrow b - H(b)^{-1}\nabla L(b)</span> and converges in a handful of iterations; it is what econometric software runs for maximum likelihood.</p>
+      <p style="margin-top:8px">With a fixed η, stochastic gradient descent does not settle: it fluctuates around the minimum with a spread proportional to η. Convergence requires a decreasing step size with <span class="tex">\sum_t \eta_t = \infty</span> and <span class="tex">\sum_t \eta_t^2 &lt; \infty</span> (Robbins and Monro, 1951).</p>
+      <p class="note" style="margin-top:8px">Further reading: Goodfellow, Bengio and Courville (2016), <i>Deep Learning</i>, ch. 4 and 8; Bottou, Curtis and Nocedal (2018), "Optimization Methods for Large-Scale Machine Learning", <i>SIAM Review</i> 60(2); Nocedal and Wright (2006), <i>Numerical Optimization</i>, ch. 3.</p>
+    </div>
+  </section>
+
+  <!-- ===================== CHALLENGES ===================== -->
+  <section data-panel="challenges" class="card" hidden>
+    <div class="card-head"><h3>Challenges</h3><span class="card-sub">Answer the "predict first" questions before testing them in the Simulation tab.</span></div>
+    <div id="challenges"></div>
+  </section>
+
+  <!-- ===================== REAL DATA ===================== -->
+  <section data-panel="real" class="card lesson" hidden>
+    <h4>Gradient descent in practice</h4>
+    <ul>
+      <li>Every neural network in 4Cast Lab and in modern AI is trained with a variant of gradient descent (mini-batches plus refinements such as momentum or Adam, which adapt the step size).</li>
+      <li>In practice, standardize the input variables, try a few learning rates on a log scale (0.001, 0.01, 0.1), and watch the loss curve: it should fall steadily and flatten.</li>
+      <li>A loss curve that jumps up and down or grows means the learning rate is too large.</li>
+    </ul>
+    <div class="crosslink"><span>&#10140;</span><span>Train real models on your own data in <a id="fourCast" target="_blank" rel="noopener"><b>4Cast Lab</b></a>.</span></div>
+  </section>
+
+  <footer id="mlsFooter"></footer>
+</div>
+
+<script>
+(function () {
+  'use strict';
+  const MLS = window.MLS;
+  const META = MLS.moduleMeta('gradient-descent');
+  const $ = id => document.getElementById(id);
+  const F = MLS.fmt;
+  const sig = x => 1 / (1 + Math.exp(-x));
+  const softplus = z => (z > 0 ? z + Math.log1p(Math.exp(-z)) : Math.log1p(Math.exp(z)));
+
+  /* ------------------------------------------------------------------
+     datasets
+     ------------------------------------------------------------------ */
+  const DATA = {
+    line: {
+      consumption: { label: 'Households: consumption vs income', xl: 'Disposable income (k€ per year)', yl: 'Consumption (k€ per year)', xr: [8, 60], f: x => 3 + 0.72 * x, sd: 2.6, n: 40 },
+      housing: { label: 'Housing: price vs floor area', xl: 'Floor area (m²)', yl: 'Price (k€)', xr: [40, 180], f: x => 25 + 1.6 * x, sd: 22, n: 40 },
+      synthetic: { label: 'Synthetic: y = 2 + 0.5x + noise', xl: 'x', yl: 'y', xr: [0, 10], f: x => 2 + 0.5 * x, sd: 1, n: 40 }
+    },
+    logit: {
+      loans: { label: 'Loans: default vs debt-to-income ratio', xl: 'Debt-to-income ratio (%)', yl: 'Default (1 = yes)', xr: [5, 60], f: x => -4.5 + 0.11 * x, n: 150 },
+      synthetic: { label: 'Synthetic: P(y = 1) = σ(−4 + 0.8x)', xl: 'x', yl: 'y (0 or 1)', xr: [0, 10], f: x => -4 + 0.8 * x, n: 150 }
+    }
+  };
+  const NOTES = {
+    one: 'One parameter b, so the loss is a curve. The slope of the tangent at the current b is the gradient; each arrow is a step b<sub>new</sub> = b<sub>old</sub> − η × gradient. <b>Click the chart</b> to start from another b.',
+    line: 'Fit a straight line by minimizing the mean squared error. The star on the loss surface is the OLS answer: gradient descent should get there.',
+    logit: 'Fit a logistic regression (the probability of Y = 1) by minimizing the log-loss. No formula exists; the star is the maximum likelihood estimate found by Newton\'s method, as in econometric software.',
+    bumpy: 'A made-up loss with three valleys: <b>A</b> is the lowest (global minimum), <b>B</b> and <b>C</b> are local minima. Gradient descent goes to the valley it starts in.'
+  };
+
+  /* ------------------------------------------------------------------
+     state
+     ------------------------------------------------------------------ */
+  const S = { prob: 'one', curve: 'peaks', showTangent: true, showArrows: true, ds: { line: 'consumption', logit: 'loans' }, n: { line: 40, logit: 150 }, seed: 2026,
+    logEta: { one: -1, line: -1, logit: 0.5, bumpy: -0.7 }, std: true, mode: 'batch', batch: 8, micro: false, logLoss: true, stopRule: 'grad', tolExp: -6, maxIter: 10000,
+    start: { one: { peaks: null, bowl: null }, line: null, logit: null, bumpy: null } };
+  const getStart = () => (S.prob === 'one' ? S.start.one[S.curve] : S.start[S.prob]);
+  const setStart = v => { if (S.prob === 'one') S.start.one[S.curve] = v; else S.start[S.prob] = v; };
+  let M = null, G = null, surf = null;
+
+  /* ------------------------------------------------------------------
+     model objects: loss, gradient, target, coordinates
+     ------------------------------------------------------------------ */
+  function buildModel() {
+    const P = S.prob;
+    if (P === 'bumpy') { M = bumpyModel(); return; }
+    if (P === 'one') { M = oneModel(); return; }
+    const d = DATA[P][S.ds[P]], r = MLS.rng(S.seed), n = S.n[P], x = [], y = [];
+    for (let i = 0; i < n; i++) {
+      const xi = +r.uniform(d.xr[0], d.xr[1]).toFixed(1);
+      x.push(xi);
+      y.push(P === 'line' ? +(d.f(xi) + r.normal(0, d.sd)).toFixed(2) : (r.random() < sig(d.f(xi)) ? 1 : 0));
+    }
+    const mx = MLS.stat.mean(x), sx = MLS.stat.sd(x) || 1;
+    const u = S.std ? x.map(v => (v - mx) / sx) : x.slice();
+    const m = { kind: P, d, x, y, u, n, mx, sx, xl: d.xl, yl: d.yl };
+    m.toOrig = c => (S.std ? [c[0] - c[1] * mx / sx, c[1] / sx] : [c[0], c[1]]);
+    m.toGD = b => (S.std ? [b[0] + b[1] * mx, b[1] * sx] : [b[0], b[1]]);
+    const Su = MLS.stat.mean(u), Suu = MLS.stat.mean(u.map(v => v * v));
+    if (P === 'line') {
+      const Sy = MLS.stat.mean(y), Syy = MLS.stat.mean(y.map(v => v * v)), Suy = MLS.stat.mean(u.map((v, i) => v * y[i]));
+      m.loss = (c0, c1) => Syy - 2 * c0 * Sy - 2 * c1 * Suy + c0 * c0 + 2 * c0 * c1 * Su + c1 * c1 * Suu;
+      m.grad = (c, ids) => { let g0 = 0, g1 = 0; ids.forEach(i => { const e = c[0] + c[1] * u[i] - y[i]; g0 += e; g1 += e * u[i]; }); return [2 * g0 / ids.length, 2 * g1 / ids.length]; };
+      m.pred = (c, i) => c[0] + c[1] * u[i];
+      const o = MLS.stat.ols(x, y); m.targetB = [o.b0, o.b1]; m.target = m.toGD(m.targetB);
+      const ev = MLS.mat.eigSym2([[2, 2 * Su], [2 * Su, 2 * Suu]]); m.lmax = ev[0]; m.lmin = Math.max(ev[1], 1e-300);
+      m.targetName = 'OLS'; m.lossName = 'MSE'; m.factor = 2;
+    } else {
+      m.loss = (c0, c1) => { let s = 0; for (let i = 0; i < n; i++) { const z = c0 + c1 * u[i]; s += softplus(z) - y[i] * z; } return s / n; };
+      m.grad = (c, ids) => { let g0 = 0, g1 = 0; ids.forEach(i => { const e = sig(c[0] + c[1] * u[i]) - y[i]; g0 += e; g1 += e * u[i]; }); return [g0 / ids.length, g1 / ids.length]; };
+      m.pred = (c, i) => sig(c[0] + c[1] * u[i]);
+      /* maximum likelihood by Newton-Raphson (the reference answer) */
+      let c = [0, 0], ok = false;
+      for (let it = 0; it < 100; it++) {
+        let g0 = 0, g1 = 0, h00 = 0, h01 = 0, h11 = 0;
+        for (let i = 0; i < n; i++) { const p = sig(c[0] + c[1] * u[i]), w = p * (1 - p), e = p - y[i]; g0 += e; g1 += e * u[i]; h00 += w; h01 += w * u[i]; h11 += w * u[i] * u[i]; }
+        const det = h00 * h11 - h01 * h01; if (Math.abs(det) < 1e-300) break;
+        const d0 = (h11 * g0 - h01 * g1) / det, d1 = (-h01 * g0 + h00 * g1) / det;
+        c = [c[0] - d0, c[1] - d1];
+        if (Math.abs(d0) + Math.abs(d1) < 1e-12) { ok = true; break; }
+        if (!Number.isFinite(c[0]) || Math.abs(c[1]) > 1e6) break;
+      }
+      m.mleOK = ok; m.target = c; m.targetB = m.toOrig(c);
+      let h00 = 0, h01 = 0, h11 = 0; for (let i = 0; i < n; i++) { const p = sig(c[0] + c[1] * u[i]), w = p * (1 - p); h00 += w; h01 += w * u[i]; h11 += w * u[i] * u[i]; }
+      const ev = MLS.mat.eigSym2([[h00 / n, h01 / n], [h01 / n, h11 / n]]); m.lmax = ev[0]; m.lmin = Math.max(ev[1], 1e-300);
+      m.targetName = 'maximum likelihood'; m.lossName = 'Log-loss'; m.factor = 1;
+    }
+    m.minLoss = m.loss(m.target[0], m.target[1]);
+    m.etaMax = 2 / m.lmax; m.kappa = m.lmax / m.lmin;
+    m.defaultStart = () => {
+      if (P === 'logit') return [0, 0];
+      const my = MLS.stat.mean(y), sy = MLS.stat.sd(y) || 1;
+      let b0 = my - 1.2 * sy; const mag = Math.pow(10, Math.floor(Math.log10(Math.abs(b0) || 1)) - 1); b0 = Math.round(b0 / mag) * mag;
+      return m.toGD([b0, 0]);
+    };
+    m.axis = S.std ? ['b₀ (intercept, standardized X)', 'b₁ (slope per 1 SD of X)'] : ['b₀ (intercept)', 'b₁ (slope)'];
+    M = m;
+  }
+  /* one parameter: the loss is a curve L(b) */
+  function oneModel() {
+    let f, df, dom, ext, xl, yl, plateau = null, targetName;
+    if (S.curve === 'bowl') {
+      /* MSE of the consumption line as a function of its slope (X standardized, intercept fixed at its OLS value) */
+      const d = DATA.line.consumption, r = MLS.rng(S.seed), x = [], y = [];
+      for (let i = 0; i < 40; i++) { const xi = +r.uniform(d.xr[0], d.xr[1]).toFixed(1); x.push(xi); y.push(+(d.f(xi) + r.normal(0, d.sd)).toFixed(2)); }
+      const mx = MLS.stat.mean(x), sx = MLS.stat.sd(x), my = MLS.stat.mean(y);
+      const z = x.map(v => (v - mx) / sx), mean = MLS.stat.mean;
+      const vy = mean(y.map(v => (v - my) ** 2)), czy = mean(z.map((v, i) => v * (y[i] - my))), mzz = mean(z.map(v => v * v));
+      /* L(b) = mean((y − ȳ − b·z)²): a parabola */
+      f = b => vy - 2 * b * czy + b * b * mzz;
+      df = b => -2 * czy + 2 * b * mzz;
+      const bs = czy / mzz, w = Math.max(Math.abs(bs), 2) * 1.6;
+      dom = [bs - w, bs + w];
+      ext = [{ b: bs, kind: 'min', label: 'Minimum (OLS slope)', global: true }];
+      xl = 'b: slope of the consumption line (k€ per 1 SD of income)'; yl = 'Loss: mean squared error'; targetName = 'the OLS slope';
+      var bowlData = { x, y, mx, sx, my, xl: d.xl, yl: d.yl };
+    } else {
+      const g = (b, m, s) => Math.exp(-((b - m) ** 2) / (2 * s * s));
+      const B = [[1.2, -2.5, 0.6], [1.9, 0.8, 0.8], [1.0, 3.6, 0.5]];
+      f = b => 2 - B.reduce((t, q) => t + q[0] * g(b, q[1], q[2]), 0) + 0.012 * (b - 0.8) ** 2;
+      df = b => B.reduce((t, q) => t + q[0] * g(b, q[1], q[2]) * (b - q[1]) / (q[2] * q[2]), 0) + 0.024 * (b - 0.8);
+      dom = [-4.5, 7];
+      /* locate the extrema precisely by bisection on the derivative */
+      const roots = []; let prev = df(dom[0]);
+      for (let k = 1; k <= 4000; k++) {
+        const b = dom[0] + (dom[1] - dom[0]) * k / 4000, cur = df(b);
+        if (Math.sign(cur) !== Math.sign(prev)) { let lo = b - (dom[1] - dom[0]) / 4000, hi = b; for (let it = 0; it < 80; it++) { const mid = (lo + hi) / 2; if (Math.sign(df(mid)) === Math.sign(df(lo))) lo = mid; else hi = mid; } roots.push({ b: (lo + hi) / 2, kind: prev < 0 ? 'min' : 'max' }); }
+        prev = cur;
+      }
+      const gmin = roots.filter(e => e.kind === 'min').reduce((a, e) => (f(e.b) < f(a.b) ? e : a));
+      ext = roots.map(e => Object.assign(e, { global: e === gmin, label: e.kind === 'max' ? 'Local maximum (peak)' : e === gmin ? 'Global minimum' : 'Local minimum' }));
+      plateau = [4.7, 7];
+      xl = 'b (the single parameter)'; yl = 'Loss L(b)'; targetName = 'the global minimum';
+    }
+    const gm = ext.find(e => e.global);
+    const curv = b => (df(b + 1e-5) - df(b - 1e-5)) / 2e-5;
+    const m = { kind: 'one', bowl: S.curve === 'bowl' ? bowlData : null, f, df, curv, dom, ext, plateau, xl, yl, targetName, lossName: 'Loss',
+      loss: (c0) => f(c0), grad: c => [df(c[0]), 0], target: [gm.b, 0], minLoss: f(gm.b), toOrig: c => c, axis: [xl, ''] };
+    m.lmax = curv(gm.b); m.lmin = m.lmax; m.kappa = 1; m.etaMax = 2 / m.lmax;
+    m.defaultStart = () => (S.curve === 'bowl' ? [gm.b - (dom[1] - dom[0]) * 0.4, 0] : [5.5, 0]);
+    return m;
+  }
+  const nearestExt = b => M.ext.reduce((a, e) => (Math.abs(e.b - b) < Math.abs(a.b - b) ? e : a), M.ext[0]);
+
+  function bumpyModel() {
+    const bumps = [[2.0, 1.6, 1.0, 1.2], [1.3, -1.7, -1.2, 0.9], [0.9, -1.2, 2.0, 0.6]];
+    const f = (x, y) => { let v = 0.06 * (x * x + y * y); bumps.forEach(b => { v -= b[0] * Math.exp(-((x - b[1]) ** 2 + (y - b[2]) ** 2) / b[3]); }); return v; };
+    const grad = c => {
+      const [x, y] = c; let gx = 0.12 * x, gy = 0.12 * y;
+      bumps.forEach(b => { const e = b[0] * Math.exp(-((x - b[1]) ** 2 + (y - b[2]) ** 2) / b[3]); gx += e * 2 * (x - b[1]) / b[3]; gy += e * 2 * (y - b[2]) / b[3]; });
+      return [gx, gy];
+    };
+    /* locate the three minima precisely (small-step descent from each bump centre) */
+    const mins = bumps.map(b => { let c = [b[1], b[2]]; for (let k = 0; k < 20000; k++) { const g = grad(c); c = [c[0] - 0.05 * g[0], c[1] - 0.05 * g[1]]; if (Math.hypot(g[0], g[1]) < 1e-12) break; } return { c, v: f(c[0], c[1]) }; });
+    ['A', 'B', 'C'].forEach((l, i) => (mins[i].label = l));
+    const m = { kind: 'bumpy', loss: f, grad: c => grad(c), mins, target: mins[0].c, minLoss: mins[0].v, targetName: 'global minimum A', lossName: 'Loss', axis: ['w₁', 'w₂'] };
+    m.defaultStart = () => [-3, 0.5];
+    m.toOrig = c => c;
+    /* stability at the global minimum (numerical Hessian) */
+    const h = 1e-4, c = mins[0].c;
+    const gxp = grad([c[0] + h, c[1]]), gxm = grad([c[0] - h, c[1]]), gyp = grad([c[0], c[1] + h]), gym = grad([c[0], c[1] - h]);
+    const H = [[(gxp[0] - gxm[0]) / (2 * h), (gyp[0] - gym[0]) / (2 * h)], [(gxp[1] - gxm[1]) / (2 * h), (gyp[1] - gym[1]) / (2 * h)]];
+    H[0][1] = H[1][0] = (H[0][1] + H[1][0]) / 2;
+    const ev = MLS.mat.eigSym2(H); m.lmax = ev[0]; m.lmin = ev[1]; m.etaMax = 2 / ev[0]; m.kappa = ev[0] / ev[1];
+    return m;
+  }
+  const nearestMin = c => M.mins.reduce((b, m) => (Math.hypot(c[0] - m.c[0], c[1] - m.c[1]) < Math.hypot(c[0] - b.c[0], c[1] - b.c[1]) ? m : b), M.mins[0]);
+
+  /* ------------------------------------------------------------------
+     gradient descent engine
+     ------------------------------------------------------------------ */
+  const eta = () => Math.pow(10, S.logEta[S.prob]);
+  function startPoint() { const s = getStart(); return s && s.length === 2 && s.every(Number.isFinite) ? s : M.defaultStart(); }
+  function resetGD() {
+    const s = startPoint();
+    G = { c: s.slice(), path: [], losses: [M.loss(s[0], s[1])], iter: 0, status: 'ready', phase: 0, micro: null, rng: MLS.rng(S.seed * 7 + 13), start: s.slice() };
+    pushPath();
+  }
+  function pushPath() {
+    G.path.push([G.c[0], G.c[1], G.iter, G.losses[G.losses.length - 1]]);
+    if (G.path.length > 6000) { const last = G.path.length - 1; G.path = G.path.filter((_, i) => i % 2 === 0 || i === last); }
+  }
+  const usesData = () => S.prob === 'line' || S.prob === 'logit';
+  function batchIdx() {
+    const n = M.n; if (S.mode === 'batch') return null;
+    const b = S.mode === 'sgd' ? 1 : Math.min(S.batch, n), pool = Array.from({ length: n }, (_, i) => i), idx = [];
+    for (let k = 0; k < b; k++) { const j = k + Math.floor(G.rng.random() * (n - k)); [pool[k], pool[j]] = [pool[j], pool[k]]; idx.push(pool[k]); }
+    return idx;
+  }
+  const allIdx = () => Array.from({ length: M.n }, (_, i) => i);
+  function gradNow(c, idx) { return usesData() ? M.grad(c, idx || allIdx()) : M.grad(c); }
+  const finished = () => G.status === 'converged' || G.status === 'diverged' || G.status === 'maxiter';
+  const tol = () => Math.pow(10, S.tolExp);
+  const stochastic = () => usesData() && S.mode !== 'batch';
+  const epochLen = () => (stochastic() ? Math.ceil(M.n / (S.mode === 'sgd' ? 1 : Math.min(S.batch, M.n))) : 1);
+  /* size of the full (all-data) gradient at c: what the stopping rule checks */
+  function gradNorm(c) {
+    if (S.prob === 'one') return Math.abs(M.df(c[0]));
+    const g = usesData() ? M.grad(c, allIdx()) : M.grad(c);
+    return Math.hypot(g[0], g[1]);
+  }
+  /* the stopping rule: checked after every step (once per epoch with random observations) */
+  function ruleMet() {
+    const k = epochLen();
+    if (G.iter % k !== 0) return false;
+    G.gnorm = gradNorm(G.c);
+    if (S.stopRule === 'grad') return G.gnorm < tol();
+    const L = G.losses[G.iter], L0 = G.losses[G.iter - k];
+    G.dloss = Math.abs(L0 - L) / Math.max(Math.abs(L0), 1e-12);
+    return G.dloss < tol();
+  }
+  /* how close the stopping point is to a true flat point (the program knows where they are) */
+  function classifyStop() {
+    if (S.prob === 'one') { G.reached = nearestExt(G.c[0]); G.atPoint = Math.abs(G.c[0] - G.reached.b) < 1e-3 * (M.dom[1] - M.dom[0]); G.atPeak = G.atPoint && G.reached.kind === 'max'; }
+    else if (S.prob === 'bumpy') { G.reached = nearestMin(G.c); G.atPoint = Math.hypot(G.c[0] - G.reached.c[0], G.c[1] - G.reached.c[1]) < 0.02; }
+    else { G.gap = (G.losses[G.losses.length - 1] - M.minLoss) / Math.max(Math.abs(M.minLoss), 1e-12); G.atPoint = G.gap < 1e-4; }
+  }
+  function judge() {
+    const L = G.losses[G.losses.length - 1], L0 = G.losses[0];
+    if (!Number.isFinite(L) || Math.abs(G.c[0]) > 1e12 || Math.abs(G.c[1]) > 1e12 || (usesData() && L > 1e8 * Math.max(L0, 1e-9))) { G.status = 'diverged'; return; }
+    if (S.prob === 'one' && Math.abs(G.c[0] - M.target[0]) > 1e3 * (M.dom[1] - M.dom[0])) { G.status = 'diverged'; return; }
+    if (S.prob === 'bumpy' && (Math.abs(G.c[0]) > 30 || Math.abs(G.c[1]) > 30)) { G.status = 'diverged'; return; }
+    if (ruleMet()) { G.status = 'converged'; classifyStop(); return; }
+    if (G.iter >= S.maxIter) { G.status = 'maxiter'; G.gnorm = gradNorm(G.c); classifyStop(); return; }
+    const Lp = G.losses[G.losses.length - 2];
+    G.status = !stochastic() && L > Lp + 1e-12 * Math.max(1, Math.abs(Lp)) ? 'rising' : 'running';
+  }
+  function applyStep(g) {
+    const h = eta();
+    G.from = G.c.slice();
+    G.c = [G.c[0] - h * g[0], G.c[1] - h * g[1]];
+    G.iter++; G.losses.push(M.loss(G.c[0], G.c[1])); pushPath(); G.lastGrad = g;
+    judge();
+  }
+  function step() {
+    if (finished()) return false;
+    if (!S.micro || !usesData()) { const idx = usesData() ? batchIdx() : null; applyStep(gradNow(G.c, idx)); return !finished(); }
+    const ph = G.phase;
+    if (ph === 0) { const idx = batchIdx(); G.micro = { idx, ids: idx || allIdx() }; G.micro.pred = G.micro.ids.map(i => M.pred(G.c, i)); }
+    else if (ph === 1) G.micro.err = G.micro.ids.map((i, k) => G.micro.pred[k] - M.y[i]);
+    else if (ph === 2) G.micro.grad = gradNow(G.c, G.micro.idx);
+    else applyStep(G.micro.grad);
+    G.phase = (ph + 1) % 4;
+    return !finished();
+  }
+
+  /* ------------------------------------------------------------------
+     figures
+     ------------------------------------------------------------------ */
+  const C = () => ({ data: MLS.color('series-1'), gd: MLS.color('series-2'), ink: MLS.color('chart-ink'), mu: MLS.color('chart-muted'), star: MLS.color('series-3'), text: MLS.color('chart-text') });
+  const figModel = MLS.figure($('figModel'), {
+    title: 'Data and the current model', help: 'figmodel', file: 'gradient-descent-model',
+    plot: { aspect: 0.42, margin: { l: 66 }, x: { label: () => M ? (M.bowl ? M.bowl.xl : M.xl || '') : '' }, y: { label: () => M ? (M.bowl ? M.bowl.yl : M.yl || '') : '' } },
+    data: () => {
+      if (M.bowl) { const B = M.bowl, b = G.c[0]; return { cols: [B.xl, B.yl, 'Current line prediction'], rows: B.x.map((x, i) => [x, B.y[i], B.my + b * (x - B.mx) / B.sx]) }; }
+      const b = curB(); return { cols: [M.xl, M.yl, 'Current model prediction'], rows: M.x.map((x, i) => [x, M.y[i], S.prob === 'line' ? b[0] + b[1] * x : sig(b[0] + b[1] * x)]) };
+    }
+  });
+  const figSurface = MLS.figure($('figSurface'), {
+    title: 'Loss surface', help: 'figsurface', file: 'gradient-descent-loss-surface',
+    plot: { aspect: 0.78, margin: { l: 64 }, x: { label: () => M ? M.axis[0] : '' }, y: { label: () => M ? M.axis[1] : '' },
+      onClick: (x, y) => { setStart([+x.toPrecision(5), +y.toPrecision(5)]); stepper.stop(); resetGD(); refresh(); } },
+    data: () => ({ cols: ['Iteration', 'Parameter 1', 'Parameter 2', 'Loss'], rows: G.path.map(p => [p[2], p[0], p[1], p[3]]) })
+  });
+  const figLoss = MLS.figure($('figLoss'), {
+    title: 'Loss by iteration', help: 'figloss', file: 'gradient-descent-loss-curve',
+    plot: { aspect: 0.78, margin: { l: 64 }, x: { label: 'Iteration' }, y: { label: () => (logScale() ? 'Loss above the minimum (log scale)' : 'Loss'), fmt: v => (logScale() ? fmtPow(v) : undefined) } },
+    data: () => ({ cols: ['Iteration', 'Loss'], rows: G.losses.map((l, i) => [i, l]) })
+  });
+  const figCurve = MLS.figure($('figCurve'), {
+    title: 'The loss curve L(b)', help: 'figcurve', file: 'gradient-descent-loss-curve-1d',
+    plot: { aspect: 0.42, margin: { l: 66 }, x: { label: () => (M && M.kind === 'one' ? M.xl : '') }, y: { label: () => (M && M.kind === 'one' ? M.yl : '') },
+      onClick: x => { if (S.prob !== 'one') return; setStart([+x.toPrecision(5), 0]); stepper.stop(); resetGD(); refresh(); } },
+    data: () => ({ cols: ['Iteration', 'b', 'Loss', 'Gradient'], rows: G.path.map(p => [p[2], p[0], p[3], M.df(p[0])]) })
+  });
+  const figB = MLS.figure($('figB'), {
+    title: 'b by iteration', help: 'figb', file: 'gradient-descent-b-path',
+    plot: { aspect: 0.78, margin: { l: 64 }, x: { label: 'Iteration' }, y: { label: 'b' } },
+    data: () => ({ cols: ['Iteration', 'b'], rows: G.path.map(p => [p[2], p[0]]) })
+  });
+  const logScale = () => S.logLoss && S.prob !== 'bumpy' && S.prob !== 'one';
+  function fmtPow(v) { const p = Math.pow(10, v); return Math.abs(v - Math.round(v)) < 1e-9 ? (Math.abs(v) <= 3 ? MLS.fmt(p) : '1e' + Math.round(v)) : MLS.fmt(p); }
+  const curB = () => M.toOrig(G.c);
+
+  function drawModel() {
+    const P = figModel.plot, c = C();
+    $('figModel').hidden = !usesData() && !M.bowl;
+    if (M.bowl) { drawBowlLine(); return; }
+    if (!usesData()) return;
+    const xd = MLS.niceDomain(MLS.stat.min(M.x), MLS.stat.max(M.x), 0.06);
+    const yd = S.prob === 'line' ? MLS.niceDomain(MLS.stat.min(M.y), MLS.stat.max(M.y), 0.12) : [-0.08, 1.08];
+    P.setX(xd[0], xd[1]); P.setY(yd[0], yd[1]);
+    const b = curB(), s0 = M.toOrig(G.start), tb = M.targetB;
+    const f = S.prob === 'line' ? (bb => x => bb[0] + bb[1] * x) : (bb => x => sig(bb[0] + bb[1] * x));
+    const jit = MLS.rng(99);
+    const hot = S.micro && G.micro && G.micro.idx ? new Set(G.micro.idx) : null;
+    P.draw(P => {
+      if (S.prob === 'logit') { P.hline(0.5, { color: c.mu, dash: '2 4', width: 1 }); }
+      if (G.iter > 0) P.fn(f(s0), { color: c.mu, width: 1.6, dash: '2 5' });
+      P.fn(f(tb), { color: c.ink, width: 1.8, dash: '7 5' });
+      if (S.micro && G.phase === 2 && G.micro && G.micro.pred) M.x.forEach((x, i) => { if (!hot || hot.has(i)) P.segment(x, M.y[i], x, f(b)(x), { color: c.mu, width: 1.2, dash: '3 2' }); });
+      P.fn(f(b), { color: c.gd, width: 3.2 });
+      P.points(M.x.map((x, i) => ({ x, y: S.prob === 'logit' ? M.y[i] + (jit.random() - 0.5) * 0.06 : M.y[i], i })), {
+        color: c.data, r: M.n > 150 ? 3.6 : 4.8, opacity: S.prob === 'logit' ? 0.7 : 1, highlight: d => hot && hot.has(d.i),
+        tip: d => '<b>Observation ' + (d.i + 1) + '</b><br>' + MLS.esc(M.xl) + ': ' + F(d.x) + '<br>' + MLS.esc(M.yl) + ': ' + F(M.y[d.i]) + '<br>' + (S.prob === 'line' ? 'Current prediction: ' + F(f(b)(d.x)) : 'Current predicted probability: ' + F(f(b)(d.x), 3)) });
+    });
+    const leg = [{ label: 'Observations', color: c.data }, { label: 'Current model (gradient descent, moves as it learns)', color: c.gd, line: true, width: 3.2 }, { label: 'Target: ' + (S.prob === 'line' ? 'OLS line' : 'maximum likelihood curve'), color: c.ink, line: true, dash: '7 5' }];
+    if (G.iter > 0) leg.push({ label: 'Starting guess', color: c.mu, line: true, dash: '2 5', width: 1.6 });
+    figModel.legend(leg);
+    $('figModel').querySelector('.figure-title').firstChild.textContent = S.prob === 'line' ? 'Data and the current line' : 'Data and the current probability curve';
+    figModel.caption(G.iter === 0 ? 'Iteration 0: the orange ' + (S.prob === 'line' ? 'line' : 'curve') + ' is the starting guess. Press <b>Play</b> or <b>Step</b> and watch it move toward the dashed target.' : '');
+  }
+  /* one parameter, simple bowl: the data and the line whose slope is b (intercept fixed so the line passes through the means) */
+  function drawBowlLine() {
+    const P = figModel.plot, c = C(), B = M.bowl;
+    const xd = MLS.niceDomain(MLS.stat.min(B.x), MLS.stat.max(B.x), 0.06), yd = MLS.niceDomain(MLS.stat.min(B.y), MLS.stat.max(B.y), 0.12);
+    P.setX(xd[0], xd[1]); P.setY(yd[0], yd[1]);
+    const f = bb => x => B.my + bb * (x - B.mx) / B.sx, b = G.c[0];
+    P.draw(P => {
+      if (G.iter > 0) P.fn(f(G.start[0]), { color: c.mu, width: 1.6, dash: '2 5' });
+      P.fn(f(M.target[0]), { color: c.ink, width: 1.8, dash: '7 5' });
+      P.fn(f(b), { color: c.gd, width: 3.2 });
+      P.points(B.x.map((x, i) => ({ x, y: B.y[i], i })), { color: c.data, r: 4.8,
+        tip: d => '<b>Observation ' + (d.i + 1) + '</b><br>' + MLS.esc(B.xl) + ': ' + F(d.x) + '<br>' + MLS.esc(B.yl) + ': ' + F(d.y) + '<br>Current prediction: ' + F(f(b)(d.x)) });
+    });
+    const leg = [{ label: 'Observations', color: c.data }, { label: 'Current line: slope b = ' + F(b, 3) + ' per SD of income', color: c.gd, line: true, width: 3.2 }, { label: 'Target: OLS line', color: c.ink, line: true, dash: '7 5' }];
+    if (G.iter > 0) leg.push({ label: 'Starting line', color: c.mu, line: true, dash: '2 5', width: 1.6 });
+    figModel.legend(leg);
+    $('figModel').querySelector('.figure-title').firstChild.textContent = 'Data and the current line';
+    figModel.caption('The only parameter is the slope b; the line always passes through the point of means. Each value of b on the loss curve above is one line here: its loss is the mean squared vertical distance of the points from it.');
+  }
+  function drawCurve() {
+    const one = S.prob === 'one';
+    $('figCurve').hidden = !one; $('figB').hidden = !one;
+    if (!one) return;
+    const P = figCurve.plot, c = C(), f = M.f;
+    /* widen the view if the steps leave the usual range (large η) */
+    const W = M.dom[1] - M.dom[0], pb = G.path.map(p => p[0]).filter(Number.isFinite);
+    const d0 = Math.max(M.dom[0] - 3 * W, Math.min(M.dom[0], ...pb)), d1 = Math.min(M.dom[1] + 3 * W, Math.max(M.dom[1], ...pb));
+    const xs = []; for (let k = 0; k <= 400; k++) xs.push(d0 + (d1 - d0) * k / 400);
+    const ys = xs.map(f), lo = Math.min(...ys), hi = Math.max(...ys), pad = (hi - lo) * 0.12;
+    P.setX(d0, d1); P.setY(lo - pad, hi + pad);
+    const b = G.c[0], g = M.df(b);
+    P.draw(P => {
+      if (M.plateau) { P.rect(M.plateau[0], lo - pad, M.plateau[1], hi + pad, { fill: MLS.rgba(MLS.color('series-4'), 0.1) }); P.text((M.plateau[0] + M.plateau[1]) / 2, hi + pad * 0.35, 'Flat region: tiny slope, tiny steps', { anchor: 'middle', size: 12, color: c.mu }); }
+      P.line(xs.map((x, i) => [x, ys[i]]), { color: c.ink, width: 2.4 });
+      M.ext.forEach(e => {
+        const y = f(e.b), isMax = e.kind === 'max';
+        P.points([{ x: e.b, y }], { color: e.global ? c.star : isMax ? c.mu : c.ink, shape: e.global ? 'star' : isMax ? 'triangle' : 'diamond', r: e.global ? 8 : 6, tip: () => '<b>' + e.label + '</b><br>b = ' + F(e.b, 3) + '<br>L(b) = ' + F(y, 4) + '<br>gradient = 0' });
+        P.text(e.b, y, e.label, { anchor: 'middle', dy: isMax ? -14 : 24, size: 12, color: c.text });
+      });
+      /* steps */
+      const pts = G.path;
+      if (pts.length > 1) {
+        const first = Math.max(1, pts.length - 400), small = [];
+        for (let k = first; k < pts.length; k++) {
+          const a = pts[k - 1], z = pts[k];
+          const px = Math.hypot(P.sx(z[0]) - P.sx(a[0]), P.sy(f(z[0])) - P.sy(f(a[0])));
+          if (S.showArrows && px > 9) P.arrow(a[0], f(a[0]), z[0], f(z[0]), { color: c.gd, width: 1.6, head: 6 });
+          else small.push({ x: a[0], y: f(a[0]) });
+        }
+        if (small.length) P.points(small, { color: c.gd, r: 2.4, ring: false });
+      }
+      /* tangent at the current b */
+      if (S.showTangent && Number.isFinite(g)) {
+        const w = (d1 - d0) * 0.12;
+        P.line([[b - w, f(b) - g * w], [b + w, f(b) + g * w]], { color: c.gd, width: 1.8, dash: '6 4' });
+        const right = b + w < d1 - (d1 - d0) * 0.22, xe = right ? b + w : b - w;
+        P.text(xe, f(b) + g * (xe - b), 'slope = gradient = ' + F(g, 3), { dx: right ? 6 : -6, dy: -6, anchor: right ? 'start' : 'end', size: 12, color: c.gd });
+      }
+      P.points([{ x: G.start[0], y: f(G.start[0]) }], { color: c.ink, shape: 'square', r: 5, tip: () => '<b>Start</b><br>b = ' + F(G.start[0], 3) });
+      P.points([{ x: b, y: f(b) }], { color: c.gd, r: 8, tip: () => '<b>Iteration ' + G.iter + '</b><br>b = ' + F(b, 4) + '<br>L(b) = ' + F(f(b), 4) + '<br>gradient = ' + F(g, 4) });
+    });
+    const leg = [{ label: 'Loss L(b)', color: c.ink, line: true, width: 2.4 }, { label: 'Current b', color: c.gd }, { label: 'Start', color: c.ink, shape: 'square' }];
+    if (S.showTangent) leg.push({ label: 'Tangent: its slope is the gradient', color: c.gd, line: true, dash: '6 4' });
+    if (S.showArrows) leg.push({ label: 'Steps: b − η × gradient', color: c.gd, line: true, width: 1.6 });
+    leg.push({ label: M.ext.length > 1 ? 'Global minimum' : 'Minimum', color: c.star, shape: 'star' });
+    if (M.ext.length > 1) leg.push({ label: 'Local minimum', color: c.ink, shape: 'diamond' }, { label: 'Local maximum (peak)', color: c.mu, shape: 'triangle' });
+    figCurve.legend(leg);
+    const last = G.path.length > 1 ? G.path[G.path.length - 1][0] - G.path[G.path.length - 2][0] : null;
+    figCurve.caption(G.iter === 0 ? 'Press <b>Step</b>: the ball moves by −η × gradient. A positive slope sends b to the left, a negative slope to the right. Click the chart to start elsewhere.'
+      : 'Last step: b<sub>new</sub> = ' + F(G.path[G.path.length - 2][0], 4) + ' − ' + fmtSig(eta()) + ' × (' + F(M.df(G.path[G.path.length - 2][0]), 4) + ') = <b>' + F(b, 4) + '</b> (change ' + F(last, 4) + ').');
+  }
+  function drawBPath() {
+    if (S.prob !== 'one') return;
+    const P = figB.plot, c = C();
+    const bs = G.path.map(p => [p[2], p[0]]), all = bs.map(p => p[1]).concat(M.ext.filter(e => e.kind === 'min').map(e => e.b));
+    const yd = MLS.niceDomain(Math.min(...all), Math.max(...all), 0.1);
+    P.setX(0, Math.max(10, G.iter)); P.setY(yd[0], yd[1]);
+    P.crosshair([{ name: 'b', color: c.gd, pts: bs }], v => 'Iteration ' + Math.round(v), v => F(v, 4));
+    P.draw(P => {
+      M.ext.filter(e => e.kind === 'min').forEach(e => P.hline(e.b, { color: e.global ? c.star : c.mu, dash: '3 4', width: 1.4 }));
+      P.line(bs, { color: c.gd, width: 2.2 });
+      if (bs.length < 60) P.points(bs, { color: c.gd, r: 3, ring: false });
+    });
+    figB.legend([{ label: 'b after each step', color: c.gd, line: true }, { label: 'Minima', color: c.mu, line: true, dash: '3 4' }]);
+  }
+  function buildSurface() {
+    if (S.prob === 'one') { surf = null; return; }
+    let dom;
+    if (S.prob === 'bumpy') dom = [[-4, 4], [-4, 4]];
+    else {
+      const o = M.target, s = startPoint();
+      const sd0 = S.prob === 'line' ? Math.sqrt(M.minLoss) || 1 : 1.5;
+      const su = S.std ? 1 : (M.sx || 1);
+      const h0 = Math.max(Math.abs(s[0] - o[0]) * 0.7, Math.abs(o[0]) * 0.35, sd0 * 1.5);
+      const h1 = Math.max(Math.abs(s[1] - o[1]) * 0.7, Math.abs(o[1]) * 0.6, sd0 / su * 1.5);
+      const m0 = (s[0] + o[0]) / 2, m1 = (s[1] + o[1]) / 2;
+      dom = [[m0 - h0, m0 + h0], [m1 - h1, m1 + h1]];
+    }
+    const NX = S.prob === 'logit' ? 80 : 110, NY = S.prob === 'logit' ? 62 : 84, xs = [], ys = [], v = [];
+    for (let i = 0; i < NX; i++) xs.push(dom[0][0] + (dom[0][1] - dom[0][0]) * i / (NX - 1));
+    for (let j = 0; j < NY; j++) ys.push(dom[1][0] + (dom[1][1] - dom[1][0]) * j / (NY - 1));
+    let lo = Infinity, hi = -Infinity;
+    for (let j = 0; j < NY; j++) { const row = []; for (let i = 0; i < NX; i++) { const l = M.loss(xs[i], ys[j]); row.push(l); if (l < lo) lo = l; if (l > hi) hi = l; } v.push(row); }
+    const log = S.prob !== 'bumpy';
+    const levels = [];
+    if (log) { const base = Math.max(M.minLoss, hi * 1e-6), a = Math.log(Math.max(lo, base) * 1.05), b = Math.log(hi); for (let k = 1; k <= 9; k++) levels.push(Math.exp(a + (b - a) * (k / 10) ** 1.4)); lo = Math.max(lo, base); }
+    else for (let k = 1; k <= 14; k++) levels.push(lo + (hi - lo) * (k / 15) ** 1.3);
+    surf = { dom, xs, ys, v, lo, hi, log, levels, img: null, theme: null };
+  }
+  function drawSurface() {
+    $('figSurface').hidden = S.prob === 'one';
+    if (S.prob === 'one') return;
+    const P = figSurface.plot, c = C(), sc = surf, theme = MLS.getTheme();
+    if (!sc.img || sc.theme !== theme) {
+      const col = MLS.lossScale(), la = sc.log ? Math.log(sc.lo) : sc.lo, lb = sc.log ? Math.log(sc.hi) : sc.hi;
+      sc.img = MLS.gridImage(sc.v, val => { const t = ((sc.log ? Math.log(Math.max(val, sc.lo)) : val) - la) / (lb - la || 1); const q = col(0.06 + 0.8 * t); return [q[0], q[1], q[2], 255]; });
+      sc.theme = theme;
+    }
+    P.setX(sc.dom[0][0], sc.dom[0][1]); P.setY(sc.dom[1][0], sc.dom[1][1]);
+    P.draw(P => {
+      P.image(sc.img, sc.dom[0][0], sc.dom[0][1], sc.dom[1][0], sc.dom[1][1], { smooth: true });
+      P.contour(sc.v, sc.xs, sc.ys, sc.levels, { color: '#FFFFFF', width: 0.9, opacity: 0.55 });
+      if (S.prob === 'bumpy') M.mins.forEach((m, i) => { P.points([{ x: m.c[0], y: m.c[1] }], { color: i === 0 ? c.star : c.ink, shape: i === 0 ? 'star' : 'diamond', r: i === 0 ? 8 : 6, tip: () => '<b>' + (i === 0 ? 'A: global minimum' : m.label + ': local minimum') + '</b><br>Loss ' + F(m.v, 4) }); P.text(m.c[0], m.c[1], m.label, { dx: 10, dy: -8, size: 14, weight: 800 }); });
+      else P.points([{ x: M.target[0], y: M.target[1] }], { color: c.star, shape: 'star', r: 8, tip: () => '<b>Target (' + M.targetName + ')</b><br>' + M.lossName + ' ' + F(M.minLoss, 4) });
+      if (G.path.length > 1) P.line(G.path, { color: c.gd, width: 2.2 });
+      if (G.path.length < 400) P.points(G.path.slice(1, -1), { color: c.gd, r: 2.6, ring: false });
+      P.points([{ x: G.start[0], y: G.start[1] }], { color: c.ink, shape: 'square', r: 5, tip: () => '<b>Start</b><br>' + M.lossName + ' ' + F(G.losses[0], 4) });
+      if (S.micro && usesData() && G.phase === 3 && G.micro && G.micro.grad) { const g = G.micro.grad, h = eta(); P.arrow(G.c[0], G.c[1], G.c[0] - h * g[0], G.c[1] - h * g[1], { color: c.gd, width: 2.4 }); }
+      P.points([{ x: G.c[0], y: G.c[1] }], { color: c.gd, r: 7, tip: () => '<b>Iteration ' + G.iter + '</b><br>(' + F(G.c[0]) + ', ' + F(G.c[1]) + ')<br>' + M.lossName + ' ' + F(G.losses[G.losses.length - 1], 4) });
+    });
+    const leg = [{ label: 'Start', color: c.ink, shape: 'square' }, { label: 'Path of gradient descent', color: c.gd }];
+    leg.push(S.prob === 'bumpy' ? { label: 'A: global minimum', color: c.star, shape: 'star' } : { label: 'Target (' + M.targetName + ')', color: c.star, shape: 'star' });
+    if (S.prob === 'bumpy') leg.push({ label: 'B, C: local minima', color: c.ink, shape: 'diamond' });
+    figSurface.legend(leg);
+    figSurface.caption('Dark blue = high loss, light = low loss. Contour lines join points with equal loss, like height lines on a map. <b>Click anywhere</b> to start from there.');
+  }
+  function drawLoss() {
+    const P = figLoss.plot, c = C(), L = G.losses, lg = logScale();
+    const base = M.minLoss;
+    const tr = v => (lg ? Math.log10(Math.max(v - base, Math.abs(base) * 1e-12 + 1e-300)) : v);
+    const pts = L.map((v, i) => [i, tr(v)]).filter(p => Number.isFinite(p[1]));
+    const ys = pts.map(p => p[1]).concat(lg ? [] : [base]);
+    let y0 = ys.length ? Math.min(...ys) : 0, y1 = ys.length ? Math.max(...ys) : 1;
+    if (y1 - y0 < 1e-9) { y0 -= 0.5; y1 += 0.5; }
+    const pad = (y1 - y0) * 0.08;
+    P.setX(0, Math.max(10, G.iter)); P.setY(y0 - pad, y1 + pad);
+    const series = [{ name: lg ? 'Loss above the minimum' : 'Loss', color: c.gd, pts }];
+    P.crosshair(series, v => 'Iteration ' + Math.round(v), v => F(lg ? Math.pow(10, v) : v, undefined));
+    P.draw(P => {
+      if (!lg) P.hline(base, { color: c.ink, dash: '6 4', width: 1.5 });
+      P.line(pts, { color: c.gd, width: 2.2 });
+      if (L.length < 60) P.points(pts, { color: c.gd, r: 3, ring: false });
+    });
+    figLoss.legend(lg ? [{ label: 'Loss minus the lowest possible loss', color: c.gd, line: true }] : [{ label: 'Loss', color: c.gd, line: true }, { label: 'Lowest possible loss (' + M.targetName + ')', color: c.ink, line: true, dash: '6 4' }]);
+    figLoss.caption(lg ? 'Log scale of the distance to the minimum: a straight downward line means the error shrinks by the same factor every step.' : '');
+  }
+
+  /* ------------------------------------------------------------------
+     stats, status
+     ------------------------------------------------------------------ */
+  const card = MLS.statCard;
+  function fmtSig(v) { if (!Number.isFinite(v)) return F(v); const d = Math.max(0, 2 - Math.floor(Math.log10(Math.abs(v) || 1))); return d > 7 ? v.toExponential(2).replace('-', '−') : v.toFixed(Math.min(d, 7)); }
+  const SUP = { '-': '⁻', 0: '⁰', 1: '¹', 2: '²', 3: '³', 4: '⁴', 5: '⁵', 6: '⁶', 7: '⁷', 8: '⁸', 9: '⁹' };
+  const pow10 = e => '10' + String(e).split('').map(ch => SUP[ch]).join('');
+  /* scientific notation for small numbers: 3.2×10⁻⁷ */
+  function sci(v) {
+    if (!Number.isFinite(v)) return F(v);
+    if (v === 0) return '0';
+    const a = Math.abs(v); if (a >= 1e-3 && a < 1e5) return fmtSig(v);
+    const e = Math.floor(Math.log10(a)), m = v / Math.pow(10, e);
+    return (m < 0 ? '−' : '') + Math.abs(m).toFixed(1) + '×' + pow10(e);
+  }
+  const ruleTxt = () => (S.stopRule === 'grad' ? '‖gradient‖ = ' + sci(G.gnorm) : 'relative change in the loss = ' + sci(G.dloss)) + (G.status === 'converged' ? ' &lt; ' : ' vs ') + 'tolerance ' + pow10(S.tolExp);
+  const perEpoch = () => (stochastic() ? ' (checked once per pass through the data)' : '');
+  function updateStats() {
+    const L = G.losses[G.losses.length - 1];
+    const gap = L - M.minLoss, rel = gap / Math.max(Math.abs(M.minLoss), 1e-12) * 100;
+    if (S.prob === 'one') { updateStatsOne(); return; }
+    let h = card('Iteration', MLS.fmtInt(G.iter), S.prob === 'bumpy' || S.mode === 'batch' ? 'steps taken' : S.mode === 'sgd' ? 'one observation per step' : 'mini-batch of ' + Math.min(S.batch, M.n), '', 'st_iter');
+    h += card(M.lossName + ' now', F(L, 4), S.prob === 'bumpy' ? '' : (rel < 1e-4 ? 'at the minimum' : rel > 1e5 ? 'far above the minimum' : F(rel, rel < 1 ? 3 : 1) + '% above the minimum'), G.status === 'diverged' ? 'bad' : (S.prob !== 'bumpy' && rel < 0.1 ? 'good' : ''), 'st_loss');
+    h += card('Lowest possible ' + (M.lossName === 'MSE' ? 'MSE' : M.lossName.toLowerCase()), F(M.minLoss, 4), S.prob === 'bumpy' ? 'at the global minimum A' : 'reached by ' + M.targetName, '', 'st_min');
+    if (usesData()) {
+      const b = curB(), t = M.targetB;
+      h += card('Intercept b₀', F(b[0], 4), 'target ' + F(t[0], 4), '', 'st_b0') + card('Slope b₁', F(b[1], 4), 'target ' + F(t[1], 4), '', 'st_b1');
+    } else {
+      h += card('Position (w₁, w₂)', '(' + F(G.c[0], 2) + ', ' + F(G.c[1], 2) + ')', 'nearest minimum: ' + nearestMin(G.c).label, '', 'st_pos');
+    }
+    $('stats').innerHTML = h;
+    const sl = $('statusLine'); let msg = '', cls = 'status-line';
+    const e = eta();
+    switch (G.status) {
+      case 'ready': msg = 'Ready: the orange marker is the starting guess. Press Play or Step on the left.'; break;
+      case 'converged':
+      case 'maxiter': {
+        const head = G.status === 'converged' ? 'Stopped after ' + MLS.fmtInt(G.iter) + (G.iter === 1 ? ' iteration: ' : ' iterations: ') + ruleTxt() + perEpoch() + '. '
+          : 'Stopped at the maximum of ' + MLS.fmtInt(S.maxIter) + ' iterations without meeting the stopping rule (' + ruleTxt() + '). ';
+        let good;
+        if (S.prob === 'bumpy') {
+          const r = G.reached;
+          if (!G.atPoint) { good = false; msg = head + 'This is not a minimum yet: the nearest valley is ' + r.label + '. A smaller tolerance or more iterations would get there.'; }
+          else { good = r.label === 'A'; msg = head + (good ? 'It reached the global minimum A.' : 'It reached local minimum ' + r.label + ': a valley, but not the lowest one. Try another start.'); }
+        } else {
+          const pct = G.gap * 100, pTxt = pct < 1e-4 ? 'less than 0.0001%' : F(pct, pct < 1 ? 4 : 2) + '%';
+          good = G.atPoint;
+          msg = head + (good ? 'The loss is ' + pTxt + ' above the minimum: gradient descent has reached the ' + M.targetName + ' estimate.'
+            : 'But the loss is still ' + pTxt + ' above the minimum, so the estimates are not yet the ' + M.targetName + ' ones. ' +
+              (G.status === 'maxiter' && stochastic() ? 'With random observations and a fixed η the gradient never becomes really small; use all observations or a smaller η.' : (usesData() && !S.std ? 'Use a smaller tolerance, more iterations, or standardize X.' : 'Use a smaller tolerance or more iterations.')));
+        }
+        msg = (good ? '✓ ' : '⚠ ') + msg; cls += good ? ' ok' : ' bad';
+        break;
+      }
+      case 'diverged': msg = '✗ Diverged: each step overshoots and lands higher than the last. Lower the learning rate' + (M.etaMax ? ' (stable below about ' + fmtSig(M.etaMax) + ')' : '') + '.'; cls += ' bad'; break;
+      case 'rising': msg = '⚠ The loss rose on the last step: the learning rate is too large here, so the path zig-zags or bounces.'; cls += ' bad'; break;
+      default:
+        if (usesData() && S.mode !== 'batch' && rel < 2) msg = 'Near the minimum. With random observations each step points only roughly downhill, so the path keeps jittering instead of settling.';
+        else if (e > M.etaMax) msg = 'Running, but η = ' + fmtSig(e) + ' is above the stability limit (' + fmtSig(M.etaMax) + '): expect zig-zags or divergence.';
+        else msg = 'Running' + (S.prob === 'bumpy' ? ': heading downhill toward the nearest valley.' : ': ' + F(rel, rel < 1 ? 3 : 1) + '% above the minimum.');
+        if (G.gnorm !== undefined) msg += ' Stopping rule: ' + ruleTxt() + '.';
+    }
+    sl.innerHTML = msg; sl.className = cls;
+    $('etaHint').innerHTML = 'Largest stable η ' + (S.prob === 'line' ? 'for this data' : 'near the minimum') + ': <b>' + fmtSig(M.etaMax) + '</b>' + (e > M.etaMax ? ' <span style="color:var(--danger);font-weight:700">(exceeded)</span>' : '');
+    $('deepNumbers').innerHTML = '<b>Current problem' + (usesData() ? (S.std ? ' (X standardized)' : ' (X in original units)') : '') + ':</b> λ<sub>max</sub> = ' + F(M.lmax, 4) + ', λ<sub>min</sub> = ' + F(M.lmin, 4) + ', condition number κ = ' + F(M.kappa, 1) +
+      '. Stable step sizes near the minimum: η &lt; 2/λ<sub>max</sub> = <b>' + fmtSig(M.etaMax) + '</b>. Your η = ' + fmtSig(e) + '.';
+  }
+  function updateStatsOne() {
+    const b = G.c[0], L = M.f(b), g = M.df(b), e = eta();
+    const last = G.path.length > 1 ? G.path[G.path.length - 1][0] - G.path[G.path.length - 2][0] : 0;
+    $('stats').innerHTML = card('Iteration', MLS.fmtInt(G.iter), 'steps taken', '', 'st_iter') +
+      card('b now', F(b, 4), 'nearest flat point: ' + nearestExt(b).label.toLowerCase(), '', 'st_bnow') +
+      card('Loss L(b) now', F(L, 4), 'lowest possible: ' + F(M.minLoss, 4), G.status === 'diverged' ? 'bad' : '', 'st_loss') +
+      card('Gradient dL/db', F(g, 4), Math.abs(g) < 5e-5 ? 'zero: a flat point, b stops moving' : g > 0 ? 'positive: next step goes left' : 'negative: next step goes right', '', 'st_grad') +
+      card('Last step Δb', G.iter ? F(last, 4) : '–', '= −η × previous gradient', '', 'st_step');
+    const sl = $('statusLine'); let msg = '', cls = 'status-line';
+    switch (G.status) {
+      case 'ready': msg = 'Ready: the orange ball is the starting value of b. Press Step to take one step, or Play.'; break;
+      case 'converged':
+      case 'maxiter': {
+        const head = G.status === 'converged' ? 'Stopped after ' + MLS.fmtInt(G.iter) + (G.iter === 1 ? ' iteration at b = ' : ' iterations at b = ') + F(G.c[0], 4) + ': ' + ruleTxt() + '. '
+          : 'Stopped at the maximum of ' + MLS.fmtInt(S.maxIter) + ' iterations at b = ' + F(G.c[0], 4) + ' without meeting the stopping rule (' + ruleTxt() + '). ';
+        let good = false;
+        if (!G.atPoint) msg = head + 'But this is not a flat point: the slope is still ' + F(g, 4) + (M.plateau && b > M.plateau[0] ? '. On the flat region the loss falls so slowly that a loose rule stops too early.' : '.') + ' Use a smaller tolerance.';
+        else if (G.atPeak) msg = head + 'It stopped on a peak: the gradient is zero here too, so gradient descent cannot tell it from a valley. The smallest push would send it downhill.';
+        else if (G.reached.global) { good = true; msg = head + 'This is the ' + (M.ext.length > 1 ? 'global minimum' : 'minimum') + '.'; }
+        else msg = head + 'This is a local minimum: a lower valley exists. Try another start.';
+        msg = (good ? '✓ ' : '⚠ ') + msg; cls += good ? ' ok' : ' bad';
+        break;
+      }
+      case 'diverged': msg = '✗ Diverged: the steps keep growing. Lower the learning rate (stable below about ' + fmtSig(M.etaMax) + ' near the ' + (M.ext.length > 1 ? 'global ' : '') + 'minimum).'; cls += ' bad'; break;
+      case 'rising': msg = '⚠ The loss rose on the last step: η is too large here, so b jumps over the valley floor.'; cls += ' bad'; break;
+      default:
+        msg = M.plateau && b > M.plateau[0] ? 'On the flat region: the slope is small, so each step is small and progress is slow.' : 'Running: b moves downhill, by −η × gradient each step.';
+        if (G.gnorm !== undefined) msg += ' Stopping rule: ' + ruleTxt() + '.';
+    }
+    sl.innerHTML = msg; sl.className = cls;
+    $('etaHint').innerHTML = 'Largest stable η near the ' + (M.ext.length > 1 ? 'global ' : '') + 'minimum: <b>' + fmtSig(M.etaMax) + '</b>' + (e > M.etaMax ? ' <span style="color:var(--danger);font-weight:700">(exceeded)</span>' : '');
+    $('deepNumbers').innerHTML = '<b>One-parameter problem:</b> curvature at the ' + (M.ext.length > 1 ? 'global ' : '') + 'minimum L″(b*) = ' + F(M.lmax, 4) + '. Stable step sizes there: η &lt; 2/L″(b*) = <b>' + fmtSig(M.etaMax) + '</b>. Your η = ' + fmtSig(e) + ', so near the minimum each step multiplies the distance to b* by 1 − η·L″ = ' + F(1 - e * M.lmax, 4) + '.';
+  }
+  function updateMicro() {
+    const box = $('microBox');
+    if (!S.micro || !usesData() || !G.micro) { box.hidden = true; pseudo.hl(G.status === 'converged' ? lastLine() : G.iter > 0 ? loopLines() : 0); return; }
+    box.hidden = false;
+    const m = G.micro, ph = (G.phase + 3) % 4, nb = m.ids.length, show = Math.min(3, nb);
+    const what = S.prob === 'line' ? 'Predictions ŷ' : 'Probabilities p';
+    let h = '<b>Iteration ' + (G.iter + (ph === 3 ? 0 : 1)) + '</b>' + (m.idx ? ' (' + nb + ' random observation' + (nb > 1 ? 's' : '') + ')' : ' (all ' + nb + ' observations)') + '<br>';
+    if (ph === 0) h += what + ' for the first ' + show + ': ' + m.pred.slice(0, show).map(v => F(v, 3)).join(', ') + (nb > show ? ', ...' : '');
+    if (ph === 1) h += 'Errors for the first ' + show + ': ' + m.err.slice(0, show).map(v => F(v, 3)).join(', ') + (nb > show ? ', ...' : '') + '<br>Mean error: ' + F(MLS.stat.mean(m.err), 4);
+    if (ph === 2) h += 'Gradient: g₀ = ' + F(m.grad[0], 4) + ', g₁ = ' + F(m.grad[1], 4) + '<br>The arrow on the loss surface shows the step −η·g.';
+    if (ph === 3) h += 'Update with η = ' + fmtSig(eta()) + ':<br>b₀: ' + F(G.from[0], 4) + ' → ' + F(G.c[0], 4) + '<br>b₁: ' + F(G.from[1], 4) + ' → ' + F(G.c[1], 4);
+    if (S.std) h += '<div class="note" style="margin-top:4px">Values in the coordinates gradient descent uses (standardized X), as on the loss surface.</div>';
+    box.innerHTML = h;
+    pseudo.hl([4, 5, 6, 7][ph]);
+  }
+  const lastLine = () => (S.prob === 'bumpy' || S.prob === 'one' ? 5 : 8);
+  const loopLines = () => (S.prob === 'bumpy' || S.prob === 'one' ? [3, 4] : [4, 5, 6, 7]);
+
+  /* ------------------------------------------------------------------
+     pseudocode per problem
+     ------------------------------------------------------------------ */
+  let pseudo = null;
+  const CODE = {
+    one: ['**input** loss L(b), learning rate η, start b', '**repeat** until the stopping rule holds:', '    g ← dL/db at the current b     // slope of the tangent', '    b ← b − η·g                     // step downhill', '**return** b   // stop: |g| < tol, or the loss stopped falling'],
+    line: ['**input** data (x, y), learning rate η, start (b₀, b₁)', '**if** standardize: x ← (x − mean) / sd', '**repeat** until the stopping rule holds (or max iterations):', '    ŷᵢ ← b₀ + b₁·xᵢ               // predictions', '    eᵢ ← ŷᵢ − yᵢ                   // errors', '    g₀ ← (2/n)·Σ eᵢ ;  g₁ ← (2/n)·Σ eᵢ·xᵢ   // gradient', '    b₀ ← b₀ − η·g₀ ;  b₁ ← b₁ − η·g₁', '**return** b₀, b₁'],
+    logit: ['**input** data (x, y ∈ {0,1}), learning rate η, start (b₀, b₁)', '**if** standardize: x ← (x − mean) / sd', '**repeat** until the stopping rule holds (or max iterations):', '    pᵢ ← 1 / (1 + e^−(b₀ + b₁·xᵢ))   // probabilities', '    eᵢ ← pᵢ − yᵢ                       // errors', '    g₀ ← (1/n)·Σ eᵢ ;  g₁ ← (1/n)·Σ eᵢ·xᵢ   // gradient', '    b₀ ← b₀ − η·g₀ ;  b₁ ← b₁ − η·g₁', '**return** b₀, b₁'],
+    bumpy: ['**input** loss f(w₁, w₂), learning rate η, start (w₁, w₂)', '**repeat** until the stopping rule holds:', '    g ← ∇f(w₁, w₂)            // slope in each direction', '    (w₁, w₂) ← (w₁, w₂) − η·g   // step downhill', '**return** (w₁, w₂)   // a minimum, not always the lowest']
+  };
+
+  /* ------------------------------------------------------------------
+     controls
+     ------------------------------------------------------------------ */
+  function syncUI() {
+    MLS.$$('[data-prob]').forEach(b => b.setAttribute('aria-pressed', String(b.dataset.prob === S.prob)));
+    const P = S.prob, data = usesData();
+    $('dataControls').hidden = !data; $('dataSettings').hidden = !data; $('oneControls').hidden = P !== 'one';
+    $('curve').value = S.curve; $('showTangent').checked = S.showTangent; $('showArrows').checked = S.showArrows;
+    if (data) {
+      $('ds').innerHTML = Object.keys(DATA[P]).map(k => '<option value="' + k + '">' + DATA[P][k].label + '</option>').join(''); $('ds').value = S.ds[P];
+      $('n').value = S.n[P]; $('nVal').textContent = S.n[P]; $('seed').value = S.seed;
+      $('std').checked = S.std; $('mode').value = S.mode; $('batch').value = S.batch; $('batchVal').textContent = S.batch; $('batchRow').hidden = S.mode !== 'mini'; $('micro').checked = S.micro;
+    }
+    $('eta').value = S.logEta[P]; $('etaVal').textContent = fmtSig(eta());
+    $('stopRule').value = S.stopRule; $('tol').value = String(S.tolExp); $('maxIter').value = S.maxIter;
+    $('stopNow').textContent = (S.stopRule === 'grad' ? '‖gradient‖' : 'loss change') + ' < ' + pow10(S.tolExp) + ', max ' + MLS.fmtInt(S.maxIter);
+    $('probNote').innerHTML = NOTES[P];
+    $('startWhere').textContent = P === 'one' ? 'loss curve' : 'loss surface';
+    $('startTxt').textContent = P === 'one' ? 'b = ' + F(G.start[0], 3) : '(' + F(G.start[0], 3) + ', ' + F(G.start[1], 3) + ')';
+  }
+  function rebuild() { buildModel(); resetGD(); buildSurface(); pseudo = MLS.pseudo($('pseudo'), CODE[S.prob]); }
+  function refresh() {
+    syncUI(); drawCurve(); drawModel(); drawSurface(); drawLoss(); drawBPath(); updateStats(); updateMicro();
+    figCurve.refreshTable(); figModel.refreshTable(); figSurface.refreshTable(); figLoss.refreshTable(); figB.refreshTable();
+    if (ch) ch.check();
+    MLS.state.save();
+  }
+  const changed = () => { stepper.stop(); rebuild(); refresh(); };
+  MLS.$$('[data-prob]').forEach(b => b.onclick = () => { S.prob = b.dataset.prob; changed(); });
+  $('ds').onchange = e => { S.ds[S.prob] = e.target.value; S.start[S.prob] = null; changed(); };
+  $('curve').onchange = e => { S.curve = e.target.value; changed(); };
+  const ruleChanged = () => { stepper.stop(); resetGD(); refresh(); };
+  $('stopRule').onchange = e => { S.stopRule = e.target.value; ruleChanged(); };
+  $('tol').onchange = e => { S.tolExp = +e.target.value; ruleChanged(); };
+  $('maxIter').onchange = e => { S.maxIter = Math.min(50000, Math.max(10, Math.round(+e.target.value) || 10000)); ruleChanged(); };
+  $('showTangent').onchange = e => { S.showTangent = e.target.checked; refresh(); };
+  $('showArrows').onchange = e => { S.showArrows = e.target.checked; refresh(); };
+  $('n').oninput = e => { S.n[S.prob] = +e.target.value; changed(); };
+  $('seed').onchange = e => { S.seed = Math.max(1, Math.round(+e.target.value) || 1); changed(); };
+  $('newSeed').onclick = () => { S.seed = MLS.newSeed(); changed(); };
+  $('eta').oninput = e => { S.logEta[S.prob] = +e.target.value; stepper.stop(); resetGD(); refresh(); };
+  $('std').onchange = e => { const keep = S.start[S.prob] ? M.toOrig(S.start[S.prob]) : null; S.std = e.target.checked; buildModel(); if (keep) S.start[S.prob] = M.toGD(keep); stepper.stop(); resetGD(); buildSurface(); refresh(); };
+  $('mode').onchange = e => { S.mode = e.target.value; stepper.stop(); resetGD(); refresh(); };
+  $('batch').oninput = e => { S.batch = +e.target.value; stepper.stop(); resetGD(); refresh(); };
+  $('micro').onchange = e => { S.micro = e.target.checked; stepper.stop(); resetGD(); refresh(); };
+  $('startDefault').onclick = e => { e.preventDefault(); setStart(null); stepper.stop(); resetGD(); buildSurface(); refresh(); };
+
+  const stepper = MLS.stepper($('stepper'), { speed: 12, runMax: 60000, step: () => step(), reset: () => resetGD(), after: () => refresh() });
+
+  /* ------------------------------------------------------------------
+     help
+     ------------------------------------------------------------------ */
+  MLS.registerHelp({
+    curve: { title: 'Loss curve', html: '<b>Valleys and peaks</b>: a made-up loss with one global minimum, two local minima, two peaks (local maxima) and a flat region. <b>Simple bowl</b>: the mean squared error of a regression line as a function of its slope only (intercept fixed), which has a single minimum.' },
+    tangent: { title: 'Tangent', html: 'The straight line touching the curve at the current b. Its slope is the gradient (the first derivative dL/db). Positive slope: the loss rises to the right, so b moves left. Negative slope: b moves right. Zero slope: a flat point (a minimum, a maximum or a flat region).' },
+    arrows: { title: 'Step arrows', html: 'Each arrow is one step, from b<sub>old</sub> to b<sub>new</sub> = b<sub>old</sub> − η × gradient. Steep slope: long step. Gentle slope: short step. That is why progress is slow on flat regions.' },
+    figcurve: { title: 'Loss curve', html: 'The loss L(b) for every value of the single parameter b. The orange ball is the current b; the dashed line is the tangent, whose slope is the gradient; the arrows are the steps taken. Click anywhere on the chart to start from that b.' },
+    figb: { title: 'b by iteration', html: 'The value of the parameter after each step. Dotted lines mark the minima: watch which one b settles on.' },
+    st_bnow: { title: 'b now', html: 'The current value of the parameter.' },
+    st_grad: { title: 'Gradient', html: 'The first derivative of the loss with respect to b at the current point: the slope of the tangent.' },
+    st_step: { title: 'Last step', html: 'The change in b on the last iteration: −η × gradient.' },
+    problem: { title: 'Problem', html: '<b>One parameter</b>: the loss as a curve, to see the gradient as a slope and each step as an arrow. <b>Straight line</b>: least squares, where OLS gives the answer by formula, so you can check gradient descent. <b>Logistic</b>: a model for a yes/no outcome; no formula exists, so it must be found iteratively. <b>Bumpy</b>: a loss with several valleys, like the loss of a neural network.' },
+    dataset: { title: 'Dataset', html: 'Small simulated datasets with an economic story. The random seed fixes the draw, so the whole class sees the same data.' },
+    seed: { title: 'Random seed', html: 'Same seed, same data and the same random mini-batches. Change it to see another sample from the same population.' },
+    eta: { title: 'Learning rate η', html: '<p style="text-align:center;font-size:15px;margin:2px 0 6px"><b>b<sub>new</sub> = b<sub>old</sub> − η × gradient</b></p>The step length: each step moves by η times the gradient. The slider is on a log scale (each notch multiplies η). The note below shows the largest stable η for the current problem.' },
+    std: { title: 'Standardize X', html: 'Replace x by (x − mean)/SD before descending. The fitted model is identical, but the loss surface becomes round instead of a long narrow valley, so far fewer steps are needed. Results are always reported in the original units.' },
+    mode: { title: 'Batch, mini-batch, stochastic', html: 'How many observations are used to compute each gradient. All of them: exact direction, expensive. One random observation (stochastic gradient descent): cheap, noisy. A mini-batch: in between, the standard in deep learning.' },
+    micro: { title: 'Step through each line', html: 'Each press of Step executes one line of the pseudocode (predictions, errors, gradient, update) and shows the numbers, so you can follow one full iteration slowly.' },
+    run: { title: 'Run controls', html: '<b>Reset</b>: back to the start. <b>Step</b>: one iteration (or one line). <b>Play</b>: run continuously at the chosen speed. <b>End</b>: run until the stopping rule is met, the run diverges, or it reaches the maximum number of iterations.' },
+    stoprule: { title: 'Stopping rule', html: 'Gradient descent does not know where the minimum is, so it needs a rule to decide when to stop. Two common rules:<br><b>Gradient almost zero</b>: stop when the size of the gradient, ‖gradient‖ (for one parameter |dL/db|), falls below the tolerance. At a minimum the slope is zero.<br><b>Loss stops falling</b>: stop when the loss changes by less than the tolerance, relative to its size: |L<sub>old</sub> − L<sub>new</sub>| / |L<sub>old</sub>| &lt; tol.<br>With random observations (stochastic or mini-batch) the rule is checked once per pass through the data (an <b>epoch</b>), using all observations. The program then compares the stopping point with the true minimum, which it knows here but a real algorithm would not.' },
+    tol: { title: 'Tolerance', html: 'How small the gradient (or the change in the loss) must be before the algorithm stops. A loose tolerance (10⁻²) stops early, sometimes well before the minimum, especially where the loss is flat. A tight one (10⁻⁸) is more precise but needs more iterations.' },
+    maxiter: { title: 'Maximum number of iterations', html: 'A safety limit: the run stops here even if the stopping rule is never met, for example with stochastic steps or a tiny learning rate. Software always has one (e.g. max_iter in scikit-learn).' },
+    pseudo: { title: 'Pseudocode', html: 'The algorithm in plain steps. The highlighted lines are the ones being executed.' },
+    figmodel: { title: 'Data and the current model', html: 'Blue points: the data. Orange: the model with the parameters gradient descent has reached so far. Dashed: the target, the best possible model. Dotted grey: the starting guess. As gradient descent runs, the orange model moves onto the dashed one.' },
+    figsurface: { title: 'Loss surface', html: 'Every point is one choice of the two parameters; the colour and contour lines show its loss. <b>Dark blue = high loss, light = low loss</b>: the minimum is the lightest area, in both light and dark mode. The square is the start, the orange path shows every step, and the star is the best possible point. Click anywhere to start from there.' },
+    figloss: { title: 'Loss by iteration', html: 'The loss after each step. With a good learning rate it falls quickly and flattens. On the log scale (distance to the minimum) steady convergence is a straight line going down; a rising or jagged curve means the learning rate is too large.' },
+    st_iter: { title: 'Iteration', html: 'How many parameter updates have been made.' },
+    st_loss: { title: 'Loss now', html: 'The loss of the current parameters, and how far it is above the lowest possible value.' },
+    st_min: { title: 'Lowest possible loss', html: 'The loss at the target: OLS for the line, maximum likelihood for the logistic model, the global minimum A for the bumpy surface.' },
+    st_b0: { title: 'Intercept', html: 'Current intercept in the original units of the data, next to the target value.' },
+    st_b1: { title: 'Slope', html: 'Current slope in the original units of the data, next to the target value.' },
+    st_pos: { title: 'Position', html: 'The current point on the bumpy surface and the valley it is closest to.' }
+  });
+
+  /* ------------------------------------------------------------------
+     challenges
+     ------------------------------------------------------------------ */
+  function setup(o) {
+    stepper.stop();
+    if (o.prob) S.prob = o.prob;
+    if (o.curve) S.curve = o.curve;
+    if (o.ds) S.ds[S.prob] = o.ds;
+    Object.assign(S, { stopRule: 'grad', tolExp: -6, maxIter: 10000 });
+    ['std', 'mode', 'micro', 'stopRule', 'tolExp', 'maxIter'].forEach(k => { if (o[k] !== undefined) S[k] = o[k]; });
+    if (o.logEta !== undefined) S.logEta[S.prob] = o.logEta;
+    setStart(o.start || null);
+    rebuild();
+    if (o.startAt) { setStart(o.startAt(M)); resetGD(); } MLS.pickTab('sim'); refresh(); window.scrollTo({ top: 0, behavior: 'smooth' });
+  }
+  const ch = MLS.challenges($('challenges'), META.id, [
+    { type: 'predict', q: 'One parameter, valleys and peaks: you start at b = 5.5, on the flat region at the right. Where does gradient descent stop?',
+      options: ['At the global minimum (b ≈ 0.8), because it is the lowest point', 'Nowhere: the flat region is too flat to move', 'At the local minimum near b ≈ 3.6, the first valley downhill from the start', 'On the peak near b ≈ 2.6'], answer: 2,
+      explain: 'The slope on the flat region is small but not zero, so b moves left in small steps, speeds up on the steeper slope, and settles in the first valley it reaches: the local minimum. Gradient descent never climbs the peak at 2.6 to discover the lower valley behind it.',
+      tryIt: () => setup({ prob: 'one', curve: 'peaks', logEta: -1, start: [5.5, 0] }) },
+    { type: 'predict', q: 'One parameter: if you start exactly on top of a peak, what does gradient descent do?',
+      options: ['It rolls down to the lowest valley', 'It stays there, because the gradient on top of a peak is also zero', 'It jumps to the nearest local minimum in one step'], answer: 1,
+      explain: 'At the top of a peak the tangent is flat, so the gradient is zero and the update b − η × 0 leaves b unchanged. Gradient descent cannot tell a peak from a valley by the gradient alone; in practice the noise in stochastic gradient descent pushes it off such points.',
+      tryIt: () => setup({ prob: 'one', curve: 'peaks', logEta: -1, startAt: m => [m.ext.find(e => e.kind === 'max').b, 0] }) },
+    { type: 'predict', q: 'One parameter, valleys and peaks, start at b = 5.5 on the flat region. You set "Stop when: Loss stops falling" with tolerance 10⁻². What happens?',
+      options: ['It reaches the local minimum near 3.6, only faster', 'It stops after the first step, still on the flat region, far from any minimum', 'It never stops, because the loss keeps falling', 'It reaches the global minimum'], answer: 1,
+      explain: 'On the flat region each step lowers the loss by less than 1%, so the rule "relative change below 0.01" is met at once. A stopping rule only looks at the last steps; it cannot know that a valley lies ahead. A tighter tolerance (10⁻⁶) fixes it.',
+      tryIt: () => setup({ prob: 'one', curve: 'peaks', logEta: -1, start: [5.5, 0], stopRule: 'loss', tolExp: -2 }) },
+    { type: 'task', q: 'One parameter, valleys and peaks: find a starting b from which gradient descent reaches the global minimum.', hint: 'Click on the chart to choose the start, then press End.',
+      check: () => S.prob === 'one' && S.curve === 'peaks' && G.status === 'converged' && !G.atPeak && G.reached && G.reached.global },
+    { type: 'predict', q: 'Straight line, X standardized, η = 0.1. If you raise η to 0.9, gradient descent will...',
+      options: ['diverge: the loss grows without limit', 'converge, but jumping from one side of the valley to the other', 'converge along a smoother path than with 0.1', 'stop after the first step'], answer: 1,
+      explain: 'With X standardized the stability limit is η &lt; 1. At 0.9 each step overshoots the bottom (the factor 1 − 2η = −0.8 flips the sign), but by less each time, so the path zig-zags inward. Above 1 it would diverge.',
+      tryIt: () => setup({ prob: 'line', std: true, mode: 'batch', micro: false, logEta: Math.log10(0.9) }) },
+    { type: 'predict', q: 'Housing data: switch standardization off and use a learning rate just below the stability limit. Compared with standardized X, gradient descent needs...',
+      options: ['about the same number of steps', 'fewer steps, because the units are natural', 'many more steps, because the loss surface is a long narrow valley', 'no steps at all'], answer: 2,
+      explain: 'Floor area is in the tens and hundreds, so the condition number κ is in the thousands. The step that is safe across the steep walls is tiny along the valley floor. Look at κ in the Deep dive of the Lesson.',
+      tryIt: () => setup({ prob: 'line', ds: 'housing', std: false, mode: 'batch', micro: false, logEta: -4.3 }) },
+    { type: 'predict', q: 'Stochastic gradient descent uses one random observation per step. Near the minimum its path...',
+      options: ['keeps jittering around the minimum unless the learning rate is reduced', 'stops exactly at the OLS solution', 'drifts away and diverges'], answer: 0,
+      explain: 'Each single-observation gradient points only roughly downhill. At the bottom the full gradient is zero but the single-observation gradients are not, so the path keeps moving in a cloud whose size grows with η.',
+      tryIt: () => setup({ prob: 'line', mode: 'sgd', std: true, micro: false, logEta: -1.3 }) },
+    { type: 'predict', q: 'Bumpy surface: you start at (−3, 0.5), on the left side. Where will plain gradient descent end?',
+      options: ['In the global minimum A, because gradient descent always finds the lowest point', 'In whichever valley is closest downhill from the start, here the local minimum B', 'It never stops on a bumpy surface'], answer: 1,
+      explain: 'Gradient descent only ever moves downhill from where it is, so it ends in the valley that contains the starting point. Neural networks are therefore trained from several random starts, or with methods (momentum, noise) that can roll over small ridges.',
+      tryIt: () => setup({ prob: 'bumpy', logEta: -0.7, start: [-3, 0.5] }) },
+    { type: 'task', q: 'Make gradient descent diverge on the straight-line problem.', hint: 'Raise η above the stability limit shown under the slider and press Play.', check: () => S.prob === 'line' && G.status === 'diverged' },
+    { type: 'task', q: 'Straight line, X standardized, all observations: reach the minimum (within 0.1%) in at most 20 iterations.', hint: 'Which learning rate crosses a round bowl fastest? The Deep dive gives the answer.',
+      check: () => S.prob === 'line' && S.std && S.mode === 'batch' && G.iter > 0 && G.iter <= 20 && (G.losses[G.losses.length - 1] - M.minLoss) / M.minLoss < 1e-3 },
+    { type: 'task', q: 'Logistic regression: get within 0.1% of the maximum likelihood log-loss.', hint: 'Choose the Logistic problem, keep X standardized and press End.',
+      check: () => S.prob === 'logit' && G.iter > 0 && (G.losses[G.losses.length - 1] - M.minLoss) / M.minLoss < 1e-3 },
+    { type: 'task', q: 'Bumpy surface: find a starting point from which gradient descent ends in the local minimum C.', hint: 'Click the loss surface to choose a start, then press End. C sits upper left.',
+      check: () => S.prob === 'bumpy' && G.status === 'converged' && G.reached && G.reached.label === 'C' }
+  ]);
+
+  /* ------------------------------------------------------------------
+     state: remember + share
+     ------------------------------------------------------------------ */
+  MLS.moduleBar({ id: META.id, title: META.title, section: META.sectionTitle, level: META.level },
+    { tabs: [{ id: 'sim', label: 'Simulation' }, { id: 'lesson', label: 'Lesson' }, { id: 'challenges', label: 'Challenges' }, { id: 'real', label: 'On real data' }] });
+  MLS.state.init({
+    id: META.id,
+    get: () => ({ prob: S.prob, curve: S.curve, showTangent: S.showTangent, showArrows: S.showArrows, ds: S.ds, n: S.n, seed: S.seed, logEta: S.logEta, std: S.std, mode: S.mode, batch: S.batch, micro: S.micro, start: S.start, stopRule: S.stopRule, tolExp: S.tolExp, maxIter: S.maxIter }),
+    set: o => {
+      if (['one', 'line', 'logit', 'bumpy'].includes(o.prob)) S.prob = o.prob;
+      if (['peaks', 'bowl'].includes(o.curve)) S.curve = o.curve;
+      if (['grad', 'loss'].includes(o.stopRule)) S.stopRule = o.stopRule;
+      if ([-2, -3, -4, -5, -6, -8, -10].includes(o.tolExp)) S.tolExp = o.tolExp;
+      if (Number.isFinite(o.maxIter)) S.maxIter = Math.min(50000, Math.max(10, Math.round(o.maxIter)));
+      ['showTangent', 'showArrows'].forEach(k => { if (typeof o[k] === 'boolean') S[k] = o[k]; });
+      if (o.start && o.start.one && typeof o.start.one === 'object') { ['peaks', 'bowl'].forEach(k => { if (o.start.one[k] !== undefined) S.start.one[k] = o.start.one[k]; }); delete o.start.one; }
+      ['seed', 'std', 'mode', 'batch', 'micro'].forEach(k => { if (o[k] !== undefined) S[k] = o[k]; });
+      ['ds', 'n', 'logEta', 'start'].forEach(k => { if (o[k] && typeof o[k] === 'object') Object.keys(S[k]).forEach(p => { if (o[k][p] !== undefined) S[k][p] = o[k][p]; }); });
+      ['line', 'logit'].forEach(p => { if (!DATA[p][S.ds[p]]) S.ds[p] = Object.keys(DATA[p])[0]; });
+    }
+  });
+  $('fourCast').href = MLS.APP.fourCastUrl;
+  window.__mls = { S, get M() { return M; }, get G() { return G; } };
+  document.addEventListener('mls:theme', () => { if (surf) surf.img = null; refresh(); });
+  rebuild(); refresh();
+})();
+</script>
+</body>
+</html>

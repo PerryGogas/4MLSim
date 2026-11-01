@@ -1,0 +1,139 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>About & how to cite | 4MLSim</title>
+  <meta name="theme-color" content="#1B2340">
+  <link rel="manifest" href="manifest.json">
+  <link rel="icon" type="image/svg+xml" href="assets/img/icon.svg">
+  <link rel="apple-touch-icon" href="assets/img/apple-touch-icon.png">
+  <link rel="stylesheet" href="assets/css/4mlsim.css">
+  <script src="assets/js/core.js"></script>
+  <style>
+    .about-grid { display:grid; grid-template-columns:minmax(0,1.4fr) minmax(0,1fr); gap:16px; align-items:start; }
+    @media (max-width:900px) { .about-grid { grid-template-columns:1fr; } }
+    .about-grid .card + .card { margin-top:16px; }
+    .card h3 { margin-bottom:8px; }
+    .card p, .card li { font-size:14.5px; line-height:1.6; }
+    .card ul { margin:6px 0 0 20px; }
+    pre.cite { background:var(--surface); border:1px solid var(--border); border-radius:8px; padding:10px 12px; font-family:"IBM Plex Mono", monospace; font-size:12.8px; white-space:pre-wrap; overflow-wrap:anywhere; margin-top:8px; }
+    .cl-ver { font-weight:700; margin-top:10px; }
+  </style>
+</head>
+<body>
+<div class="page">
+  <header id="mlsHeader" data-variant="compact"></header>
+  <div class="mod-bar"><a class="back" data-nav="index.html" href="index.html">&larr; All modules</a><h2 class="mod-title">About 4MLSim</h2></div>
+
+  <div class="about-grid">
+    <div>
+      <div class="card">
+        <h3>What it is</h3>
+        <p><b>4MLSim</b> (Machine Learning Simulation Lab) is a set of interactive simulations for teaching machine learning, written by <b>Professor Periklis Gogas</b> at the EMEF Lab, Department of Economics, Democritus University of Thrace. Each module lets students change the data and the settings, run the algorithm step by step, and read the ideas at three depths: intuition, formulas, and a deep dive.</p>
+        <p>4MLSim is the teaching companion of <a id="fourCastLink" target="_blank" rel="noopener">4Cast Lab</a>, which trains and evaluates models on real data.</p>
+      </div>
+
+      <div class="card">
+        <h3>How to cite</h3>
+        <p>4MLSim is free to use. If you use it in teaching, a thesis or a publication, please credit it:</p>
+        <pre class="cite" id="citeText"></pre>
+        <p style="margin-top:10px">BibTeX:</p>
+        <pre class="cite" id="citeBib"></pre>
+        <div class="btn-row" style="margin-top:8px"><button type="button" class="btn-secondary btn-small" id="copyCite">Copy citation</button><button type="button" class="btn-secondary btn-small" id="copyBib">Copy BibTeX</button></div>
+      </div>
+
+      <div class="card">
+        <h3>Version history</h3>
+        <div id="changelog"></div>
+      </div>
+    </div>
+
+    <div>
+      <div class="card">
+        <h3>Version</h3>
+        <p id="verLine"></p>
+        <p class="note" id="buildLine"></p>
+      </div>
+      <div class="card">
+        <h3>Install and offline use</h3>
+        <ul>
+          <li>Click <b>Install 4MLSim</b> in the header (Chrome or Edge), or use the browser menu: Edge <i>Apps &gt; Install this site as an app</i>, Chrome <i>Cast, save and share &gt; Install page as app</i>.</li>
+          <li>After the first visit every module works without internet.</li>
+          <li>A single-file version for computers with no internet at all: <a data-nav="4MLSim-offline.html" href="4MLSim-offline.html" download>4MLSim-offline.html</a>.</li>
+        </ul>
+      </div>
+      <div class="card">
+        <h3>Privacy</h3>
+        <p>Everything runs in your browser. Data you draw or upload never leaves your computer. Your settings are remembered only in this browser. The only network request is a short check on GitHub for a newer version.</p>
+      </div>
+      <div class="card">
+        <h3>License & credits</h3>
+        <p>&copy; 2026 Periklis Gogas. Released under the <b>MIT License</b>.</p>
+        <ul>
+          <li>Math rendering: Temml (MIT License), STIX Two Math font (SIL Open Font License).</li>
+          <li>Excel and CSV files: SheetJS Community Edition (Apache License 2.0).</li>
+          <li>Fonts: IBM Plex Sans and IBM Plex Mono, Fraunces (SIL Open Font License).</li>
+          <li>Chart colors follow a color-blind safe categorical palette; classes also differ by marker shape.</li>
+        </ul>
+      </div>
+      <div class="card">
+        <h3>Contact</h3>
+        <p>Prof. Periklis Gogas, Department of Economics, Democritus University of Thrace. <a id="emefLink" target="_blank" rel="noopener">EMEF Research Lab</a>. Bug reports and suggestions: <a id="issuesLink" target="_blank" rel="noopener">GitHub issues</a>.</p>
+      </div>
+    </div>
+  </div>
+
+  <footer id="mlsFooter"></footer>
+</div>
+<script>
+(function () {
+  const A = MLS.APP;
+  const repoUrl = 'https://github.com/' + A.repo;
+  document.getElementById('verLine').innerHTML = '<b>4MLSim v' + A.version + '</b> (' + A.pill + ')';
+  document.getElementById('buildLine').textContent = A.build;
+  document.getElementById('fourCastLink').href = A.fourCastUrl;
+  document.getElementById('emefLink').href = A.emefUrl;
+  document.getElementById('issuesLink').href = repoUrl + '/issues';
+  const cite = 'Gogas, P. (' + A.year + '). 4MLSim: Machine Learning Simulation Lab (Version ' + A.version + ') [Computer software]. EMEF Lab, Department of Economics, Democritus University of Thrace. ' + repoUrl;
+  const bib = '@software{gogas_4mlsim_' + A.year + ',\n  author    = {Gogas, Periklis},\n  title     = {4MLSim: Machine Learning Simulation Lab},\n  version   = {' + A.version + '},\n  year      = {' + A.year + '},\n  publisher = {EMEF Lab, Department of Economics, Democritus University of Thrace},\n  url       = {' + repoUrl + '},\n  license   = {MIT}\n}';
+  document.getElementById('citeText').textContent = cite;
+  document.getElementById('citeBib').textContent = bib;
+  async function copy(t) { try { await navigator.clipboard.writeText(t); MLS.toast('Copied.'); } catch (e) { MLS.toast('Select the text and copy it.'); } }
+  document.getElementById('copyCite').onclick = () => copy(cite);
+  document.getElementById('copyBib').onclick = () => copy(bib);
+
+  const CHANGES = [
+    { v: '1.0.0 (in preparation)', items: [
+      'Release 1.0.0 (build 16), 1 November 2026: first public release. All 33 simulations and the 2 reference tools are ready: Foundations (9), Supervised Learning (5), Trees & Ensembles (4), Unsupervised Learning (6), Neural Networks (2), Evaluation & Model Selection (5), Reinforcement Learning (1), Modern AI (1), Which Algorithm? Guide and Glossary. The word "preview" is removed from the badge; saved settings from preview builds are reset once.',
+      'Preview build 15: the last four cards; every card of 4MLSim is now ready. Q-Learning in a Gridworld (cliff walk, two exits and a maze; learning rate, discount, exploration, optimistic start, slippery ground; values and policy arrows learned episode by episode, Q values of a clicked cell, reward per episode, the exact optimal policy by value iteration). How LLMs Predict Text (a tiny trigram language model trained on 64 sentences about economics: next-word probabilities, temperature and top-k, generated text coloured by probability, word embeddings from co-occurrence, attention over the prompt, nearest words). Which Algorithm? Guide (four questions give a ranked list of methods with reasons and links, a checklist for any method, and a side-by-side table of every method). Glossary (120 terms with plain definitions and links to the modules, search and A to Z). Q-learning checked against value iteration.',
+      'Preview build 14: Neural & Evaluation batch, five new modules. Neural Networks: Forward Pass & Backpropagation (network diagram with the values of a clicked observation, forward pass in numbers, 0 to 2 hidden layers, ReLU, tanh or sigmoid, learning rate, training epoch by epoch, boundary, training and test loss, gradient size by layer and vanishing gradients). LSTM for Time Series (unemployment, inflation and industrial production; window, units and learning rate; one-month-ahead forecasts against AR and no-change benchmarks on a time-ordered test set; forget, input and output gates, cell and hidden state month by month; the last step in numbers). Hyperparameter Tuning (grid search versus random search for C and gamma of an RBF SVM with 4-fold cross-validation, the full landscape for teaching, best so far, projection on gamma, refit and test once). Data Snooping & Multiple Testing (up to 300 moving-average trading rules on the same 500 days, naive t-test, Bonferroni, White\'s Reality Check, Hansen\'s SPA, Model Confidence Set, the winner in the next year). Explainability: Importance, PDP & SHAP (house prices with gradient boosting or linear regression, permutation importance, partial dependence with ICE curves, exact SHAP waterfall and summary). Gradients checked against numerical derivatives; Reality Check and Model Confidence Set checked against the Python package arch; SHAP additivity and the linear-model formula checked.',
+      'Preview build 13: Unsupervised batch, six new modules. K-Means Clustering (assign and update steps one at a time with pseudocode, k-means++ or random starts, standardizing, WCSS by iteration, elbow and silhouette by k, silhouette plot; supermarket customers, card payments, generic shapes). Hierarchical Clustering (merge by merge on the map and in the dendrogram, single, complete, average and Ward linkage with the distance each one uses, cut by slider or by clicking the tree, merge heights and the largest jump). DBSCAN (core, border and noise points, radius and minimum neighbours, click a point for its neighbourhood, clusters grown step by step, k-distance plot to choose the radius, k-means for comparison; unusual card payments flagged as noise). Gaussian Mixtures & EM (E-step and M-step one at a time, ellipses and probability colours, components table, log-likelihood by iteration, BIC by number of components, k-means for comparison; calm and turbulent market regimes in stock and bond returns). Principal Component Analysis (turn your own direction to find the largest variance, variance by direction, scree plot, loadings, the yield curve\'s level, slope and curvature, rebuilding a month\'s curve from a few components, scores over time). Curse of Dimensionality (distances bunch together as dimensions grow, nearest neighbours that are not near, the size of a neighbourhood holding 10% of the data, KNN accuracy falling as useless inputs are added). Results checked against scikit-learn and SciPy (k-means, silhouette, DBSCAN, linkage heights, Gaussian mixture EM, PCA).',
+      'Preview build 12: SVM & Trees batch, six new modules. Decision Tree (classification or regression, grown split by split with a stepper, the map with the leaf boxes and the tree diagram, how the question is chosen with Gini, entropy or squared error, the tree as if-then rules, depth and minimum leaf size). Random Forest (one tree of the forest on its bootstrap sample, the vote of all trees for a point, error versus number of trees with the out-of-bag error, feature importance). Gradient Boosting (round by round: residuals, the small tree fitted to them, the learning rate, training and test error by round). XGBoost (gradients and hessians, leaf weights and gains with lambda and gamma, pruning, a numbers card). SVM Linear (separator, margins and support vectors, click to add or delete points, the price of errors C with 4-fold cross-validation, support vector table). SVM Kernel Trick (the lecture\'s banks with one ratio, debt-to-equity, bad at both ends: linear kernel gives one cutoff, polynomial kernel gives two, shown in the lifted feature space where the separator is a straight line; circles, moons, XOR and banks with linear, polynomial and RBF kernels; which kernel by cross-validation). Results checked against scikit-learn and xgboost.',
+      'Preview build 11: Classification batch, five new modules. Logistic Regression (S-curve, Newton steps to the maximum likelihood with pseudocode, coefficient table with odds ratios as statsmodels Logit, threshold and cutoff, confusion matrix; bank failures, recessions and the yield curve, loan defaults). K-Nearest Neighbors (click a new observation and see its k neighbours vote, Euclidean or Manhattan distance, standardized inputs, accuracy by k with 4-fold cross-validation on the training set). Naive Bayes (priors and bell-curve likelihoods, Bayes\' rule step by step for a clicked point, equal or data priors, correlated firm ratios that break the naive assumption, comparison with the logit). Confusion Matrix & Metrics (every test bank on a probability line split into TP, FN, FP, TN; share of failed banks; naive models all healthy / all failed; metrics with the numbers filled in; metrics by threshold). ROC, Precision-Recall & Calibration (ROC and PR curves with AUC and average precision, costs of FN and FP with the lowest-cost T chosen on the training set, reliability diagram and Brier score for logit, naive Bayes and KNN). All results checked against statsmodels and scikit-learn.',
+      'Preview build 10: the Core | Advanced switch, the Core card and the Core Playground are removed; 4MLSim is again the module lab (one in-depth module per topic). The lecture-following playground moves to a separate app, 4MLClass. The checked algorithms (assets/js/core-ml.js) stay for the coming modules.',
+      'Preview build 9: Core | Advanced mode switch in the top bar (as in 4Cast Lab), remembered; Core shows the new Core Playground, Advanced the in-depth modules. Core Playground: classification, regression and clustering on lecture examples (bank failures, recession / normal / growth, fruits, temperature and electricity use, gas and electricity prices, supermarket customers) and generic shapes, with click-to-add and delete points; logit, KNN, decision tree, random forest, XGBoost, SVM (linear, polynomial, RBF), neural network, linear regression, SVR, K-Means (step by step) and hierarchical clustering; confusion matrix (counts and %), accuracy, misclassification rate, sensitivity, specificity, false alarms, precision, F1, threshold T, costs of FN and FP, ROC and AUC; MSE, RMSE, MAE, MPE, MAPE, R²; training and test set side by side; Lesson and Challenges from the lectures.',
+      'Preview build 8: Time-Series Validation: the bars of the windows chart are labelled (Train 1, Validation 1, ..., Test) and the gap of h − 1 months between training and forecast months is marked; the test is done once, as in Cross-Validation: the final model is trained on the whole training set (rolling window: its last W months) and forecasts all test months without re-training; static forecasts explained; tiles name the metric (VALIDATION RMSE, TEST RMSE). Data Leakage: three cases (the time-series case moved to Time-Series Validation); "True score on new data" replaces "Real use"; in the credit case only the model without fees can be used on new applicants; the key message (leakage makes a model look better, but on new data it does no better than the correct model) in the intro, the chart, the status lines, the Lesson and a challenge; tiles name the metric and the data; same-firm case seed 18.',
+      'Preview build 7: Time-Series Validation rebuilt in teaching order: 1. time-series split (blocks of months, like the usual cross-validation), 2. expanding window, 3. rolling window, each walked on its own; the comparison table and the chosen method appear after all three are walked to the end. One model for the whole module, written generally as f(latest inflation values); the shuffled k-fold comparison uses the same model. Clearer left panel (How to forecast, Move through time, Now and Forecasting months), window label that matches the method, one layout for all tiles, the training-examples chart removed. Build number shown in the badge and in the browser tab (b7).',
+      'Preview build 6: simpler Time-Series Validation and Data Leakage. Time-Series Validation: one vocabulary (now, input month, target month), the forecasting rule written as a formula with an example, default horizon 1 month, errors that build up as you walk forward (the window is chosen only after the last validation forecast), a chart of the training examples that are allowed and those that are in the data but not allowed, every vertical line labelled, a simple error table, and a two-bar comparison of shuffled k-fold with walking forward. Data Leakage: one data set on screen (no averages over simulated data sets), help texts and explanations specific to each case, and a new predictor-selection case (one firm\'s monthly stock return, 60 months, 500 candidate predictors) with three procedures: choose on all data, choose on the training set then cross-validate, choose inside each fold. Tooltip colour dots outlined so dark lines stay visible; the page no longer jumps when pressing Next. Test files are numbered by build.',
+      'Preview build 5: corrections to build 4 and three new Foundations modules. One terminology everywhere: training set (used for cross-validation, with validation folds), test (hold-out) set used once at the end, default 80/20. Polynomial Overfitting moved to second place. New Cross-Validation module (numbered observations, step by step from the split to the single test). New Data Leakage module (variable known too late in credit scoring, choosing variables with all the data, the same firm in both sets, time series with shuffled folds or without a gap). New Time-Series Validation module (walk-forward with expanding and rolling windows, horizon, regime change, shuffled k-fold contrast). Regularization simplified (house prices, ridge or lasso, λ from exactly 0 = OLS, coefficient table with true, OLS and current values, every line labelled; elastic net and the curve as an advanced option). Bias-Variance: the expected MSE card explained. Reset fixed in the offline version. Legends show the number of observations; charts show values on mouse-over.',
+      'Preview build 4: five Foundations modules. Polynomial Overfitting (training versus test error by degree, compared with adjusted R², AICc and BIC); Bias-Variance Tradeoff (repeated samples, exact decomposition, polynomial and k-nearest neighbours); Regularization (ridge, lasso and elastic net paths, 5-fold cross-validation and the 1-SE rule); Feature Scaling (distances and gradient descent under four scalings, with outliers); Data Splits, Leakage and Cross-Validation (k-fold versus one split, feature-selection leakage, walk-forward evaluation of time series).',
+      'All new numerical results cross-checked against NumPy and scikit-learn.',
+      'Preview build 3 (update): delete your own points in Linear Regression (click a point, Undo last point, Clear all points) and the chart no longer jumps when the results appear; in Gradient Descent the data-and-line chart is full width again, the simple bowl shows its line, and a hint shows when the side panel has more below (pseudocode). Settings saved by an older build are no longer restored.',
+      'Preview build 3: realistic stopping rule in Gradient Descent: stop when the gradient is almost zero or when the loss stops falling, with an editable tolerance and a maximum number of iterations; the result says whether the stopping point is really the minimum.',
+      'Preview build 3: Gradient Descent starts with a one-parameter problem: the loss as a curve L(b) with valleys and peaks (or a simple bowl), the tangent whose slope is the gradient, and an arrow for every step.',
+      'The loss surface uses the same colours in light and dark mode: dark blue for high loss, light at the minimum.',
+      'Linear Regression: every test states its result in words (for example "heteroskedasticity present"), with a key for the yellow and green panels; your own points show from the first click.',
+      'The math level (Intuition, Formulas, Deep dive) now sits inside the Lesson tab; the hidden introduction can be shown again; presentation mode removed (use the browser zoom).',
+      'Preview build 2: Linear Regression (econometrics and machine learning side by side) and Gradient Descent (straight line, logistic regression, bumpy surface) are now separate modules.',
+      'Frozen top bar with tabs (Simulation, Lesson, Challenges, On real data), an introduction box on every module, and help pop-ups on every result that stay open until you click elsewhere.',
+      'All regression statistics cross-checked against statsmodels (Python).',
+      'Preview build 1: shared engine, home menu, About page, installable offline app and single-file version.',
+      'Rebuilt from the original ML Simulation Lab pages, with real axes, seeded data, three math levels, challenges, share links and exports.'
+    ] }
+  ];
+  document.getElementById('changelog').innerHTML = CHANGES.map(c => '<div class="cl-ver">v' + c.v + '</div><ul>' + c.items.map(i => '<li>' + i + '</li>').join('') + '</ul>').join('');
+})();
+</script>
+</body>
+</html>

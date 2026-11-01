@@ -1,0 +1,293 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Support Vector Machine (Linear) | 4MLSim</title>
+  <meta name="theme-color" content="#1B2340">
+  <link rel="manifest" href="../manifest.json">
+  <link rel="icon" type="image/svg+xml" href="../assets/img/icon.svg">
+  <link rel="apple-touch-icon" href="../assets/img/apple-touch-icon.png">
+  <link rel="stylesheet" href="../assets/vendor/temml.css">
+  <link rel="stylesheet" href="../assets/css/4mlsim.css">
+  <script src="../assets/vendor/temml.min.js"></script>
+  <script src="../assets/js/core.js"></script>
+  <script src="../assets/js/stats.js"></script>
+  <script src="../assets/js/plot.js"></script>
+  <script src="../assets/js/modules.js"></script>
+  <script src="../assets/js/core-ml.js"></script>
+  <script src="../assets/js/classify-ui.js"></script>
+  <script src="../assets/js/trees-ui.js"></script>
+  <script src="../assets/js/svm-ui.js"></script>
+</head>
+<body>
+<div class="page">
+  <header id="mlsHeader" data-variant="compact"></header>
+  <div class="mod-top" id="mlsTop"><div id="mlsModBar"></div><div id="mlsTabs"></div></div>
+
+  <div class="intro-box" id="mlsIntro">
+    <h3>What this module shows</h3>
+    <div class="intro-cols">
+      <div>
+        <p>A <b>support vector machine (SVM)</b> finds the "best" separator between two classes. There are infinitely many lines that separate failed from healthy banks; the SVM chooses the one with the <b>widest margin</b>, the widest empty street between the classes.</p>
+        <p>The observations on the edges of the street (or inside it) are the <b>support vectors</b>: only they decide where the line goes. Since perfect separation never occurs in real data, the price of errors <b>C</b> decides how many observations may sit inside the street or on the wrong side.</p>
+      </div>
+      <div>
+        <p><b>How to use it</b></p>
+        <ol>
+          <li>Look at the separator (solid line), the margins (dashed) and the circled support vectors.</li>
+          <li>Click on the chart to add a bank of the chosen class; click a bank to delete it. Which ones move the line?</li>
+          <li>Change C and read the table: margin width, support vectors, accuracy.</li>
+          <li>Click any <b>?</b> for help, then try the <b>Challenges</b>.</li>
+        </ol>
+      </div>
+    </div>
+  </div>
+
+  <!-- ===================== SIMULATION ===================== -->
+  <section data-panel="sim">
+    <div class="mod-grid">
+      <aside class="side" aria-label="Controls">
+        <div class="card">
+          <div class="card-head"><h3>1. Data<button type="button" class="help" data-help="data">?</button></h3></div>
+          <select id="ds" aria-label="Data set"><option value="sep">Banks, clearly separated</option><option value="banks">Bank failures (overlapping)</option></select>
+          <div class="field-row"><label for="n">Banks<button type="button" class="help" data-help="n">?</button></label><output id="nVal"></output></div>
+          <input type="range" id="n" min="20" max="300" step="10" value="60">
+          <div class="field-row"><label for="seed">Random seed<button type="button" class="help" data-help="seed">?</button></label></div>
+          <div class="inline-inputs"><input type="number" id="seed" min="1" max="99999" step="1" value="1" aria-label="Random seed"><button type="button" class="btn-ghost btn-icon" id="newSeed" title="New random data" style="flex:0 0 auto">&#127922;</button></div>
+          <div class="field-row"><label>Click on the chart to add<button type="button" class="help" data-help="add">?</button></label></div>
+          <div class="seg full" role="group" aria-label="Class of a new bank"><button type="button" data-add="0">Healthy</button><button type="button" data-add="1">Failed</button></div>
+          <button type="button" class="btn-ghost btn-small" id="restore" style="width:100%;margin-top:8px">Restore the data</button>
+        </div>
+        <div class="card">
+          <div class="card-head"><h3>2. Price of errors C<button type="button" class="help" data-help="C">?</button></h3></div>
+          <div class="field-row"><label for="C">C</label><output id="CVal"></output></div>
+          <input type="range" id="C" min="0" max="5" step="1" value="2">
+          <button type="button" class="btn-secondary" id="useBest" style="width:100%;margin-top:10px">Use the C chosen by cross-validation</button>
+          <p class="note" id="cNote"></p>
+        </div>
+      </aside>
+
+      <main class="main">
+        <div class="story" id="story"></div>
+        <div class="stat-grid" id="stats" style="margin-top:12px"></div>
+        <div id="statusLine" class="status-line" style="margin:10px 0"></div>
+        <div class="fig-grid">
+          <div id="figMap" class="fig-wide"></div>
+          <div class="card" id="cCard"></div>
+          <div class="card" id="svCard"></div>
+        </div>
+      </main>
+    </div>
+  </section>
+
+  <!-- ===================== LESSON ===================== -->
+  <section data-panel="lesson" class="card lesson" hidden>
+    <div id="mlsMathCtl"></div>
+    <p class="lvl-only-intuition note" style="margin-bottom:8px">Showing the intuition only. Choose <b>Formulas</b> or <b>Deep dive</b> above to add the mathematics.</p>
+
+    <h4>Classification problems for an SVM</h4>
+    <p>Up or down of an asset's price, growth or recession, failed or healthy bank, fraud or legitimate card payment: two classes, and a few inputs that describe each case.</p>
+
+    <h4>The best separator</h4>
+    <p>When two classes can be separated by a straight line, there is an infinite number of lines that do it. The SVM picks the one that stays <b>as far as possible from both classes</b>: the middle of the widest street that has no observations in it. That street is the <b>margin</b>; its edges are the dashed lines. A wide margin leaves room for new observations that differ a little from the training data.</p>
+    <p>With n inputs the separator is a <b>hyperplane</b> with n − 1 dimensions: a point for 1 input, a line for 2, a plane for 3, and so on.</p>
+
+    <h4>Support vectors</h4>
+    <p>The observations on the edges of the street, or inside it, hold the street in place: these are the <b>support vectors</b>. All the other observations could be moved or deleted (as long as they stay outside the street) and the line would not change. That is why the method is called a support vector machine.</p>
+
+    <h4>Soft margin: the price of errors C</h4>
+    <p>Perfect separation never occurs in real data (the credit card example of the lecture: legitimate and fraudulent payments overlap). The SVM then allows some observations inside the street or on the wrong side, and charges a price <b>C</b> for each unit of violation.</p>
+    <ul>
+      <li><b>Small C</b>: errors are cheap. A wide street with many support vectors; a smooth, cautious separator.</li>
+      <li><b>Large C</b>: errors are expensive. A narrow street that tries to classify every training observation correctly; it can overfit.</li>
+      <li>C is chosen by <b>cross-validation on the training set</b>; the test set is used once.</li>
+    </ul>
+    <div class="math-block lvl-math"><div class="mb-title">The optimization problem</div>
+      <div class="tex-block">f(x) = w^\top x + b, \qquad \text{margin width} = \frac{2}{\lVert w \rVert}</div>
+      <div class="tex-block">\min_{w,\,b}\; \frac{1}{2}\lVert w \rVert^2 + C \sum_i \max\bigl(0,\; 1 - y_i f(x_i)\bigr), \qquad y_i \in \{-1, +1\}</div>
+      <p class="note">The first term widens the street; the second (the hinge loss) charges every observation inside the street or on the wrong side. A point is classified by the sign of f(x).</p>
+    </div>
+
+    <div class="math-block deep lvl-deep"><div class="mb-title">Deep dive</div>
+      <p><b>The dual.</b> The solution can be written as w = Σ α<sub>i</sub> y<sub>i</sub> x<sub>i</sub>, with 0 ≤ α<sub>i</sub> ≤ C. Only the support vectors have α<sub>i</sub> &gt; 0: those with α<sub>i</sub> &lt; C lie exactly on the margin, those with α<sub>i</sub> = C inside it or on the wrong side. The dual depends on the data only through dot products x<sub>i</sub><sup>⊤</sup>x<sub>j</sub>, which opens the door to the kernel trick (next module).</p>
+      <p><b>Computation.</b> The dual is solved here with sequential minimal optimization (SMO), as in LIBSVM and scikit-learn's SVC, on standardized inputs; the decision values match scikit-learn.</p>
+      <p><b>Scaling matters.</b> The margin is measured in the units of the inputs, so they must be standardized first.</p>
+      <p class="note">References: Cortes and Vapnik (1995), "Support-vector networks", <i>Machine Learning</i> 20; Platt (1998), "Sequential minimal optimization", Microsoft Research TR-98-14; Hastie, Tibshirani and Friedman (2009), <i>The Elements of Statistical Learning</i>, ch. 12.</p>
+    </div>
+  </section>
+  <!-- ===================== CHALLENGES ===================== -->
+  <section data-panel="challenges" class="card" hidden>
+    <div class="card-head"><h3>Challenges</h3><span class="card-sub">Answer the "predict first" questions before testing them in the Simulation tab.</span></div>
+    <div id="challenges"></div>
+  </section>
+
+
+  <!-- ===================== REAL DATA ===================== -->
+  <section data-panel="real" class="card lesson" hidden>
+    <h4>From the simulation to real data</h4>
+    <ul>
+      <li>Bank failures: in the lecture example a linear SVM on two ratios (Tier 1 capital and net interest expense over net interest income) misclassified only 10 of 1,279 US banks.</li>
+      <li>Standardize the inputs; choose C by cross-validation on the training set; report the test results once.</li>
+      <li>With many inputs a linear SVM is fast and often enough; when the classes are separated by a curve, use a kernel (next module).</li>
+    </ul>
+    <div class="crosslink"><span>&#10140;</span><span><a id="fourCast" target="_blank" rel="noopener"><b>4Cast Lab</b></a> trains linear and kernel SVMs on your own data.</span></div>
+  </section>
+
+  <footer id="mlsFooter"></footer>
+</div>
+
+<script>
+(function () {
+  'use strict';
+  const MLS = window.MLS, ML = MLS.ml, CL = MLS.cls, V = MLS.svmui;
+  const META = MLS.moduleMeta('svm-linear');
+  const $ = id => document.getElementById(id);
+  const F = MLS.fmt, pct = CL.pct;
+  const CS = [0.01, 0.1, 1, 10, 100, 1000];
+  const DEFN = { sep: 60, banks: 100 };
+
+  const S = { ds: 'sep', n: {}, seed: 1, C: 1, add: 1, edits: {} };
+  let D = null, R = null;
+  const nObs = () => S.n[S.ds] || DEFN[S.ds], ekey = () => S.ds + ':' + S.seed + ':' + nObs();
+  const edits = () => (S.edits[ekey()] = S.edits[ekey()] || { add: [], del: [] });
+
+  function makeData() {
+    const g = ML.DATA[S.ds].gen(ML.rng(S.seed), nObs(), 0.3), test = ML.split(g.X.length, S.seed), e = edits();
+    let pts = g.X.map((x, i) => ({ x, y: g.y[i], te: test[i], id: i })).filter(p => !e.del.includes(p.id));
+    e.add.forEach((a, j) => { if (!e.del.includes('a' + j)) pts.push({ x: a.x, y: a.y, te: false, id: 'a' + j, added: true }); });
+    const base = g.X.map((x, i) => ({ x }));
+    D = { pts, names: g.names, classes: g.classes, K: 2, dom: CL.domain(base.length ? base : pts) };
+  }
+  const trainPts = () => D.pts.filter(p => !p.te), testPts = () => D.pts.filter(p => p.te);
+  function compute() {
+    const tr = trainPts();
+    if (new Set(tr.map(p => p.y)).size < 2) { R = null; return; }
+    R = { fit: V.fit(tr, { kernel: 'linear' }, S.C) };
+    R.table = CS.map(C => { const f = C === S.C ? R.fit : V.fit(tr, { kernel: 'linear' }, C); return { C, width: 2 / f.w.norm, sv: f.sv.size, tr: V.acc(f, tr), cv: V.cv(tr, { kernel: 'linear' }, C), te: V.acc(f, testPts()) }; });
+    let best = R.table[0]; R.table.forEach(r => { if (r.cv > best.cv + 1e-12) best = r; }); R.best = best.C;
+  }
+
+  function updateText() {
+    const tr = trainPts(), te = testPts();
+    $('story').innerHTML = '<h3>Data: ' + ML.DATA[S.ds].label + '</h3><p>' + (S.ds === 'sep' ? ML.DATA.sep.note : 'Banks described by the debt-to-equity ratio and the Tier 1 capital ratio; failed and healthy banks overlap, so no line separates them perfectly.') + ' <b>' + tr.length + ' banks in the training set (filled), ' + te.length + ' in the test set (rings).</b> Inputs are standardized before the SVM is fitted.</p>';
+    if (!R) { $('stats').innerHTML = ''; $('statusLine').textContent = 'The training set needs banks of both classes. Restore the data or add banks.'; $('statusLine').className = 'status-line bad'; return; }
+    const fit = R.fit, card = MLS.statCard, inside = tr.filter(p => fit.sv.has(p) && V.where(fit, p) !== 'on the margin').length;
+    $('stats').innerHTML =
+      card('Margin width', F(2 / fit.w.norm, 3), 'standardized units: 2 / ‖w‖', '', 'st_width') +
+      card('Support vectors', String(fit.sv.size), (fit.sv.size - inside) + ' on the margin, ' + inside + ' inside or wrong side', '', 'st_sv') +
+      card('Accuracy, training set', pct(V.acc(fit, tr)), tr.length + ' banks', '', 'm_acc') +
+      card('Accuracy, test set', pct(V.acc(fit, te)), te.length + ' new banks', '', 'm_acc');
+    const a = fit.w.a, b = fit.w.b;
+    $('statusLine').innerHTML = 'Separator: ' + F(a[0], 3) + ' &times; ' + MLS.esc(D.names[0].replace(/ \(.*\)/, '')) + ' ' + (a[1] >= 0 ? '+ ' : '− ') + F(Math.abs(a[1]), 3) + ' &times; ' + MLS.esc(D.names[1].replace(/ \(.*\)/, '')) + ' ' + (b >= 0 ? '+ ' : '− ') + F(Math.abs(b), 3) + ' = 0. Banks where the left side is positive are classified as failed. Only the ' + fit.sv.size + ' support vectors determine this line.';
+    $('statusLine').className = 'status-line ok';
+    $('cNote').innerHTML = '4-fold cross-validation on the training set chooses <b>C = ' + R.best + '</b>.';
+  }
+
+  const figMap = MLS.figure($('figMap'), { title: 'The separator, the margins and the support vectors', help: 'figmap', file: 'svm-linear',
+    plot: { aspect: 0.6, margin: { l: 66, b: 50 }, x: { label: () => D.names[0] }, y: { label: () => D.names[1] }, onClick: (x, y, e, p) => clickAt(x, y, p) },
+    data: () => ({ cols: [D.names[0], D.names[1], 'Class', 'f(x)', 'Support vector', 'Set'], rows: D.pts.map(p => [p.x[0], p.x[1], D.classes[p.y], R ? R.fit.f(p.x) : '', R && R.fit.sv.has(p) ? 'yes' : 'no', p.te ? 'test' : 'training']) }) });
+  function drawMap() {
+    if (!R) { figMap.plot.setX(D.dom.x[0], D.dom.x[1]); figMap.plot.setY(D.dom.y[0], D.dom.y[1]); figMap.plot.draw(P => P.note('Add banks of both classes')); return; }
+    V.draw(figMap.plot, D, R.fit, { clickable: true });
+    figMap.legend(V.legend(D, R.fit));
+    figMap.caption('Solid line: the separator, f(x) = 0. Dashed lines: the edges of the margin, f(x) = ±1. Circled: the support vectors. Click an empty spot to add a bank of the chosen class; click a bank to delete it.');
+  }
+  function clickAt(x, y, p) {
+    const P = figMap.plot; let best = null;
+    D.pts.forEach(q => { const d = Math.hypot(P.sx(q.x[0]) - p.px, P.sy(q.x[1]) - p.py); if (d < 9 && (!best || d < best[0])) best = [d, q]; });
+    const e = edits();
+    if (best) e.del.push(best[1].id); else e.add.push({ x: [+x.toFixed(2), +y.toFixed(2)], y: S.add });
+    makeData(); refresh();
+  }
+  function drawC() {
+    if (!R) { $('cCard').innerHTML = ''; return; }
+    $('cCard').innerHTML = '<div class="card-head"><h3>The effect of C' + MLS.helpBtn('ctable') + '</h3></div><div style="overflow-x:auto"><table class="tbl"><thead><tr><th>C</th><th>Margin width</th><th>Support vectors</th><th>Accuracy, training</th><th>Accuracy, 4-fold CV</th><th>Accuracy, test</th></tr></thead><tbody>' +
+      R.table.map(r => '<tr' + (r.C === S.C ? ' style="font-weight:800;background:var(--tint)"' : '') + '><td>' + r.C + (r.C === R.best ? ' &#9670;' : '') + '</td><td>' + F(r.width, 3) + '</td><td>' + r.sv + '</td><td>' + pct(r.tr) + '</td><td>' + pct(r.cv) + '</td><td>' + pct(r.te) + '</td></tr>').join('') +
+      '</tbody></table></div><p class="note">Bold: the current C. &#9670;: the C with the highest cross-validation accuracy on the training set. The test column is shown for teaching; it is not used to choose C.</p>';
+  }
+  function drawSV() {
+    if (!R) { $('svCard').innerHTML = ''; return; }
+    const tr = trainPts(), list = tr.filter(p => R.fit.sv.has(p)).sort((a, b) => R.fit.alpha.get(b) - R.fit.alpha.get(a));
+    $('svCard').innerHTML = '<div class="card-head"><h3>The support vectors' + MLS.helpBtn('svtable') + '</h3><span class="card-sub">' + list.length + ' of ' + tr.length + ' training banks</span></div>' +
+      '<div class="fig-table" style="max-height:330px"><table class="tbl"><thead><tr><th>Bank</th><th>' + MLS.esc(D.names[0]) + '</th><th>' + MLS.esc(D.names[1]) + '</th><th>Class</th><th>α</th><th>Where</th></tr></thead><tbody>' +
+      list.map(p => '<tr><td>' + (p.added ? 'yours' : p.id + 1) + '</td><td>' + F(p.x[0], 2) + '</td><td>' + F(p.x[1], 2) + '</td><td>' + MLS.esc(D.classes[p.y]) + '</td><td>' + F(R.fit.alpha.get(p), 3) + '</td><td style="text-align:left">' + V.where(R.fit, p) + '</td></tr>').join('') + '</tbody></table></div>' +
+      '<p class="note">α is each support vector\'s weight in the line; it is at most C. Banks with α = C sit inside the margin or on the wrong side.</p>';
+  }
+
+  function syncUI() {
+    $('ds').value = S.ds; $('n').value = nObs(); $('nVal').textContent = nObs(); $('seed').value = S.seed;
+    $('C').value = CS.indexOf(S.C); $('CVal').textContent = S.C;
+    MLS.$$('[data-add]').forEach(b => b.setAttribute('aria-pressed', String(+b.dataset.add === S.add)));
+  }
+  function refresh() { compute(); syncUI(); updateText(); drawMap(); drawC(); drawSV(); figMap.refreshTable(); if (ch) ch.check(); MLS.state.save(); }
+  const full = () => { makeData(); refresh(); };
+  $('ds').onchange = e => { S.ds = e.target.value; full(); };
+  $('n').addEventListener('input', e => ($('nVal').textContent = e.target.value));
+  $('n').onchange = e => { S.n[S.ds] = +e.target.value; full(); };
+  $('seed').onchange = e => { S.seed = Math.max(1, Math.round(+e.target.value) || 1); full(); };
+  $('newSeed').onclick = () => { S.seed = MLS.newSeed(); full(); };
+  MLS.$$('[data-add]').forEach(b => (b.onclick = () => { S.add = +b.dataset.add; syncUI(); MLS.state.save(); }));
+  $('restore').onclick = () => { delete S.edits[ekey()]; full(); };
+  $('C').addEventListener('input', e => ($('CVal').textContent = CS[+e.target.value]));
+  $('C').onchange = e => { S.C = CS[+e.target.value]; refresh(); };
+  $('useBest').onclick = () => { if (R) { S.C = R.best; refresh(); } };
+
+  MLS.registerHelp({
+    data: { title: 'Data', html: '<b>Banks, clearly separated</b>: a line can separate the two groups perfectly (the hard-margin case). <b>Bank failures</b>: the groups overlap, so some banks must sit inside the margin or on the wrong side. Simulated; 80% training set, 20% test set.' },
+    n: { title: 'Banks', html: 'How many banks are simulated. With few banks the support vectors are easy to see.' },
+    add: { title: 'Add or delete banks', html: 'Choose the class, then click on an empty spot of the chart to add a bank to the training set. Click an existing bank to delete it. Adding a bank far from the line changes nothing; adding one inside the margin moves it.' },
+    C: { title: 'The price of errors C', html: 'How much each unit of violation (a bank inside the margin or on the wrong side) costs. Small C: wide margin, many support vectors. Large C: narrow margin, fewer training errors, risk of overfitting.' },
+    st_width: { title: 'Margin width', html: 'The width of the street between the dashed lines, 2 / ‖w‖, in standardized units (standard deviations of the inputs).' },
+    st_sv: { title: 'Support vectors', html: 'The training banks on the margin or inside it (or on the wrong side). Only they determine the separator.' },
+    figmap: { title: 'The separator', html: 'Background: the class predicted. Solid line: the separator f(x) = 0. Dashed lines: the margins f(x) = ±1. Circled: support vectors. Hover over a bank for its decision value f(x) and its α.' },
+    ctable: { title: 'The effect of C', html: 'The SVM refitted for each C: the margin width, the number of support vectors and the accuracy on the training set, in 4-fold cross-validation on the training set (consecutive blocks), and on the test set.' },
+    svtable: { title: 'The support vectors', html: 'Each support vector with its weight α (0 &lt; α ≤ C) and its position: on the margin (y·f(x) = 1), inside the margin (0 &lt; y·f(x) &lt; 1) or on the wrong side (y·f(x) &lt; 0).' }
+  });
+
+  function setup(o) { Object.assign(S, o); MLS.pickTab('sim'); full(); window.scrollTo({ top: 0, behavior: 'smooth' }); }
+  const ch = MLS.challenges($('challenges'), META.id, [
+    { type: 'predict', q: 'You add a healthy bank far away from the line, deep inside the healthy group. The separator will...',
+      options: ['move towards the new bank', 'not move: the new bank is not a support vector', 'disappear'], answer: 1,
+      explain: 'Only the support vectors (on or inside the margin) determine the line. A bank outside the margin gets α = 0 and has no influence. Try it: click far into the blue area with "Healthy" selected.',
+      tryIt: () => setup({ ds: 'sep', add: 0 }) },
+    { type: 'task', q: 'Add one bank that moves the separator: it must become a support vector.', hint: 'Click inside the street between the dashed lines.',
+      check: () => R && edits().add.length > 0 && trainPts().some(p => p.added && R.fit.sv.has(p)) },
+    { type: 'predict', q: 'Overlapping bank data: you raise C from 1 to 1000. The margin will become...',
+      options: ['narrower, with fewer banks inside it', 'wider', 'exactly the same'], answer: 0,
+      explain: 'A larger C makes every violation expensive, so the SVM narrows the street to keep banks out of it and on the right side. This fits the training set more closely and can overfit.',
+      tryIt: () => setup({ ds: 'banks', C: 1000 }) },
+    { type: 'task', q: 'Bank failures: set C to the value chosen by 4-fold cross-validation on the training set.', hint: 'Use the button in section 2.',
+      check: () => R && S.ds === 'banks' && S.C === R.best },
+    { type: 'predict', q: 'An SVM with 3 inputs (three financial ratios). The separator is...',
+      options: ['a line', 'a plane: a hyperplane with 3 − 1 = 2 dimensions', 'a point'], answer: 1,
+      explain: 'With n inputs the separator is a hyperplane of n − 1 dimensions: a point on a line, a line in a plane, a plane in 3-D space.',
+      tryIt: () => setup({ ds: 'sep' }) },
+    { type: 'predict', q: 'Why must the inputs be standardized before fitting an SVM?',
+      options: ['To make the program faster', 'Because the margin is a distance: an input in large units would dominate it', 'It is not necessary'], answer: 1,
+      explain: 'The width of the street is measured in the units of the inputs. Without standardizing, the input with the larger numbers would decide the geometry.',
+      tryIt: () => setup({ ds: 'banks' }) }
+  ]);
+
+  MLS.moduleBar({ id: META.id, title: META.title, section: META.sectionTitle, level: META.level },
+    { tabs: [{ id: 'sim', label: 'Simulation' }, { id: 'lesson', label: 'Lesson' }, { id: 'challenges', label: 'Challenges' }, { id: 'real', label: 'On real data' }] });
+  MLS.state.init({
+    id: META.id,
+    get: () => ({ ds: S.ds, n: S.n, seed: S.seed, C: S.C, add: S.add, edits: S.edits }),
+    set: o => {
+      if (DEFN[o.ds]) S.ds = o.ds;
+      if (o.n) Object.keys(o.n).forEach(k => { if (DEFN[k] && Number.isFinite(o.n[k])) S.n[k] = Math.max(20, Math.min(300, o.n[k])); });
+      if (Number.isFinite(o.seed)) S.seed = o.seed;
+      if (CS.includes(o.C)) S.C = o.C;
+      if (o.add === 0 || o.add === 1) S.add = o.add;
+      if (o.edits && typeof o.edits === 'object') S.edits = o.edits;
+    }
+  });
+  $('fourCast').href = MLS.APP.fourCastUrl;
+  window.__mls = { S, get R() { return R; }, get D() { return D; } };
+  document.addEventListener('mls:theme', () => refresh());
+  full();
+})();
+</script>
+</body>
+</html>

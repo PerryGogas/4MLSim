@@ -1,0 +1,316 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Support Vector Machine (Kernel Trick) | 4MLSim</title>
+  <meta name="theme-color" content="#1B2340">
+  <link rel="manifest" href="../manifest.json">
+  <link rel="icon" type="image/svg+xml" href="../assets/img/icon.svg">
+  <link rel="apple-touch-icon" href="../assets/img/apple-touch-icon.png">
+  <link rel="stylesheet" href="../assets/vendor/temml.css">
+  <link rel="stylesheet" href="../assets/css/4mlsim.css">
+  <script src="../assets/vendor/temml.min.js"></script>
+  <script src="../assets/js/core.js"></script>
+  <script src="../assets/js/stats.js"></script>
+  <script src="../assets/js/plot.js"></script>
+  <script src="../assets/js/modules.js"></script>
+  <script src="../assets/js/core-ml.js"></script>
+  <script src="../assets/js/classify-ui.js"></script>
+  <script src="../assets/js/trees-ui.js"></script>
+  <script src="../assets/js/svm-ui.js"></script>
+</head>
+<body>
+<div class="page">
+  <header id="mlsHeader" data-variant="compact"></header>
+  <div class="mod-top" id="mlsTop"><div id="mlsModBar"></div><div id="mlsTabs"></div></div>
+
+  <div class="intro-box" id="mlsIntro">
+    <h3>What this module shows</h3>
+    <div class="intro-cols">
+      <div>
+        <p>When the data look like two clouds, a straight separator is easy to find. But when one class sits <b>on both sides</b> of the other (a ring around a circle, or bad banks with too much <i>and</i> too little debt), no straight line can separate them.</p>
+        <p>The <b>kernel trick</b>: project the data into more dimensions, where a straight separator exists. With one input x, add (x − average)²: the bad banks at both ends rise high on the parabola and a straight line cuts them off. Back in the original data the separator is a curve, or two cutoffs.</p>
+      </div>
+      <div>
+        <p><b>How to use it</b></p>
+        <ol>
+          <li>Start with the lecture example: banks with one ratio, debt-to-equity. Compare the linear and the polynomial kernel.</li>
+          <li>Look at the lifted picture: the separator there is a straight line.</li>
+          <li>Switch to the circles, moons or XOR data and try the RBF kernel and its width γ.</li>
+          <li>Compare all kernels in the table, chosen by cross-validation.</li>
+        </ol>
+      </div>
+    </div>
+  </div>
+
+  <!-- ===================== SIMULATION ===================== -->
+  <section data-panel="sim">
+    <div class="mod-grid">
+      <aside class="side" aria-label="Controls">
+        <div class="card">
+          <div class="card-head"><h3>1. Data<button type="button" class="help" data-help="data">?</button></h3></div>
+          <select id="ds" aria-label="Data set"><option value="de1">Banks: debt-to-equity only (1 input)</option><option value="circles">Circles (2 inputs)</option><option value="moons">Moons (2 inputs)</option><option value="xor">XOR (2 inputs)</option><option value="banks">Bank failures (2 inputs)</option></select>
+          <div class="field-row"><label for="n">Observations<button type="button" class="help" data-help="n">?</button></label><output id="nVal"></output></div>
+          <input type="range" id="n" min="40" max="300" step="10" value="80">
+          <div class="field-row"><label for="seed">Random seed<button type="button" class="help" data-help="seed">?</button></label></div>
+          <div class="inline-inputs"><input type="number" id="seed" min="1" max="99999" step="1" value="1" aria-label="Random seed"><button type="button" class="btn-ghost btn-icon" id="newSeed" title="New random data" style="flex:0 0 auto">&#127922;</button></div>
+        </div>
+        <div class="card">
+          <div class="card-head"><h3>2. Kernel<button type="button" class="help" data-help="kernel">?</button></h3></div>
+          <div class="seg full" role="group" aria-label="Kernel"><button type="button" data-k="linear">Linear</button><button type="button" data-k="poly">Polynomial</button><button type="button" data-k="rbf">RBF</button></div>
+          <div id="degRow"><div class="field-row"><label for="deg">Polynomial degree<button type="button" class="help" data-help="deg">?</button></label><output id="degVal"></output></div><input type="range" id="deg" min="2" max="5" step="1" value="2"></div>
+          <div id="gamRow"><div class="field-row"><label for="gam">RBF width γ<button type="button" class="help" data-help="gam">?</button></label><output id="gamVal"></output></div><input type="range" id="gam" min="0" max="6" step="1" value="2"></div>
+          <div class="field-row"><label for="C">Price of errors C<button type="button" class="help" data-help="C">?</button></label><output id="CVal"></output></div>
+          <input type="range" id="C" min="0" max="5" step="1" value="2">
+        </div>
+      </aside>
+
+      <main class="main">
+        <div class="story" id="story"></div>
+        <div class="stat-grid" id="stats" style="margin-top:12px"></div>
+        <div id="statusLine" class="status-line" style="margin:10px 0"></div>
+        <div class="fig-grid">
+          <div id="figMap" class="fig-wide"></div>
+          <div id="figLift" class="fig-wide"></div>
+          <div class="card fig-wide" id="kCard"></div>
+        </div>
+      </main>
+    </div>
+  </section>
+
+  <!-- ===================== LESSON ===================== -->
+  <section data-panel="lesson" class="card lesson" hidden>
+    <div id="mlsMathCtl"></div>
+    <p class="lvl-only-intuition note" style="margin-bottom:8px">Showing the intuition only. Choose <b>Formulas</b> or <b>Deep dive</b> above to add the mathematics.</p>
+
+    <h4>When a straight line is not enough</h4>
+    <p>When the data are like two clouds, it is easy to find a separator. When one class lies on both sides of the other, perfect separation is impossible; the parameter C lets the SVM accept some errors, but even then the accuracy can be very low (the lecture's real cases, e.g. credit cards). How can we overcome this?</p>
+
+    <h4>The kernel trick: more dimensions</h4>
+    <p>We project the data from the <b>data space</b> with n dimensions to a <b>feature space</b> with n + i dimensions (i = 1, 2, 3, ...). In the feature space the data can be linearly separable, or the accuracy increases significantly. The separator found there is a straight line (a hyperplane); seen back in the data space it is a curve.</p>
+    <ul>
+      <li><b>Polynomial kernel, 1 dimension</b> (the lecture's bank example): debt-to-equity too high means risk; too low means the bank does not use its equity to earn a return. Bad banks sit at both ends. Add a second dimension, (x − average)² (the same as adding x²): the ends rise on the parabola, and a straight line separates them. Back on the x axis: two cutoffs.</li>
+      <li><b>Polynomial kernel, 2 dimensions</b>: add x1², x2² and x1·x2; circles and ellipses become straight lines in the feature space.</li>
+      <li><b>RBF (radial basis function) kernel</b>: measures how close two observations are; it corresponds to infinitely many dimensions. Its width γ sets how far the influence of one observation reaches: small γ, smooth boundaries; large γ, wiggly boundaries that can overfit.</li>
+    </ul>
+
+    <h4>Why "trick"?</h4>
+    <p>The SVM only needs the dot products between observations. A <b>kernel</b> computes the dot product in the feature space directly from the original inputs, without ever building the new dimensions. So the SVM can work in a huge (even infinite) feature space at the cost of the original one.</p>
+    <div class="math-block lvl-math"><div class="mb-title">Kernels used here (inputs standardized)</div>
+      <div class="tex-block">\text{linear: } K(x, z) = x^\top z, \qquad \text{polynomial: } K(x, z) = (\gamma\, x^\top z + 1)^d, \qquad \text{RBF: } K(x, z) = e^{-\gamma \lVert x - z \rVert^2}</div>
+      <div class="tex-block">\text{degree 2, one input: } (\gamma x z + 1)^2 = 1 + \bigl(\sqrt{2\gamma}\,x\bigr)\bigl(\sqrt{2\gamma}\,z\bigr) + (\gamma x^2)(\gamma z^2): \text{ the lift } x \mapsto (x, x^2)</div>
+      <div class="tex-block">f(x) = \sum_{i \in SV} \alpha_i\, y_i\, K(x_i, x) + b</div>
+      <p class="note">For the polynomial kernel γ = 1 / (number of inputs); the constant 1 inside the bracket is scikit-learn's coef0 = 1.</p>
+    </div>
+
+    <div class="math-block deep lvl-deep"><div class="mb-title">Deep dive</div>
+      <p><b>Mercer's condition.</b> A function is a valid kernel if every kernel matrix it produces is positive semi-definite; then it is a dot product in some feature space. The RBF kernel's feature space has infinitely many dimensions.</p>
+      <p><b>Choosing the kernel and its settings.</b> C and γ interact: both large means a very flexible boundary. They are chosen together by cross-validation, usually on a grid (see the Hyperparameter Tuning module).</p>
+      <p><b>Support vector regression</b> uses the same kernels to fit curves with a tolerance band around them.</p>
+      <p class="note">References: Boser, Guyon and Vapnik (1992), "A training algorithm for optimal margin classifiers", <i>COLT</i>; Schölkopf and Smola (2002), <i>Learning with Kernels</i>; Hastie, Tibshirani and Friedman (2009), <i>The Elements of Statistical Learning</i>, §12.3.</p>
+    </div>
+  </section>
+  <!-- ===================== CHALLENGES ===================== -->
+  <section data-panel="challenges" class="card" hidden>
+    <div class="card-head"><h3>Challenges</h3><span class="card-sub">Answer the "predict first" questions before testing them in the Simulation tab.</span></div>
+    <div id="challenges"></div>
+  </section>
+
+
+
+  <!-- ===================== REAL DATA ===================== -->
+  <section data-panel="real" class="card lesson" hidden>
+    <h4>From the simulation to real data</h4>
+    <ul>
+      <li>Try the linear kernel first; use RBF when the classes are separated by curves (fraud, credit risk with interactions, bank ratios that are bad at both extremes).</li>
+      <li>Standardize the inputs, then choose C and γ together by cross-validation on the training set.</li>
+      <li>Kernel SVMs become slow beyond tens of thousands of observations; tree ensembles are then often easier.</li>
+    </ul>
+    <div class="crosslink"><span>&#10140;</span><span><a id="fourCast" target="_blank" rel="noopener"><b>4Cast Lab</b></a> trains SVMs with linear, polynomial and RBF kernels on your own data.</span></div>
+  </section>
+
+  <footer id="mlsFooter"></footer>
+</div>
+
+<script>
+(function () {
+  'use strict';
+  const MLS = window.MLS, ML = MLS.ml, CL = MLS.cls, V = MLS.svmui;
+  const META = MLS.moduleMeta('svm-kernel');
+  const $ = id => document.getElementById(id);
+  const F = MLS.fmt, pct = CL.pct;
+  const CS = [0.01, 0.1, 1, 10, 100, 1000], GS = [0.1, 0.3, 1, 3, 10, 30, 100];
+  const DEFN = { de1: 80, circles: 160, moons: 160, xor: 160, banks: 120 };
+
+  const S = { ds: 'de1', n: {}, seed: 1, kernel: 'poly', deg: 2, gam: 1, C: 1 };
+  let D = null, R = null;
+  const nObs = () => S.n[S.ds] || DEFN[S.ds], one = () => S.ds === 'de1';
+  const ko = () => ({ kernel: S.kernel, degree: S.deg, gamma: S.kernel === 'rbf' ? S.gam : undefined });
+  const kname = k => (k.kernel === 'linear' ? 'Linear' : k.kernel === 'poly' ? 'Polynomial, degree ' + k.degree : 'RBF, γ = ' + k.gamma);
+
+  function makeData() {
+    const g = ML.DATA[S.ds].gen(ML.rng(S.seed), nObs(), 0.3), test = ML.split(g.X.length, S.seed);
+    const pts = g.X.map((x, i) => ({ x, y: g.y[i], te: test[i], id: i, jit: ML.rng(i * 53 + S.seed).random() }));
+    D = { pts, names: g.names, classes: g.classes, K: 2 };
+    if (one()) { const xs = pts.map(p => p.x[0]); D.dom = { x: MLS.niceDomain(Math.min(...xs), Math.max(...xs), 0.04), y: [0, 1] }; } else D.dom = CL.domain(pts);
+  }
+  const trainPts = () => D.pts.filter(p => !p.te), testPts = () => D.pts.filter(p => p.te);
+  function compute() {
+    const tr = trainPts(), te = testPts();
+    R = { fit: V.fit(tr, ko(), S.C) };
+    R.tr = V.acc(R.fit, tr); R.te = V.acc(R.fit, te);
+    const cands = [{ kernel: 'linear' }, { kernel: 'poly', degree: 2 }, { kernel: 'poly', degree: 3 }, { kernel: 'rbf', gamma: 0.3 }, { kernel: 'rbf', gamma: 1 }, { kernel: 'rbf', gamma: 10 }];
+    R.table = cands.map(k => { const f = V.fit(tr, k, S.C); return { k, sv: f.sv.size, tr: V.acc(f, tr), cv: V.cv(tr, k, S.C), te: V.acc(f, te) }; });
+    let best = R.table[0]; R.table.forEach(r => { if (r.cv > best.cv + 1e-12) best = r; }); R.best = best;
+    /* 1 input: the cutoffs where f changes sign */
+    if (one()) { R.cuts = []; let prev = null; for (let k = 0; k <= 2000; k++) { const x = D.dom.x[0] + (D.dom.x[1] - D.dom.x[0]) * k / 2000, v = R.fit.f([x]); if (prev && Math.sign(v) !== Math.sign(prev[1])) R.cuts.push((prev[0] + x) / 2); prev = [x, v]; } }
+  }
+
+  function updateText() {
+    const tr = trainPts(), te = testPts(), card = MLS.statCard;
+    const note = { de1: ML.DATA.de1.note, circles: 'One class inside a ring of the other: no straight line can separate them.', moons: 'Two interleaving half circles.', xor: 'Class 1 in two opposite corners, class 0 in the other two: the classic case a straight line cannot solve.', banks: 'Banks described by two ratios; the classes overlap.' }[S.ds];
+    $('story').innerHTML = '<h3>Data: ' + ML.DATA[S.ds].label + '</h3><p>' + note + ' <b>' + tr.length + ' in the training set (filled), ' + te.length + ' in the test set (rings).</b> Kernel: <b>' + kname(ko()) + '</b>, C = ' + S.C + '.</p>';
+    $('stats').innerHTML =
+      card('Accuracy, training set', pct(R.tr), tr.length + ' observations', '', 'm_acc') +
+      card('Accuracy, test set', pct(R.te), te.length + ' new observations', '', 'm_acc') +
+      card('Support vectors', String(R.fit.sv.size), 'of ' + tr.length + ' training observations', '', 'st_sv') +
+      (one() ? card('Cutoffs on the x axis', String(R.cuts.length), R.cuts.length ? R.cuts.map(c => F(c, 2)).join(' and ') : 'none: one class everywhere', '', 'st_cuts')
+        : card('Best kernel by cross-validation', R.best.k.kernel === 'linear' ? 'Linear' : R.best.k.kernel === 'poly' ? 'Poly ' + R.best.k.degree : 'RBF ' + R.best.k.gamma, 'CV accuracy ' + pct(R.best.cv) + ' at C = ' + S.C, '', 'st_best'));
+    let msg, cls = 'status-line';
+    if (one() && S.kernel === 'linear') { msg = 'A linear kernel on one input gives at most one cutoff, but bad banks lie at both ends. Accuracy ' + pct(R.te) + ' on the test set. Try the polynomial kernel: it adds x².'; cls += ' bad'; }
+    else if (!one() && S.kernel === 'linear' && R.te < 0.8) { msg = 'No straight line separates these classes: test accuracy ' + pct(R.te) + '. Try a polynomial or RBF kernel.'; cls += ' bad'; }
+    else if (R.tr - R.te > 0.1) { msg = 'Training accuracy ' + pct(R.tr) + ' but test accuracy ' + pct(R.te) + ': the boundary follows noise (overfitting). Try a smaller γ or C.'; cls += ' bad'; }
+    else { msg = (one() ? 'With the kernel the SVM finds ' + R.cuts.length + ' cutoff' + (R.cuts.length === 1 ? '' : 's') + ' on the debt-to-equity axis. ' : '') + 'Test accuracy ' + pct(R.te) + ' (training ' + pct(R.tr) + ').'; cls += ' ok'; }
+    $('statusLine').textContent = msg; $('statusLine').className = cls;
+  }
+
+  const figMap = MLS.figure($('figMap'), { title: 'The data and the separator', help: 'figmap', file: 'svm-kernel',
+    plot: { aspect: 0.55, margin: { l: 66, b: 50 }, x: { label: () => D.names[0] }, y: { label: () => (one() ? '' : D.names[1]), ticks: undefined } },
+    data: () => ({ cols: D.names.concat(['Class', 'f(x)', 'Set']), rows: D.pts.map(p => p.x.concat([D.classes[p.y], R.fit.f(p.x), p.te ? 'test' : 'training'])) }) });
+  function drawMap() {
+    const P = figMap.plot, ink = MLS.color('chart-ink'), mu = MLS.color('chart-muted');
+    if (!one()) { V.draw(P, D, R.fit); figMap.legend(V.legend(D, R.fit)); figMap.caption('Solid line: the separator f(x) = 0; dashed: the margins f(x) = ±1; circled: the support vectors. With a kernel the separator bends.'); return; }
+    P.setX(D.dom.x[0], D.dom.x[1]); P.setY(-0.15, 1.15);
+    P.draw(P => {
+      const xs = []; for (let k = 0; k <= 400; k++) xs.push(D.dom.x[0] + (D.dom.x[1] - D.dom.x[0]) * k / 400);
+      for (let k = 0; k < 400; k++) { const v = R.fit.f([(xs[k] + xs[k + 1]) / 2]); P.rect(xs[k], -0.15, xs[k + 1], 1.15, { fill: MLS.rgba(CL.color(v >= 0 ? 1 : 0), 0.13) }); }
+      R.cuts.forEach(c => { P.vline(c, { color: ink, width: 2 }); P.text(c, 1.15, 'cutoff ' + F(c, 2), { anchor: 'middle', dy: 14, size: 12, weight: 700 }); });
+      const tip = p => '<b>' + (p.te ? 'Test set' : 'Training set') + '</b><br>' + D.names[0] + ': ' + F(p.x[0], 2) + '<br>Actual: <b>' + D.classes[p.y] + '</b><br>f(x) = ' + F(R.fit.f(p.x), 3) + (R.fit.sv.has(p) ? '<br><b>Support vector</b>' : '');
+      const yy = p => (p.y ? 0.62 : 0.12) + 0.26 * p.jit;
+      P.text(D.dom.x[0], 0.75, 'Bad', { dx: 4, size: 11.5, weight: 700, color: CL.color(1) }); P.text(D.dom.x[0], 0.25, 'Good', { dx: 4, size: 11.5, weight: 700, color: CL.color(0) });
+      P.points(trainPts().map(p => ({ x: p.x[0], y: yy(p), p })), { color: d => CL.color(d.p.y), r: 4.6, tip: d => tip(d.p), highlight: d => R.fit.sv.has(d.p) });
+      P.points(testPts().map(p => ({ x: p.x[0], y: yy(p), p })), { color: d => CL.color(d.p.y), r: 5.2, hollow: true, tip: d => tip(d.p) });
+    });
+    figMap.legend([{ label: 'Good bank (' + D.pts.filter(p => !p.y).length + ')', color: CL.color(0) }, { label: 'Bad bank (' + D.pts.filter(p => p.y).length + ')', color: CL.color(1) }, { label: 'filled = training set, ring = test set', color: 'transparent', stroke: mu }, { label: 'Cutoff', color: ink, line: true }, { label: 'Support vector (' + R.fit.sv.size + ')', color: 'transparent', stroke: ink }]);
+    figMap.caption('The data space: one input, the debt-to-equity ratio (the two rows only separate the classes for reading). Shaded: the class predicted at each value. A linear kernel can only draw one cutoff.');
+  }
+  /* the lifted picture for one input and the polynomial kernel of degree 2: (x, x²) */
+  const figLift = MLS.figure($('figLift'), { title: 'The feature space: a second dimension, the squared distance from the average', help: 'figlift', file: 'svm-kernel-lift',
+    plot: { aspect: 0.5, margin: { l: 70, b: 50 }, x: { label: 'Debt-to-equity ratio, x' }, y: { label: '(x − average)², the new dimension' } } });
+  function drawLift() {
+    const show = one() && S.kernel === 'poly' && S.deg === 2; $('figLift').hidden = !show; if (!show) return;
+    const P = figLift.plot, ink = MLS.color('chart-ink'), fit = R.fit, sc = fit.sc, mu0 = sc.mu[0], sd = sc.sd[0], g = 1;
+    /* the separator is a straight line in (x, x²): f = w1*sqrt(2g) z + w2*g z² - rho with z = (x - mu)/sd */
+    const s = fit.m.sv, tr = trainPts(), lab = p => (p.y === 1 ? 1 : -1);
+    let w1 = 0, w2 = 0; s.forEach(i => { const z = sc.t(tr[i].x)[0], a = fit.m.alpha[i] * lab(tr[i]); w1 += a * Math.sqrt(2 * g) * z; w2 += a * g * z * z; });
+    const lineAt = (u, c) => { const zl = Math.sqrt(2 * g) * (u - mu0) / sd; return ((c + fit.m.rho - w1 * zl) / (w2 * g)) * sd * sd; };
+    const q = x => (x - mu0) ** 2, xs = D.pts.map(p => p.x[0]), top = Math.max(...xs.map(q)) * 1.1;
+    P.setX(D.dom.x[0], D.dom.x[1]); P.setY(-top * 0.04, top);
+    P.draw(P => {
+      const us = []; for (let k = 0; k <= 200; k++) us.push(D.dom.x[0] + (D.dom.x[1] - D.dom.x[0]) * k / 200);
+      P.line(us.map(u => [u, q(u)]), { color: MLS.color('chart-muted'), width: 1, dash: '2 3' });
+      if (Math.abs(w2) > 1e-12) { P.line(us.map(u => [u, lineAt(u, 0)]), { color: ink, width: 2.2 }); [-1, 1].forEach(c => P.line(us.map(u => [u, lineAt(u, c)]), { color: ink, width: 1.3, dash: '6 4' })); }
+      const tip = p => D.names[0] + ' ' + F(p.x[0], 2) + ', (x − ' + F(mu0, 2) + ')² = ' + F(q(p.x[0]), 2) + '<br>' + D.classes[p.y];
+      P.points(trainPts().map(p => ({ x: p.x[0], y: q(p.x[0]), p })), { color: d => CL.color(d.p.y), r: 4.6, tip: d => tip(d.p), highlight: d => fit.sv.has(d.p) });
+      P.points(testPts().map(p => ({ x: p.x[0], y: q(p.x[0]), p })), { color: d => CL.color(d.p.y), r: 5.2, hollow: true, tip: d => tip(d.p) });
+    });
+    figLift.legend([{ label: 'Good bank', color: CL.color(0) }, { label: 'Bad bank', color: CL.color(1) }, { label: 'Straight separator in the feature space', color: ink, line: true }, { label: 'Margins', color: ink, line: true, dash: '6 4' }]);
+    figLift.caption('Each bank is placed at (x, (x − ' + F(mu0, 2) + ')²), where ' + F(mu0, 2) + ' is the average ratio in the training set: the points lie on a parabola. The bad banks at both ends rise high, so a straight line separates them from the good banks in the middle. Where this line crosses the parabola are the two cutoffs of the chart above.');
+  }
+  function drawK() {
+    $('kCard').innerHTML = '<div class="card-head"><h3>Which kernel? (C = ' + S.C + ')' + MLS.helpBtn('ktable') + '</h3></div><div style="overflow-x:auto"><table class="tbl"><thead><tr><th>Kernel</th><th>Support vectors</th><th>Accuracy, training</th><th>Accuracy, 4-fold CV</th><th>Accuracy, test</th></tr></thead><tbody>' +
+      R.table.map(r => '<tr' + (r.k.kernel === S.kernel && (r.k.kernel !== 'poly' || r.k.degree === S.deg) && (r.k.kernel !== 'rbf' || r.k.gamma === S.gam) ? ' style="font-weight:800;background:var(--tint)"' : '') + '><td>' + kname(r.k) + (r === R.best ? ' &#9670;' : '') + '</td><td>' + r.sv + '</td><td>' + pct(r.tr) + '</td><td>' + pct(r.cv) + '</td><td>' + pct(r.te) + '</td></tr>').join('') +
+      '</tbody></table></div><p class="note">&#9670;: the highest 4-fold cross-validation accuracy on the training set. Bold: the current kernel, if it is in the list. The test column is for teaching only.</p>';
+  }
+
+  function syncUI() {
+    $('ds').value = S.ds; $('n').value = nObs(); $('nVal').textContent = nObs(); $('seed').value = S.seed;
+    MLS.$$('[data-k]').forEach(b => b.setAttribute('aria-pressed', String(b.dataset.k === S.kernel)));
+    $('degRow').hidden = S.kernel !== 'poly'; $('gamRow').hidden = S.kernel !== 'rbf';
+    $('deg').value = S.deg; $('degVal').textContent = S.deg; $('gam').value = GS.indexOf(S.gam); $('gamVal').textContent = S.gam; $('C').value = CS.indexOf(S.C); $('CVal').textContent = S.C;
+  }
+  function refresh() { compute(); syncUI(); updateText(); drawMap(); drawLift(); drawK(); figMap.refreshTable(); if (ch) ch.check(); MLS.state.save(); }
+  const full = () => { makeData(); refresh(); };
+  $('ds').onchange = e => { S.ds = e.target.value; full(); };
+  $('n').addEventListener('input', e => ($('nVal').textContent = e.target.value));
+  $('n').onchange = e => { S.n[S.ds] = +e.target.value; full(); };
+  $('seed').onchange = e => { S.seed = Math.max(1, Math.round(+e.target.value) || 1); full(); };
+  $('newSeed').onclick = () => { S.seed = MLS.newSeed(); full(); };
+  MLS.$$('[data-k]').forEach(b => (b.onclick = () => { S.kernel = b.dataset.k; refresh(); }));
+  $('deg').addEventListener('input', e => ($('degVal').textContent = e.target.value)); $('deg').onchange = e => { S.deg = +e.target.value; refresh(); };
+  $('gam').addEventListener('input', e => ($('gamVal').textContent = GS[+e.target.value])); $('gam').onchange = e => { S.gam = GS[+e.target.value]; refresh(); };
+  $('C').addEventListener('input', e => ($('CVal').textContent = CS[+e.target.value])); $('C').onchange = e => { S.C = CS[+e.target.value]; refresh(); };
+
+  MLS.registerHelp({
+    data: { title: 'Data', html: '<b>Banks: debt-to-equity only</b>: the lecture example with one input; bad banks at both ends. <b>Circles, moons, XOR</b>: classic shapes that a straight line cannot separate. <b>Bank failures</b>: two ratios, overlapping. Simulated; 80% training set, 20% test set.' },
+    n: { title: 'Observations', html: 'How many observations are simulated.' },
+    kernel: { title: 'Kernel', html: '<b>Linear</b>: no lift, a straight separator. <b>Polynomial</b>: adds powers and products of the inputs (degree d). <b>RBF</b>: similarity that decays with distance; a very flexible boundary. Inputs are standardized first.' },
+    deg: { title: 'Polynomial degree', html: 'Degree 2 adds squares (x²) and products: parabolas, circles and ellipses. Higher degrees allow more bends.' },
+    gam: { title: 'RBF width γ', html: 'How fast the similarity between two observations falls with their distance. Small γ: each observation influences a wide area, smooth boundary. Large γ: only close neighbours matter, wiggly boundary, risk of overfitting.' },
+    C: { title: 'Price of errors C', html: 'As in the linear SVM: small C tolerates errors (wide margin), large C tries to classify every training observation correctly.' },
+    st_sv: { title: 'Support vectors', html: 'Training observations on or inside the margin. With very flexible kernels (large γ) almost every observation becomes a support vector: a sign of overfitting.' },
+    st_cuts: { title: 'Cutoffs', html: 'With one input, the separator is a set of points on the x axis where the predicted class changes. A linear kernel can make at most one; the polynomial kernel of degree 2 can make two.' },
+    st_best: { title: 'Best kernel by cross-validation', html: 'Among the kernels in the table, the one with the highest 4-fold cross-validation accuracy on the training set, at the current C.' },
+    figmap: { title: 'The data space', html: 'The data with the predicted class. With one input: the classes shown on two rows, the shaded predicted class and the cutoffs. With two inputs: the separator (solid), the margins (dashed) and the support vectors (circled).' },
+    figlift: { title: 'The feature space', html: 'For one input and the polynomial kernel of degree 2: every bank at (x, (x − average)²). This is the same as adding x², shifted so the parabola is centered. In this space the SVM\'s separator is a straight line (with its margins). Its crossings with the parabola are the cutoffs.' },
+    ktable: { title: 'Which kernel?', html: 'Six kernels fitted with the current C: support vectors and accuracy on the training set, in 4-fold cross-validation (training set, consecutive blocks) and on the test set.' }
+  });
+
+  function setup(o) { Object.assign(S, o); MLS.pickTab('sim'); full(); window.scrollTo({ top: 0, behavior: 'smooth' }); }
+  const ch = MLS.challenges($('challenges'), META.id, [
+    { type: 'predict', q: 'Banks with one ratio: bad banks have too much or too little debt. With a linear kernel the SVM can draw...',
+      options: ['two cutoffs', 'at most one cutoff, so it cannot separate both ends', 'a circle'], answer: 1,
+      explain: 'In one dimension a straight separator is a single point. It can cut off the high end or the low end, not both.',
+      tryIt: () => setup({ ds: 'de1', kernel: 'linear' }) },
+    { type: 'predict', q: 'Each bank gets a second dimension: its squared distance from the average, (x − average)². In this new space, the good and bad banks can be separated by...',
+      options: ['a straight line: the bad banks at both ends lie high on the parabola', 'nothing: they still overlap', 'only a curve'], answer: 0,
+      explain: 'The new dimension, the squared distance from the average, is large at both ends. The bad banks rise high on the parabola and a straight line cuts them off. Back on the x axis that line becomes two cutoffs.',
+      tryIt: () => setup({ ds: 'de1', kernel: 'poly', deg: 2 }) },
+    { type: 'task', q: 'Circles: reach a test accuracy of at least 95%.', hint: 'Try the RBF kernel, or the polynomial kernel of degree 2.',
+      check: () => R && S.ds === 'circles' && R.te >= 0.95 },
+    { type: 'predict', q: 'Moons with the RBF kernel: you raise γ from 1 to 100. The boundary becomes...',
+      options: ['a straight line', 'smoother', 'very wiggly, wrapped around single points: overfitting'], answer: 2,
+      explain: 'With a large γ the influence of each observation reaches only its immediate surroundings, so the boundary curls around individual training points. Training accuracy rises; test accuracy falls.',
+      tryIt: () => setup({ ds: 'moons', kernel: 'rbf', gam: 100, C: 10 }) },
+    { type: 'task', q: 'Moons: make the SVM overfit, with training accuracy at least 10 points above the test accuracy.', hint: 'RBF kernel, large γ and large C.',
+      check: () => R && S.ds === 'moons' && R.tr - R.te >= 0.1 },
+    { type: 'predict', q: 'Why is it called the kernel "trick"?',
+      options: ['Because it hides the data', 'Because the kernel gives the dot products in the feature space without ever building the new dimensions', 'Because it only works for circles'], answer: 1,
+      explain: 'The SVM needs only dot products between observations. The kernel computes them directly from the original inputs, so the SVM can use a huge (even infinite) feature space at low cost.',
+      tryIt: () => setup({ ds: 'xor', kernel: 'rbf', gam: 1 }) }
+  ]);
+
+  MLS.moduleBar({ id: META.id, title: META.title, section: META.sectionTitle, level: META.level },
+    { tabs: [{ id: 'sim', label: 'Simulation' }, { id: 'lesson', label: 'Lesson' }, { id: 'challenges', label: 'Challenges' }, { id: 'real', label: 'On real data' }] });
+  MLS.state.init({
+    id: META.id,
+    get: () => ({ ds: S.ds, n: S.n, seed: S.seed, kernel: S.kernel, deg: S.deg, gam: S.gam, C: S.C }),
+    set: o => {
+      if (DEFN[o.ds]) S.ds = o.ds;
+      if (o.n) Object.keys(o.n).forEach(k => { if (DEFN[k] && Number.isFinite(o.n[k])) S.n[k] = Math.max(40, Math.min(300, o.n[k])); });
+      if (Number.isFinite(o.seed)) S.seed = o.seed;
+      if (['linear', 'poly', 'rbf'].includes(o.kernel)) S.kernel = o.kernel;
+      if (Number.isFinite(o.deg)) S.deg = Math.max(2, Math.min(5, o.deg));
+      if (GS.includes(o.gam)) S.gam = o.gam;
+      if (CS.includes(o.C)) S.C = o.C;
+    }
+  });
+  $('fourCast').href = MLS.APP.fourCastUrl;
+  window.__mls = { S, get R() { return R; }, get D() { return D; } };
+  document.addEventListener('mls:theme', () => refresh());
+  full();
+})();
+</script>
+</body>
+</html>

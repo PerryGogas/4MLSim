@@ -1,0 +1,284 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>How LLMs Predict Text | 4MLSim</title>
+  <meta name="theme-color" content="#1B2340">
+  <link rel="manifest" href="../manifest.json">
+  <link rel="icon" type="image/svg+xml" href="../assets/img/icon.svg">
+  <link rel="apple-touch-icon" href="../assets/img/apple-touch-icon.png">
+  <link rel="stylesheet" href="../assets/vendor/temml.css">
+  <link rel="stylesheet" href="../assets/css/4mlsim.css">
+  <script src="../assets/vendor/temml.min.js"></script>
+  <script src="../assets/js/core.js"></script>
+  <script src="../assets/js/stats.js"></script>
+  <script src="../assets/js/plot.js"></script>
+  <script src="../assets/js/modules.js"></script>
+  <script src="../assets/js/core-ml.js"></script>
+  <script src="../assets/js/classify-ui.js"></script>
+</head>
+<body>
+<div class="page">
+  <header id="mlsHeader" data-variant="compact"></header>
+  <div class="mod-top" id="mlsTop"><div id="mlsModBar"></div><div id="mlsTabs"></div></div>
+
+  <div class="intro-box" id="mlsIntro">
+    <h3>What this module shows</h3>
+    <div class="intro-cols">
+      <div>
+        <p>A large language model (LLM) such as ChatGPT or Claude writes by repeating one simple step: given the text so far, it computes a <b>probability for every possible next word</b> (token), picks one, and adds it to the text.</p>
+        <p>This module builds a <b>tiny</b> language model from 64 sentences about economics, so you can see every number: the next-word probabilities, how <b>temperature</b> changes them, word <b>embeddings</b> (words as points in space) and <b>attention</b> (which earlier words matter for each word).</p>
+      </div>
+      <div>
+        <p><b>How to use it</b></p>
+        <ol>
+          <li>Choose or type a prompt and read the next-word probabilities.</li>
+          <li>Change the temperature and generate text: low is safe and repetitive, high is creative and odd.</li>
+          <li>Look at the word map: which words sit together, and why?</li>
+        </ol>
+      </div>
+    </div>
+  </div>
+
+  <!-- ===================== SIMULATION ===================== -->
+  <section data-panel="sim">
+    <div class="mod-grid">
+      <aside class="side" aria-label="Controls">
+        <div class="card">
+          <div class="card-head"><h3>1. The prompt<button type="button" class="help" data-help="prompt">?</button></h3></div>
+          <select id="preset" aria-label="Example prompts"><option value="">Choose an example...</option><option>the central bank</option><option>when interest rates</option><option>house prices</option><option>in a recession</option><option>a language model</option><option>firms raise</option><option>the economy</option></select>
+          <div class="field-row"><label for="prompt">Or type words from the corpus<button type="button" class="help" data-help="typed">?</button></label></div>
+          <input type="text" id="prompt" value="the central bank" aria-label="Prompt" style="width:100%;box-sizing:border-box">
+        </div>
+        <div class="card">
+          <div class="card-head"><h3>2. Choosing the next word<button type="button" class="help" data-help="sampling">?</button></h3></div>
+          <div class="field-row"><label for="T">Temperature<button type="button" class="help" data-help="T">?</button></label><output id="TVal"></output></div>
+          <input type="range" id="T" min="0" max="7" step="1" value="4">
+          <div class="field-row"><label for="k">Top-k (keep only the k most likely)<button type="button" class="help" data-help="k">?</button></label><output id="kVal"></output></div>
+          <input type="range" id="k" min="0" max="4" step="1" value="0">
+          <div class="field-row"><label for="seed">Random seed<button type="button" class="help" data-help="seed">?</button></label></div>
+          <div class="inline-inputs"><input type="number" id="seed" min="1" max="99999" step="1" value="1" aria-label="Random seed"><button type="button" class="btn-ghost btn-icon" id="newSeed" title="New random draw" style="flex:0 0 auto">&#127922;</button></div>
+          <button type="button" id="gen" style="margin-top:12px;width:100%">&#9998; Generate 12 words</button>
+        </div>
+      </aside>
+
+      <main class="main">
+        <div class="story" id="story"></div>
+        <div class="stat-grid" id="stats" style="margin-top:12px"></div>
+        <div id="statusLine" class="status-line" style="margin:10px 0"></div>
+        <div class="fig-grid">
+          <div id="figNext"></div>
+          <div class="card" id="genCard"></div>
+          <div id="figEmb" class="fig-wide"></div>
+          <div id="figAtt"></div>
+          <div class="card" id="nearCard"></div>
+        </div>
+      </main>
+    </div>
+  </section>
+
+  <!-- ===================== LESSON ===================== -->
+  <section data-panel="lesson" class="card lesson" hidden>
+    <div id="mlsMathCtl"></div>
+    <p class="lvl-only-intuition note" style="margin-bottom:8px">Showing the intuition only. Choose <b>Formulas</b> or <b>Deep dive</b> above to add the mathematics.</p>
+
+    <h4>Next-word prediction</h4>
+    <p>A language model assigns a probability to every word that could come next. Writing a text is just repeating: compute the probabilities, choose a word, append it, repeat. Everything an LLM "knows" is stored in how it computes these probabilities.</p>
+    <p>The tiny model here counts in its 64 training sentences how often each word followed the previous two words (a <b>trigram</b> model). If it never saw the last two words together, it uses only the last word (<b>bigram</b>), and if even that is new, the overall word frequencies. Real LLMs replace counting with a neural network (a <b>transformer</b>) with billions of weights, trained on trillions of words, that looks at thousands of previous tokens at once.</p>
+
+    <h4>Temperature and top-k</h4>
+    <ul>
+      <li><b>Temperature</b> reshapes the probabilities before a word is drawn. Below 1 it sharpens them (the likely words become more likely; near 0 the model always picks the top word). Above 1 it flattens them (rare words get a chance: more varied, but less sensible text).</li>
+      <li><b>Top-k</b> keeps only the k most likely words and draws among them, which cuts off very unlikely words.</li>
+    </ul>
+
+    <h4>Embeddings: words as points</h4>
+    <p>A model needs numbers, not words. Each word becomes a vector (a list of numbers), its <b>embedding</b>, so that words used in similar contexts get similar vectors. "Words are known by the company they keep": inflation and prices, rise and fall, loans and deposits. Here the vectors come from counting which words appear within two places of each other, then compressing with PCA; real models learn them during training.</p>
+
+    <h4>Attention</h4>
+    <p>To predict the next word, a transformer lets every word look back at all earlier words and decide how much each one matters: <b>attention</b>. In "house prices fall when interest rates rise", the word "rise" should attend to "rates". Each attention weight is a softmax of a similarity score between two words' vectors. The heat map here uses the toy embeddings as both queries and keys; a real model learns separate query and key projections and uses dozens of attention heads in many layers.</p>
+
+    <div class="math-block lvl-math"><div class="mb-title">The formulas</div>
+      <div class="tex-block">P(w_t = w \mid w_{t-2}, w_{t-1}) = \frac{\text{count}(w_{t-2}\, w_{t-1}\, w)}{\text{count}(w_{t-2}\, w_{t-1})}, \qquad p_i(T) = \frac{p_i^{1/T}}{\sum_j p_j^{1/T}} = \frac{e^{z_i / T}}{\sum_j e^{z_j / T}}</div>
+      <div class="tex-block">\text{Attention}(Q, K, V) = \operatorname{softmax}\Bigl(\frac{Q K^\top}{\sqrt{d}}\Bigr) V, \qquad \text{PPMI}(a, b) = \max\Bigl(0, \log \frac{P(a, b)}{P(a)\, P(b)}\Bigr)</div>
+      <p class="note">z<sub>i</sub> = log p<sub>i</sub> are the logits. In a transformer Q = XW<sub>Q</sub>, K = XW<sub>K</sub>, V = XW<sub>V</sub> are learned projections of the token embeddings X.</p>
+    </div>
+    <div class="math-block deep lvl-deep"><div class="mb-title">Deep dive</div>
+      <p><b>Training objective.</b> An LLM is trained to minimize the cross-entropy (log loss) of the actual next token: the same log loss as in logistic regression, over a vocabulary of about 100,000 tokens. Perplexity = exp(average log loss).</p>
+      <p><b>Tokens.</b> Real models split text into sub-word tokens (byte-pair encoding), so new words are built from known pieces; this toy uses whole words.</p>
+      <p><b>After pre-training.</b> Assistants are further trained to follow instructions and to be helpful and safe (fine-tuning, reinforcement learning from human feedback; see the Q-Learning module for the idea of learning from rewards).</p>
+      <p class="note">References: Shannon (1948), "A mathematical theory of communication"; Mikolov et al. (2013), word2vec; Levy and Goldberg (2014), PPMI and word embeddings; Vaswani et al. (2017), "Attention is all you need", <i>NeurIPS</i>; Jurafsky and Martin, <i>Speech and Language Processing</i>, ch. 3, 6 and 10.</p>
+    </div>
+  </section>
+
+  <!-- ===================== CHALLENGES ===================== -->
+  <section data-panel="challenges" class="card" hidden>
+    <div class="card-head"><h3>Challenges</h3><span class="card-sub">Answer the "predict first" questions before testing them in the Simulation tab.</span></div>
+    <div id="challenges"></div>
+  </section>
+
+  <!-- ===================== REAL DATA ===================== -->
+  <section data-panel="real" class="card lesson" hidden>
+    <h4>From the simulation to real data</h4>
+    <ul>
+      <li>Uses in economics: reading central bank statements and news to measure sentiment or uncertainty, classifying firms' reports, summarizing documents, and writing code for data analysis.</li>
+      <li>Remember what an LLM is: a next-token predictor. It can write fluent text that is wrong, so check facts and numbers against sources.</li>
+    </ul>
+    <div class="crosslink"><span>&#10140;</span><span><a id="fourCast" target="_blank" rel="noopener"><b>4Cast Lab</b></a> applies machine learning to your own data.</span></div>
+  </section>
+
+  <footer id="mlsFooter"></footer>
+</div>
+
+<script>
+(function () {
+  'use strict';
+  const MLS = window.MLS, ML = MLS.ml, CL = MLS.cls;
+  const META = MLS.moduleMeta('llm-intuition');
+  const $ = id => document.getElementById(id);
+  const F = MLS.fmt, pct = CL.pct;
+
+  const TS = [0.1, 0.3, 0.5, 0.7, 1, 1.5, 2, 3], KS = [0, 1, 3, 5, 10];
+  const STOP = new Set(['the', 'a', 'an', 'and', 'of', 'to', 'in', 'on', 'when', 'is', 'are', 'for', 'its', 'their', 'more', 'with', 'from', 'can', 'be', 'that', 'at', 'it', 'they', 'which', 'as', 'by', 'one', 'other', 'both', 'too', 'may', 'we', 'how', 'often', 'before', 'through', 'without', 'over', 'into', 'than', 'there', 'he', 'she', 'about', 'together', 'much', 'new', 'what', 'or', 'if', 'two', 'its', 'past', 'previous']);
+  const S = { prompt: 'the central bank', T: 1, k: 0, seed: 1, gen: null };
+  let D = null, R = null;
+  function makeData() { const lm = ML.lm(ML.CORPUS); D = { lm, E: ML.embed(lm, 3, 16) }; }
+  const words = () => S.prompt.toLowerCase().replace(/[^a-z .]/g, ' ').split(/\s+/).filter(Boolean);
+  function compute() {
+    const w = words(), n = D.lm.next(w.length ? w : ['<s>']), probs = ML.temper(n.probs, S.T, S.k || undefined);
+    R = { w, n, probs, unknown: w.filter(x => !D.lm.uni[x]) };
+    R.entropy = -probs.reduce((s, p) => s + (p[1] > 0 ? p[1] * Math.log2(p[1]) : 0), 0);
+  }
+  function generate() {
+    const r = ML.rng(S.seed * 7 + 11), out = []; let ctx = words().slice();
+    for (let i = 0; i < 12; i++) {
+      const pr = ML.temper(D.lm.next(ctx.length ? ctx : ['<s>']).probs, S.T, S.k || undefined); let u = r.random(), pick = pr[pr.length - 1];
+      for (const p of pr) { if (u < p[1]) { pick = p; break; } u -= p[1]; }
+      out.push(pick); ctx.push(pick[0]); if (pick[0] === '.') ctx = ['<s>'];
+    }
+    S.gen = { prompt: S.prompt, T: S.T, k: S.k, seed: S.seed, out };
+  }
+  function updateText() {
+    const card = MLS.statCard, top = R.probs[0];
+    $('story').innerHTML = '<h3>Prompt: "' + MLS.esc(S.prompt) + '"</h3><p>The model was trained on <b>' + D.lm.sents.length + ' sentences, ' + D.lm.N + ' words</b> (vocabulary: ' + D.lm.vocab.length + ' different words). ' + (R.n.level === 'trigram' ? 'It has seen the last two words "<b>' + MLS.esc(R.n.context) + '</b>" ' + R.n.total + ' time' + (R.n.total > 1 ? 's' : '') + ' and counts what followed.' : R.n.level === 'bigram' ? 'It never saw the last two words together, so it uses only the last word, "<b>' + MLS.esc(R.n.context) + '</b>" (seen ' + R.n.total + ' times).' : 'It has not seen the last word, so it falls back on how often each word appears overall.') + (R.unknown.length ? ' Unknown word' + (R.unknown.length > 1 ? 's' : '') + ': ' + R.unknown.map(MLS.esc).join(', ') + '.' : '') + '</p>';
+    $('stats').innerHTML =
+      card('Most likely next word', MLS.esc(top[0]), 'probability ' + pct(top[1]) + ' at temperature ' + S.T, '', 'st_top') +
+      card('Candidates', String(R.probs.length), S.k ? 'top-' + S.k + ' kept' : 'all words seen after the context', '', 'st_cand') +
+      card('Uncertainty (entropy)', F(R.entropy, 2) + ' bits', 'as uncertain as ' + F(Math.pow(2, R.entropy), 1) + ' equally likely words', '', 'st_ent') +
+      card('Model used', R.n.level, R.n.level === 'trigram' ? 'last two words' : R.n.level === 'bigram' ? 'last word only' : 'word frequencies', '', 'st_level');
+    let msg, cls = 'status-line';
+    if (S.T <= 0.3) { msg = 'Low temperature: the most likely word gets ' + pct(top[1]) + ' of the probability. Generated text will be safe but repetitive.'; cls += ' ok'; }
+    else if (S.T >= 2) { msg = 'High temperature: the probabilities are flattened (top word ' + pct(top[1]) + '). Generated text will be more varied and less sensible.'; cls += ' bad'; }
+    else msg = 'Temperature ' + S.T + ': the probabilities are ' + (S.T === 1 ? 'exactly the counted shares.' : S.T < 1 ? 'sharpened.' : 'flattened.');
+    $('statusLine').textContent = msg; $('statusLine').className = cls;
+  }
+  const figNext = MLS.figure($('figNext'), { title: 'Probabilities of the next word', help: 'fignext', file: 'llm-next-word', plot: { aspect: 0.9, margin: { l: 100, b: 48 }, x: { label: 'Probability' }, y: { label: '', ticks: false } } });
+  function drawNext() {
+    const P = figNext.plot, show = R.probs.slice(0, 12), base = Object.fromEntries(R.n.probs.map(p => [p[0], p[1]])), c1 = MLS.color('series-1'), mu = MLS.color('chart-muted');
+    const mx = Math.max(...show.map(p => Math.max(p[1], base[p[0]] || 0)));
+    P.setX(0, Math.min(1, mx * 1.2)); P.setY(0.4, show.length + 0.6);
+    P.draw(P => {
+      show.forEach((p, i) => { const y = show.length - i; P.rect(0, y - 0.32, p[1], y + 0.32, { fill: MLS.rgba(c1, 0.85) }); P.rect(0, y - 0.32, base[p[0]] || 0, y + 0.32, { fill: 'none', stroke: mu, width: 1.4 }); P.text(0, y, p[0], { anchor: 'end', dx: -6, dy: 4, size: 12.5, weight: 700 }); P.text(p[1], y, pct(p[1]), { dx: 5, dy: 4, size: 11 }); });
+    });
+    figNext.legend([{ label: 'At temperature ' + S.T + (S.k ? ', top-' + S.k : ''), color: c1 }, { label: 'Counted shares (temperature 1)', color: 'transparent', stroke: mu }]);
+    figNext.caption('The ' + Math.min(12, R.probs.length) + ' most likely next words after "' + MLS.esc(S.prompt) + '"' + (R.probs.length > 12 ? ', of ' + R.probs.length : '') + '.');
+  }
+  function drawGen() {
+    const g = S.gen, ok = g && g.prompt === S.prompt && g.T === S.T && g.k === S.k && g.seed === S.seed;
+    $('genCard').innerHTML = '<div class="card-head"><h3>Generated text' + MLS.helpBtn('gen') + '</h3></div>' + (ok ? '<p style="font-size:16px;line-height:1.9">' + MLS.esc(g.prompt) + ' ' + g.out.map(p => '<span title="probability ' + pct(p[1]) + '" style="padding:1px 3px;border-radius:4px;background:' + MLS.rgba(MLS.color(p[1] >= 0.3 ? 'series-3' : p[1] >= 0.1 ? 'series-4' : 'series-8'), 0.25) + '">' + MLS.esc(p[0]) + '</span>').join(' ') + '</p><p class="note">Colours: the probability each word had when it was drawn: green 30% or more, yellow 10% to 30%, red below 10%. Same seed, same settings: same text.</p>' : '<p class="note">Press <b>Generate 12 words</b> to let the model write, one word at a time, with the current temperature and top-k.</p>');
+  }
+  const figEmb = MLS.figure($('figEmb'), { title: 'Word embeddings: a map of the vocabulary', help: 'figemb', file: 'llm-embeddings', plot: { aspect: 0.5, margin: { l: 40, b: 30 }, x: { label: 'Dimension 1', ticks: false }, y: { label: 'Dimension 2', ticks: false } } });
+  function drawEmb() {
+    const P = figEmb.plot, E = D.E, idx = E.words.map((w, i) => i).filter(i => !STOP.has(E.words[i])).slice(0, 36), xs = idx.map(i => E.xy[i][0]), ys = idx.map(i => E.xy[i][1]), hl = new Set(R.w), c1 = MLS.color('series-1'), c2 = MLS.color('series-2');
+    P.setX(...MLS.niceDomain(Math.min(...xs), Math.max(...xs), 0.08)); P.setY(...MLS.niceDomain(Math.min(...ys), Math.max(...ys), 0.08));
+    P.draw(P => { idx.forEach(i => { const on = hl.has(E.words[i]); P.points([{ x: E.xy[i][0], y: E.xy[i][1] }], { color: on ? c2 : MLS.rgba(c1, 0.7), r: on ? 6 : 3.6, ring: false }); P.text(E.xy[i][0], E.xy[i][1], E.words[i], { dx: 5, dy: -4, size: on ? 13 : 11, weight: on ? 800 : 600, color: on ? c2 : undefined }); }); });
+    figEmb.caption('The ' + idx.length + ' most frequent content words, placed by the first two of 16 embedding dimensions (' + pct(E.ratio[0] + E.ratio[1]) + ' of the variation). Orange: words of your prompt. Words used in similar contexts land near each other; with only 64 sentences the map is rough.');
+  }
+  const figAtt = MLS.figure($('figAtt'), { title: 'Attention: which earlier words each word looks at', help: 'figatt', file: 'llm-attention', plot: { aspect: 0.9, margin: { l: 90, b: 90 }, x: { label: '', ticks: false }, y: { label: '', ticks: false } } });
+  function drawAtt() {
+    const P = figAtt.plot, E = D.E, toks = R.w.slice(-9), n = toks.length, seq = MLS.seqScale(), vec = t => (E.idx[t] !== undefined ? E.vec[E.idx[t]] : new Array(16).fill(0)), scale = 3;
+    const A = toks.map((t, i) => { if (!i) return [1]; const sc = toks.slice(0, i).map(u => scale * vec(t).reduce((s, v, k) => s + v * vec(u)[k], 0)), m = Math.max(...sc), e = sc.map(x => Math.exp(x - m)), z = e.reduce((a, b) => a + b, 0); return e.map(x => x / z); });
+    P.setX(0, Math.max(1, n)); P.setY(0, Math.max(1, n));
+    P.draw(P => {
+      if (!n) { P.note('Type a prompt'); return; }
+      A.forEach((row, i) => row.forEach((w, j) => { const c = seq(0.1 + 0.85 * w), el = P.rect(j, n - i - 1, j + 1, n - i, { fill: 'rgb(' + c.map(Math.round).join(',') + ')', stroke: MLS.color('chart-surface'), width: 1 }); el.setAttribute('data-tip', P.tips.length); P.tips.push(() => '"' + MLS.esc(toks[i]) + '" looks at "' + MLS.esc(toks[j]) + '": ' + pct(w)); if (n <= 7) P.text(j + 0.5, n - i - 0.5, F(w, 2), { anchor: 'middle', dy: 4, size: 10.5, weight: 700, halo: false, color: w > 0.5 ? '#fff' : MLS.color('chart-ink') }); }));
+      toks.forEach((t, i) => { P.text(0, n - i - 0.5, t, { anchor: 'end', dx: -6, dy: 4, size: 11.5, weight: 700 }); P.text(i + 0.5, 0, t, { anchor: 'middle', dy: 16 + (i % 2) * 13, size: 11, weight: 700 }); });
+    });
+    figAtt.caption('Each row: one word of the prompt; columns: the earlier words it can look at (never ahead; here also not at itself, to make the pattern visible). Darker = more attention; each row sums to 1. Computed from the toy embeddings; a transformer learns this from data.');
+  }
+  function drawNear() {
+    const E = D.E, last = [...R.w].reverse().find(t => E.idx[t] !== undefined && !STOP.has(t));
+    if (!last) { $('nearCard').innerHTML = '<div class="card-head"><h3>Nearest words' + MLS.helpBtn('near') + '</h3></div><p class="note">No content word of the prompt has an embedding (it must appear at least 3 times in the corpus).</p>'; return; }
+    const v = E.vec[E.idx[last]], list = E.words.map((w, i) => [w, ML.cosine(v, E.vec[i])]).filter(p => p[0] !== last && !STOP.has(p[0])).sort((a, b) => b[1] - a[1]).slice(0, 8);
+    $('nearCard').innerHTML = '<div class="card-head"><h3>Words nearest to "' + MLS.esc(last) + '"' + MLS.helpBtn('near') + '</h3></div><div style="overflow-x:auto"><table class="tbl"><thead><tr><th>Word</th><th>Cosine similarity</th></tr></thead><tbody>' + list.map(p => '<tr><td>' + MLS.esc(p[0]) + '</td><td>' + F(p[1], 3) + '</td></tr>').join('') + '</tbody></table></div><p class="note">Cosine similarity of the 16-dimensional embeddings: 1 = same direction, 0 = unrelated.</p>';
+  }
+  function syncUI() { $('prompt').value = S.prompt; $('T').value = TS.indexOf(S.T); $('TVal').textContent = S.T; $('k').value = KS.indexOf(S.k); $('kVal').textContent = S.k ? S.k : 'all'; $('seed').value = S.seed; }
+  function render() { syncUI(); updateText(); drawNext(); drawGen(); drawEmb(); drawAtt(); drawNear(); if (ch) ch.check(); MLS.state.save(); }
+  function refresh() { compute(); render(); }
+  const full = () => { makeData(); refresh(); };
+  $('preset').onchange = e => { if (e.target.value) { S.prompt = e.target.value; refresh(); } };
+  $('prompt').addEventListener('input', e => { S.prompt = e.target.value; refresh(); });
+  $('T').addEventListener('input', e => { S.T = TS[+e.target.value]; refresh(); });
+  $('k').addEventListener('input', e => { S.k = KS[+e.target.value]; refresh(); });
+  $('seed').onchange = e => { S.seed = Math.max(1, Math.round(+e.target.value) || 1); refresh(); };
+  $('newSeed').onclick = () => { S.seed = MLS.newSeed(); generate(); refresh(); };
+  $('gen').onclick = () => { generate(); refresh(); };
+
+  MLS.registerHelp({
+    prompt: { title: 'The prompt', html: 'The text the model continues. Pick an example or type your own words; only words that appear in the 64 training sentences are known.' },
+    typed: { title: 'Typing a prompt', html: 'Use lower-case words from the corpus (see the Lesson for its topics: central banks, rates, inflation, banks, firms, households, markets, models).' },
+    sampling: { title: 'Choosing the next word', html: 'The next word is drawn at random with the shown probabilities, after temperature and top-k.' },
+    T: { title: 'Temperature', html: 'Below 1: sharper probabilities, safer text. Above 1: flatter probabilities, more surprising text. 1: the counted shares.' },
+    k: { title: 'Top-k', html: 'Keep only the k most likely words before drawing. "all": no cut.' },
+    seed: { title: 'Random seed', html: 'Fixes the random draws: the same seed and settings generate the same text.' },
+    st_top: { title: 'Most likely next word', html: 'The word with the highest probability after the prompt, at the current temperature.' },
+    st_cand: { title: 'Candidates', html: 'How many different words the model considers possible next.' },
+    st_ent: { title: 'Entropy', html: 'How uncertain the next word is, in bits: 0 = only one possible word; 3 bits = as uncertain as a choice among 8 equally likely words.' },
+    st_level: { title: 'Model used', html: '<b>trigram</b>: the last two words were seen together in training. <b>bigram</b>: only the last word. <b>unigram</b>: overall word frequencies.' },
+    fignext: { title: 'Next-word probabilities', html: 'Bars: probabilities after temperature and top-k. Outlines: the counted shares at temperature 1.' },
+    gen: { title: 'Generated text', html: 'Twelve words drawn one after another, each from the probabilities given the text so far.' },
+    figemb: { title: 'Embeddings', html: 'Each word is a vector built from the words around it in the corpus (positive pointwise mutual information), compressed with PCA. The map shows two of the dimensions.' },
+    figatt: { title: 'Attention', html: 'For each word of the prompt, how its attention is spread over itself and the earlier words: a softmax of the similarities of their embeddings.' },
+    near: { title: 'Nearest words', html: 'The words whose embeddings point in the most similar direction to the last content word of the prompt.' }
+  });
+
+  function setup(o) { Object.assign(S, o); MLS.pickTab('sim'); refresh(); window.scrollTo({ top: 0, behavior: 'smooth' }); }
+  const ch = MLS.challenges($('challenges'), META.id, [
+    { type: 'predict', q: 'You lower the temperature towards 0. The model will...',
+      options: ['almost always pick the single most likely word', 'pick words at random', 'stop writing'], answer: 0,
+      explain: 'p^(1/T) with a tiny T makes the largest probability dominate everything else: the output becomes deterministic and repetitive.',
+      tryIt: () => setup({ T: 0.1 }) },
+    { type: 'predict', q: 'You raise the temperature to 3. The generated text becomes...',
+      options: ['more accurate', 'more varied and less sensible, because unlikely words are drawn more often', 'exactly the same'], answer: 1,
+      explain: 'A high temperature flattens the probabilities. Creative uses take temperatures a little above 1; factual answers lower ones.',
+      tryIt: () => setup({ T: 3 }) },
+    { type: 'task', q: 'After "the economy" the word "grows" has a probability of 40%. Set the temperature so that it falls below 30%.', hint: 'Type the prompt "the economy", then raise the temperature and watch the first tile.',
+      check: () => R && S.prompt.trim() === 'the economy' && R.probs[0][1] < 0.3 },
+    { type: 'predict', q: 'Two words sit close together on the embedding map. This means they...',
+      options: ['start with the same letter', 'have the same length', 'appear in similar contexts (with similar neighbouring words)'], answer: 2,
+      explain: 'Embeddings are built from the company words keep. Words used the same way (rise and fall, loans and deposits) get similar vectors.',
+      tryIt: () => setup({ prompt: 'prices rise' }) },
+    { type: 'task', q: 'Type a prompt whose last two words never appeared together in the corpus, so the model falls back on the last word only.', hint: 'For example "inflation banks" or "investors raise"; watch the "Model used" tile.',
+      check: () => R && R.n.level === 'bigram' },
+    { type: 'predict', q: 'Compared with this toy, a real LLM differs mainly in...',
+      options: ['scale and architecture: billions of learned weights, trillions of training tokens, attention over long contexts', 'not using probabilities at all', 'knowing every fact for certain'], answer: 0,
+      explain: 'The core step is the same: probabilities for the next token. The scale and the transformer make the probabilities far better, but it is still prediction, not certainty.',
+      tryIt: () => setup({ prompt: 'a language model' }) }
+  ]);
+  const STATE = {
+    get: () => ({ prompt: S.prompt, T: S.T, k: S.k, seed: S.seed }),
+    set: o => { if (typeof o.prompt === 'string') S.prompt = o.prompt.slice(0, 200); if (TS.includes(o.T)) S.T = o.T; if (KS.includes(o.k)) S.k = o.k; if (Number.isFinite(o.seed)) S.seed = o.seed; }
+  };
+  const start = full;
+  MLS.moduleBar({ id: META.id, title: META.title, section: META.sectionTitle, level: META.level },
+    { tabs: [{ id: 'sim', label: 'Simulation' }, { id: 'lesson', label: 'Lesson' }, { id: 'challenges', label: 'Challenges' }, { id: 'real', label: 'On real data' }] });
+  MLS.state.init({ id: META.id, get: STATE.get, set: STATE.set });
+  const fc = $('fourCast'); if (fc) fc.href = MLS.APP.fourCastUrl;
+  window.__mls = { S, get R() { return R; }, get D() { return D; } };
+  document.addEventListener('mls:theme', () => refresh());
+  start();
+})();
+</script>
+</body>
+</html>

@@ -1,0 +1,306 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Data Snooping & Multiple Testing | 4MLSim</title>
+  <meta name="theme-color" content="#1B2340">
+  <link rel="manifest" href="../manifest.json">
+  <link rel="icon" type="image/svg+xml" href="../assets/img/icon.svg">
+  <link rel="apple-touch-icon" href="../assets/img/apple-touch-icon.png">
+  <link rel="stylesheet" href="../assets/vendor/temml.css">
+  <link rel="stylesheet" href="../assets/css/4mlsim.css">
+  <script src="../assets/vendor/temml.min.js"></script>
+  <script src="../assets/js/core.js"></script>
+  <script src="../assets/js/stats.js"></script>
+  <script src="../assets/js/plot.js"></script>
+  <script src="../assets/js/modules.js"></script>
+  <script src="../assets/js/core-ml.js"></script>
+  <script src="../assets/js/classify-ui.js"></script>
+</head>
+<body>
+<div class="page">
+  <header id="mlsHeader" data-variant="compact"></header>
+  <div class="mod-top" id="mlsTop"><div id="mlsModBar"></div><div id="mlsTabs"></div></div>
+
+  <div class="intro-box" id="mlsIntro">
+    <h3>What this module shows</h3>
+    <div class="intro-cols">
+      <div>
+        <p>Try enough trading rules (or forecasting models) on the same data, and one of them will look excellent <b>by pure luck</b>. Picking the best and reporting its t-statistic as if it were the only one tried is <b>data snooping</b>.</p>
+        <p>Here you test up to 300 moving-average trading rules on two years of daily stock returns, then see how the "best" rule does in the following year, and what the proper tests say: Bonferroni, White's <b>Reality Check</b>, Hansen's <b>SPA</b> and the <b>Model Confidence Set</b>.</p>
+      </div>
+      <div>
+        <p><b>How to use it</b></p>
+        <ol>
+          <li>Start with a market where no rule has real skill. Raise the number of rules and watch the best in-sample t-statistic grow.</li>
+          <li>Compare the naive p-value with the Reality Check and SPA p-values.</li>
+          <li>Look at the next year: does the winner keep winning? Then switch on a small real effect.</li>
+        </ol>
+      </div>
+    </div>
+  </div>
+
+  <!-- ===================== SIMULATION ===================== -->
+  <section data-panel="sim">
+    <div class="mod-grid">
+      <aside class="side" aria-label="Controls">
+        <div class="card">
+          <div class="card-head"><h3>1. The market<button type="button" class="help" data-help="data">?</button></h3></div>
+          <div class="field-row"><label>Real skill in the data<button type="button" class="help" data-help="skill">?</button></label></div>
+          <div class="seg full" role="group" aria-label="Real skill in the data"><button type="button" data-skill="none">None</button><button type="button" data-skill="small">Small (momentum)</button></div>
+          <div class="field-row"><label for="seed">Random seed<button type="button" class="help" data-help="seed">?</button></label></div>
+          <div class="inline-inputs"><input type="number" id="seed" min="1" max="99999" step="1" value="1" aria-label="Random seed"><button type="button" class="btn-ghost btn-icon" id="newSeed" title="New random data" style="flex:0 0 auto">&#127922;</button></div>
+        </div>
+        <div class="card">
+          <div class="card-head"><h3>2. The search<button type="button" class="help" data-help="search">?</button></h3></div>
+          <div class="field-row"><label for="M">Number of rules tried<button type="button" class="help" data-help="M">?</button></label><output id="MVal"></output></div>
+          <input type="range" id="M" min="0" max="7" step="1" value="6">
+          <p class="note">500 trading days to choose (in-sample), the next 250 to check (out-of-sample). Bootstrap: 500 resamples, mean block of 10 days.</p>
+        </div>
+      </aside>
+
+      <main class="main">
+        <div class="story" id="story"></div>
+        <div class="stat-grid" id="stats" style="margin-top:12px"></div>
+        <div id="statusLine" class="status-line" style="margin:10px 0"></div>
+        <div class="fig-grid">
+          <div class="card fig-wide" id="testCard"></div>
+          <div id="figHist"></div>
+          <div id="figMax"></div>
+          <div id="figScatter"></div>
+          <div id="figCum"></div>
+        </div>
+      </main>
+    </div>
+  </section>
+
+  <!-- ===================== LESSON ===================== -->
+  <section data-panel="lesson" class="card lesson" hidden>
+    <div id="mlsMathCtl"></div>
+    <p class="lvl-only-intuition note" style="margin-bottom:8px">Showing the intuition only. Choose <b>Formulas</b> or <b>Deep dive</b> above to add the mathematics.</p>
+
+    <h4>The problem</h4>
+    <p>A single test at the 5% level wrongly finds an effect 5% of the time. Test 100 useless rules and about 5 will look "significant"; the best of them will look very good. The more models are tried on the same data, the more impressive the best one looks, even when none has any real skill. In finance and economics, where there is one history of the markets and everyone searches it, this is a central problem.</p>
+
+    <h4>Signs of snooping</h4>
+    <ul>
+      <li>The winner's in-sample t-statistic is high, but it falls back in new data (out-of-sample).</li>
+      <li>In-sample and out-of-sample performance of the rules are unrelated.</li>
+      <li>Nobody reports how many rules or models were tried.</li>
+    </ul>
+
+    <h4>Corrections</h4>
+    <ul>
+      <li><b>Bonferroni</b>: multiply the p-value by the number of rules M. Simple, but far too strict when the rules are similar (correlated), as moving-average rules are.</li>
+      <li><b>White's Reality Check</b> (2000): is the best rule better than the benchmark, taking into account that it is the best of M? It compares the best performance with the bootstrap distribution of the <b>maximum</b> over all rules, keeping their correlation.</li>
+      <li><b>Hansen's SPA test</b> (2005): a more powerful version: it standardizes each rule's performance and is not misled by adding many poor rules.</li>
+      <li><b>Model Confidence Set</b> (Hansen, Lunde and Nason 2011): instead of one winner, the set of rules that cannot be told apart from the best at a chosen level (here 10%). A large set means the data cannot pick a winner.</li>
+      <li>And always: a true out-of-sample period, untouched during the search.</li>
+    </ul>
+
+    <div class="math-block lvl-math"><div class="mb-title">The statistics</div>
+      <div class="tex-block">d_{k,t} = s_{k,t}\, r_t, \qquad \bar d_k = \frac{1}{T} \sum_t d_{k,t}, \qquad t_k = \frac{\bar d_k}{\hat\sigma_k / \sqrt{T}}</div>
+      <div class="tex-block">\text{Reality Check: } V = \max_k \sqrt{T}\, \bar d_k, \qquad V^*_b = \max_k \sqrt{T}\, \bigl(\bar d^*_{k,b} - \bar d_k\bigr), \qquad p = \frac{1}{B} \sum_b \mathbf{1}\{V^*_b \ge V\}</div>
+      <div class="tex-block">\text{SPA: } T^{SPA} = \max\Bigl(\max_k \frac{\sqrt{T}\, \bar d_k}{\hat\omega_k},\, 0\Bigr), \quad \text{bootstrap recentred at } \bar d_k \mathbf{1}\Bigl\{\frac{\sqrt T \bar d_k}{\hat\omega_k} \ge -\sqrt{2 \log\log T}\Bigr\}</div>
+      <p class="note">s<sub>k,t</sub> = +1 (long) or −1 (short), decided with prices up to the day before; r<sub>t</sub> the market return; the benchmark is 0. Bootstrap: stationary bootstrap of whole days, so the correlation between rules is kept. Reality Check and Model Confidence Set results were checked against the Python package arch.</p>
+    </div>
+    <div class="math-block deep lvl-deep"><div class="mb-title">Deep dive</div>
+      <p><b>Expected maximum.</b> For M independent standard normal t-statistics the expected maximum grows like √(2 log M): about 1.5 for M = 5, 2.5 for 100, 2.9 for 300. Correlated rules grow more slowly, which the bootstrap captures and Bonferroni ignores.</p>
+      <p><b>Model Confidence Set.</b> Starting from all rules, test whether all have equal expected performance (T<sub>max</sub> statistic, bootstrap); if rejected, remove the worst and repeat. The rules left when the test no longer rejects form the set; each rule's MCS p-value is the largest test p-value up to its removal.</p>
+      <p><b>Forecast comparisons.</b> The same tools apply to forecasting models (losses instead of returns), and the Diebold-Mariano test compares two forecasts.</p>
+      <p class="note">References: White (2000), "A reality check for data snooping", <i>Econometrica</i>; Hansen (2005), "A test for superior predictive ability", <i>JBES</i>; Hansen, Lunde and Nason (2011), "The model confidence set", <i>Econometrica</i>; Sullivan, Timmermann and White (1999), "Data-snooping, technical trading rule performance, and the bootstrap", <i>J. Finance</i>.</p>
+    </div>
+  </section>
+
+  <!-- ===================== CHALLENGES ===================== -->
+  <section data-panel="challenges" class="card" hidden>
+    <div class="card-head"><h3>Challenges</h3><span class="card-sub">Answer the "predict first" questions before testing them in the Simulation tab.</span></div>
+    <div id="challenges"></div>
+  </section>
+
+  <!-- ===================== REAL DATA ===================== -->
+  <section data-panel="real" class="card lesson" hidden>
+    <h4>From the simulation to real data</h4>
+    <ul>
+      <li>Report every model and specification you tried, keep a final out-of-sample period untouched, and use the Reality Check, SPA or MCS when you choose among many models.</li>
+      <li>In Python, the package <code>arch</code> provides <code>SPA</code> (which also reports the Reality Check), <code>StepM</code> and <code>MCS</code>.</li>
+    </ul>
+    <div class="crosslink"><span>&#10140;</span><span><a id="fourCast" target="_blank" rel="noopener"><b>4Cast Lab</b></a> compares many forecasting models on your own data.</span></div>
+  </section>
+
+  <footer id="mlsFooter"></footer>
+</div>
+
+<script>
+(function () {
+  'use strict';
+  const MLS = window.MLS, ML = MLS.ml, CL = MLS.cls;
+  const META = MLS.moduleMeta('data-snooping');
+  const $ = id => document.getElementById(id);
+  const F = MLS.fmt, pct = CL.pct;
+
+  const MS = [1, 5, 10, 25, 50, 100, 200, 300], WARM = 200, TIN = 500, TOUT = 250, BOOT = 500, BLOCK = 10, DIST = MLS.dist;
+  const S = { skill: 'none', seed: 2, mi: 6 };
+  let D = null, R = null;
+  const M = () => MS[S.mi];
+  function makeData() {
+    const ret = ML.marketReturns(ML.rng(S.seed), WARM + TIN + TOUT, S.skill === 'small' ? 0.08 : 0, 1);
+    const pool = ML.maRulePool(S.seed).slice(0, 300), all = ML.maRuleReturns(ret, pool, WARM);
+    D = { ret, pool, din: all.map(d => d.slice(0, TIN)), dout: all.map(d => d.slice(TIN)) };
+    D.stat = all.map((_, k) => { const a = D.din[k], b = D.dout[k], ma = a.reduce((s, v) => s + v, 0) / TIN, sa = Math.sqrt(a.reduce((s, v) => s + (v - ma) ** 2, 0) / (TIN - 1)), mb = b.reduce((s, v) => s + v, 0) / TOUT, sb = Math.sqrt(b.reduce((s, v) => s + (v - mb) ** 2, 0) / (TOUT - 1)); return { mIn: ma, tIn: ma / (sa / Math.sqrt(TIN)), mOut: mb, tOut: mb / (sb / Math.sqrt(TOUT)) }; });
+    D.BM = ML.bootMeans(D.din, BOOT, BLOCK, S.seed);   /* bootstrap means for all 300 rules; the first M are used */
+  }
+  function compute() {
+    const m = M(), st = D.stat.slice(0, m); let best = 0; st.forEach((s, k) => { if (s.mIn > st[best].mIn) best = k; });
+    const BM = D.BM.slice(0, m * BOOT), Din = D.din.slice(0, m);
+    R = { best, b: st[best], pNaive: 1 - DIST.normCdf(st[best].tIn) };
+    R.pBonf = Math.min(1, m * R.pNaive);
+    const t = ML.rcSpa(Din, BM, BOOT); R.rc = t.rc; R.spa = t.spa;
+    R.mcs = m > 1 ? ML.mcs(Din, BM, BOOT, 0.1) : { included: [true] }; R.mcsN = R.mcs.included.filter(Boolean).length;
+    R.maxT = []; let mx = -Infinity; D.stat.forEach((s, k) => { mx = Math.max(mx, s.tIn); R.maxT.push(mx); });
+    R.sig5 = st.filter(s => s.tIn > 1.645).length;
+  }
+  const ann = v => 252 * v;   /* daily % to % a year */
+  const rule = k => 'MA(' + D.pool[k][0] + ') vs MA(' + D.pool[k][1] + ')';
+  function updateText() {
+    const card = MLS.statCard, b = R.b, m = M();
+    $('story').innerHTML = '<h3>' + m + ' moving-average rule' + (m > 1 ? 's' : '') + ' tested on the same 500 days</h3><p>A stock index with daily returns of about 1% standard deviation and ' + (S.skill === 'none' ? '<b>no predictability at all</b>: no rule can have real skill' : '<b>a small momentum</b> (today\'s return carries 8% of yesterday\'s), which trend-following rules can exploit') + '. Each rule is long when its short moving average of the price is above its long one, short otherwise. The best rule in-sample: <b>' + rule(R.best) + '</b>.</p>';
+    $('stats').innerHTML =
+      card('Best rule, in-sample', F(ann(b.mIn), 1) + '% a year', 't-statistic ' + F(b.tIn, 2), '', 'st_in') +
+      card('Naive p-value', F(R.pNaive, 4), 'as if it were the only rule tried', '', 'st_naive') +
+      card('Reality Check p-value', F(R.rc, 3), 'SPA: ' + F(R.spa, 3), '', 'st_rc') +
+      card('Best rule, next year', F(ann(b.mOut), 1) + '% a year', 't-statistic ' + F(b.tOut, 2), '', 'st_out');
+    let msg, cls = 'status-line';
+    if (m === 1) msg = 'With one rule, the naive t-test is correct. Raise the number of rules tried.';
+    else if (R.pNaive < 0.05 && R.rc >= 0.05) { msg = 'Data snooping: the best of ' + m + ' rules looks significant on its own (p = ' + F(R.pNaive, 4) + '), but taking the search into account it is not (Reality Check p = ' + F(R.rc, 3) + ', SPA p = ' + F(R.spa, 3) + '). Next year it earns ' + F(ann(b.mOut), 1) + '% a year.'; cls += ' bad'; }
+    else if (R.spa < 0.05) { msg = 'Even after accounting for all ' + m + ' rules, the best one beats the benchmark (SPA p = ' + F(R.spa, 3) + '). Next year it earns ' + F(ann(b.mOut), 1) + '% a year.'; cls += ' ok'; }
+    else msg = 'No rule looks significant: naive p = ' + F(R.pNaive, 4) + ', Reality Check p = ' + F(R.rc, 3) + '.';
+    $('statusLine').textContent = msg; $('statusLine').className = cls;
+  }
+  function drawTests() {
+    const m = M(), row = (nm, p, what, help) => '<tr><td>' + nm + MLS.helpBtn(help) + '</td><td>' + (p === null ? 'n/a' : F(p, 4)) + '</td><td>' + (p === null ? '' : p < 0.05 ? '<b style="color:var(--bad, #c0392b)">reject: the best rule beats the benchmark</b>' : 'cannot reject: no proof of skill') + '</td><td>' + what + '</td></tr>';
+    $('testCard').innerHTML = '<div class="card-head"><h3>Is the best rule really better than doing nothing?' + MLS.helpBtn('tests') + '</h3></div><div style="overflow-x:auto"><table class="tbl"><thead><tr><th>Test</th><th>p-value</th><th>At the 5% level</th><th>What it accounts for</th></tr></thead><tbody>' +
+      row('Naive t-test', R.pNaive, 'Nothing: treats the winner as the only rule', 't_naive') + row('Bonferroni', R.pBonf, 'The number of rules (' + m + '), assuming they are unrelated', 't_bonf') + row('Reality Check (White)', R.rc, 'The search over all ' + m + ' rules and their correlation', 't_rc') + row('SPA (Hansen)', R.spa, 'As the Reality Check, standardized, robust to poor rules', 't_spa') +
+      '</tbody></table></div><p class="note"><b>Model Confidence Set</b> at 10%: ' + R.mcsN + ' of ' + m + ' rules cannot be told apart from the best. ' + R.sig5 + ' of ' + m + ' rules have a naive one-sided p-value below 5% (expected by luck alone: about ' + F(0.05 * m, 1) + ').</p>';
+  }
+  const figHist = MLS.figure($('figHist'), { title: 'In-sample t-statistics of all rules', help: 'fighist', file: 'snooping-t-stats', plot: { aspect: 0.75, margin: { l: 56, b: 48 }, x: { label: 't-statistic (in-sample)' }, y: { label: 'Number of rules' } } });
+  function drawHist() {
+    const P = figHist.plot, st = D.stat.slice(0, M()), w = 0.25, lo = -4, hi = 4.5, nb = Math.round((hi - lo) / w), cnt = new Array(nb).fill(0), c1 = MLS.color('series-1'), c2 = MLS.color('series-2');
+    st.forEach(s => cnt[Math.max(0, Math.min(nb - 1, Math.floor((s.tIn - lo) / w)))]++);
+    const top = Math.max(3, ...cnt, M() * w * 0.4) * 1.12;
+    P.setX(lo, hi); P.setY(0, top);
+    P.draw(P => {
+      cnt.forEach((c, i) => { if (c) P.rect(lo + i * w + 0.01, 0, lo + (i + 1) * w - 0.01, c, { fill: MLS.rgba(c1, 0.75) }); });
+      if (M() >= 10) P.line(Array.from({ length: 171 }, (_, i) => { const x = lo + i * 0.05; return [x, M() * w * Math.exp(-x * x / 2) / Math.sqrt(2 * Math.PI)]; }), { color: MLS.color('chart-muted'), width: 1.6, dash: '5 4' });
+      P.vline(1.645, { color: MLS.color('chart-ink'), width: 1.4, dash: '3 3' }); P.text(1.645, top, '5% one-sided', { dx: 4, dy: 12, size: 11 });
+      P.vline(R.b.tIn, { color: c2, width: 2.4 }); P.text(R.b.tIn, top * 0.85, 'best', { anchor: 'middle', dy: -4, size: 12, weight: 800, color: c2 });
+    });
+    figHist.caption('Bars: the rules. Dashed curve: what pure luck gives (a standard normal distribution).');
+  }
+  const figMax = MLS.figure($('figMax'), { title: 'The best t-statistic as more rules are tried', help: 'figmax', file: 'snooping-max-t', plot: { aspect: 0.75, margin: { l: 56, b: 48 }, x: { label: 'Rules tried (log scale)', ticks: () => [0, 1, 2, Math.log10(300)], fmt: v => String(Math.round(10 ** v)) }, y: { label: 't-statistic' } } });
+  function drawMax() {
+    const P = figMax.plot, c2 = MLS.color('series-2'), c3 = MLS.color('series-3'), mu = MLS.color('chart-muted'), xs = R.maxT.map((v, i) => [Math.log10(i + 1), v]);
+    const bon = Array.from({ length: 300 }, (_, i) => [Math.log10(i + 1), DIST.normQuantile(1 - 0.05 / (i + 1))]);
+    P.setX(0, Math.log10(300)); P.setY(Math.min(-1, Math.min(...R.maxT)), Math.max(4.5, Math.max(...R.maxT) + 0.3));
+    P.draw(P => {
+      P.hline(1.645, { color: mu, width: 1.4, dash: '3 3' }); P.line(bon, { color: c3, width: 1.8, dash: '6 4' });
+      P.line(xs, { color: c2, width: 2.4 }); P.vline(Math.log10(M()), { color: MLS.color('chart-ink'), width: 1.2, dash: '4 4' });
+      P.crosshair([{ name: 'Best t so far', color: c2, pts: xs }, { name: 'Bonferroni 5% critical value', color: c3, pts: bon }], v => Math.round(10 ** v) + ' rules', v => F(v, 2));
+    });
+    figMax.legend([{ label: 'Best in-sample t-statistic so far', color: c2, line: true }, { label: 'Naive 5% critical value (1.645)', color: mu, line: true, dash: '3 3' }, { label: 'Bonferroni 5% critical value', color: c3, line: true, dash: '6 4' }]);
+    figMax.caption('Adding rules can only raise the best t-statistic. The vertical line marks the current number of rules.');
+  }
+  const figScatter = MLS.figure($('figScatter'), { title: 'In-sample versus next year', help: 'figscatter', file: 'snooping-in-vs-out', plot: { aspect: 0.75, margin: { l: 60, b: 48 }, x: { label: 'Return in-sample (% a year)' }, y: { label: 'Return next year (% a year)' } } });
+  function drawScatter() {
+    const P = figScatter.plot, st = D.stat.slice(0, M()), xs = st.map(s => ann(s.mIn)), ys = st.map(s => ann(s.mOut)), c1 = MLS.color('series-1'), c2 = MLS.color('series-2');
+    P.setX(...MLS.niceDomain(Math.min(...xs, -10), Math.max(...xs, 10), 0.08)); P.setY(...MLS.niceDomain(Math.min(...ys, -10), Math.max(...ys, 10), 0.08));
+    P.draw(P => {
+      P.hline(0, { color: MLS.color('chart-axis'), width: 1 }); P.vline(0, { color: MLS.color('chart-axis'), width: 1 });
+      P.points(st.map((s, k) => ({ x: ann(s.mIn), y: ann(s.mOut), k })), { color: d => (d.k === R.best ? c2 : MLS.rgba(c1, 0.6)), r: d => (d.k === R.best ? 7 : 3.4), ring: false, tip: d => '<b>' + rule(d.k) + '</b><br>in-sample ' + F(d.x, 1) + '% a year<br>next year ' + F(d.y, 1) + '% a year' });
+    });
+    const n = st.length, mx = xs.reduce((a, b) => a + b, 0) / n, my = ys.reduce((a, b) => a + b, 0) / n, cov = xs.reduce((s, x, i) => s + (x - mx) * (ys[i] - my), 0), r = cov / Math.sqrt(xs.reduce((s, x) => s + (x - mx) ** 2, 0) * ys.reduce((s, y) => s + (y - my) ** 2, 0) || 1);
+    figScatter.caption('Each dot is a rule; orange: the in-sample winner. Correlation between in-sample and next-year returns: ' + (n > 2 ? F(r, 2) : 'n/a') + '. Similar rules move together, so the dots form clusters.');
+  }
+  const figCum = MLS.figure($('figCum'), { title: 'The winning rule over time', help: 'figcum', file: 'snooping-cumulative', plot: { aspect: 0.75, margin: { l: 56, b: 48 }, x: { label: 'Trading day' }, y: { label: 'Cumulative return (%)' } } });
+  function drawCum() {
+    const P = figCum.plot, d = Array.from(D.din[R.best]).concat(Array.from(D.dout[R.best])); let c = 0; const pts = d.map((v, t) => [t + 1, (c += v)]);
+    let cm = 0; const mk = D.ret.slice(WARM).map((v, t) => [t + 1, (cm += v)]), all = pts.concat(mk).map(p => p[1]);
+    P.setX(1, TIN + TOUT); P.setY(...MLS.niceDomain(Math.min(...all), Math.max(...all), 0.08));
+    P.draw(P => {
+      P.rect(TIN + 0.5, P.yd[0], TIN + TOUT, P.yd[1], { fill: MLS.rgba(MLS.color('series-4'), 0.1) }); P.text(TIN + 4, P.yd[1], 'next year', { dy: 14, size: 12, weight: 700 });
+      P.line(mk, { color: MLS.color('chart-muted'), width: 1.4 }); P.line(pts, { color: MLS.color('series-2'), width: 2.2 });
+      P.crosshair([{ name: 'Best rule', color: MLS.color('series-2'), pts }, { name: 'Market (buy and hold)', color: MLS.color('chart-muted'), pts: mk }], v => 'Day ' + Math.round(v), v => F(v, 1) + '%');
+    });
+    figCum.legend([{ label: 'Best rule: ' + rule(R.best), color: MLS.color('series-2'), line: true }, { label: 'Market (buy and hold)', color: MLS.color('chart-muted'), line: true }]);
+    figCum.caption('Chosen because of the first 500 days. Shaded: the next 250 days, which played no part in the choice.');
+  }
+  function syncUI() { MLS.$$('[data-skill]').forEach(b => b.setAttribute('aria-pressed', String(b.dataset.skill === S.skill))); $('seed').value = S.seed; $('M').value = S.mi; $('MVal').textContent = M(); }
+  function render() { syncUI(); updateText(); drawTests(); drawHist(); drawMax(); drawScatter(); drawCum(); if (ch) ch.check(); MLS.state.save(); }
+  function refresh() { compute(); render(); }
+  const full = () => { makeData(); refresh(); };
+  MLS.$$('[data-skill]').forEach(b => (b.onclick = () => { S.skill = b.dataset.skill; full(); }));
+  $('seed').onchange = e => { S.seed = Math.max(1, Math.round(+e.target.value) || 1); full(); };
+  $('newSeed').onclick = () => { S.seed = MLS.newSeed(); full(); };
+  $('M').addEventListener('input', e => { S.mi = +e.target.value; $('MVal').textContent = M(); refresh(); });
+
+  MLS.registerHelp({
+    data: { title: 'The market', html: 'Simulated daily returns of a stock index (standard deviation 1% a day). <b>None</b>: returns are unpredictable. <b>Small</b>: a weak momentum (8% of yesterday\'s return carries over), so trend-following rules have a small real edge.' },
+    seed: { title: 'Random seed', html: 'Fixes the returns, the order of the rules and the bootstrap.' },
+    skill: { title: 'Real skill', html: 'Whether the data contain anything a rule could exploit.' },
+    search: { title: 'The search', html: 'The rules are moving-average crossovers: long when the short average of the price is above the long one, short otherwise; short window 1 to 40 days, long window up to 200 days.' },
+    M: { title: 'Rules tried', html: 'How many rules are tested on the same 500 days: 1 to 300.' },
+    st_in: { title: 'Best rule in-sample', html: 'The rule with the highest average return in the 500 days used for the search, as % a year, and its t-statistic.' },
+    st_naive: { title: 'Naive p-value', html: 'One-sided p-value of the best rule\'s t-statistic, ignoring that it is the best of many. Misleading when many rules were tried.' },
+    st_rc: { title: 'Reality Check and SPA', html: 'p-values for "no rule beats the benchmark", taking the whole search into account (500 bootstrap resamples).' },
+    st_out: { title: 'Next year', html: 'The same rule in the following 250 days, which played no part in choosing it.' },
+    tests: { title: 'The tests', html: 'All test the null hypothesis that the best rule is no better than doing nothing (a return of 0), at the 5% level.' },
+    t_naive: { title: 'Naive t-test', html: 'The usual t-test on the winner, as if it had been chosen in advance.' },
+    t_bonf: { title: 'Bonferroni', html: 'p × M: controls the chance of any false discovery, but is very conservative for similar rules.' },
+    t_rc: { title: 'Reality Check', html: 'White (2000): compares the best rule with the bootstrap distribution of the best of M rules under the null.' },
+    t_spa: { title: 'SPA', html: 'Hansen (2005): standardizes each rule and ignores rules that are clearly poor, which makes it more powerful.' },
+    fighist: { title: 't-statistics', html: 'Histogram of the in-sample t-statistics of all rules tried, with the curve expected by luck alone.' },
+    figmax: { title: 'Best t so far', html: 'The highest in-sample t-statistic among the first m rules, for m = 1 to 300.' },
+    figscatter: { title: 'In-sample vs next year', html: 'Each rule\'s yearly return in the search period and in the following year.' },
+    figcum: { title: 'The winner over time', html: 'Cumulative return of the in-sample winner over the search period and the following year, with the market.' }
+  });
+
+  function setup(o) { Object.assign(S, o); MLS.pickTab('sim'); full(); window.scrollTo({ top: 0, behavior: 'smooth' }); }
+  const ch = MLS.challenges($('challenges'), META.id, [
+    { type: 'predict', q: 'No rule has real skill. You test 100 rules at the 5% level, one at a time. About how many look "significant"?',
+      options: ['None', 'About 5', 'About 50'], answer: 1,
+      explain: 'Each useless rule has a 5% chance of a false positive, so about 5 of 100 (fewer for highly correlated rules, but the best one still looks good).',
+      tryIt: () => setup({ skill: 'none', mi: 5 }) },
+    { type: 'predict', q: 'No real skill. The best of 300 rules in the following year will most likely earn...',
+      options: ['about the same as in-sample', 'more than in-sample', 'about zero: its in-sample result was luck'], answer: 2,
+      explain: 'Luck does not repeat. The in-sample winner regresses to the true value, zero.',
+      tryIt: () => setup({ skill: 'none', mi: 7 }) },
+    { type: 'task', q: 'Proper tests can also be fooled, 5% of the time. With no real skill and 300 rules, find a seed where even the Reality Check rejects at 5%.', hint: 'Try seeds 3 to 10. Look at the market line in the last chart: what happened to the market in that sample?',
+      check: () => R && S.skill === 'none' && M() === 300 && R.rc < 0.05 },
+    { type: 'predict', q: 'Why is Bonferroni too strict for moving-average rules?',
+      options: ['Because the rules are similar and move together, so M tests are not M independent chances of luck', 'Because it ignores the number of rules', 'Because it uses the bootstrap'], answer: 0,
+      explain: 'MA(10/50) and MA(11/50) make almost the same trades. The Reality Check and SPA bootstrap whole days, so they keep this correlation.',
+      tryIt: () => setup({ mi: 7 }) },
+    { type: 'task', q: 'Switch on the small real effect: with 300 rules, find a seed where the best rule also earns more than 5% a year in the next year.', hint: 'Choose "Small (momentum)", 300 rules, and try several seeds. A real effect tends to persist; luck does not.',
+      check: () => R && S.skill === 'small' && M() === 300 && ann(R.b.mOut) > 5 },
+    { type: 'predict', q: 'The Model Confidence Set contains 280 of 300 rules. This means...',
+      options: ['280 rules have real skill', 'the data cannot tell most rules apart from the best one', 'the test has an error'], answer: 1,
+      explain: 'The set holds every rule that is not significantly worse than the best. A large set is an honest statement that the data cannot pick a winner.',
+      tryIt: () => setup({ skill: 'none', mi: 7 }) }
+  ]);
+  const STATE = {
+    get: () => ({ skill: S.skill, seed: S.seed, mi: S.mi }),
+    set: o => { if (['none', 'small'].includes(o.skill)) S.skill = o.skill; if (Number.isFinite(o.seed)) S.seed = o.seed; if (Number.isFinite(o.mi)) S.mi = Math.max(0, Math.min(7, o.mi)); }
+  };
+  const start = full;
+  MLS.moduleBar({ id: META.id, title: META.title, section: META.sectionTitle, level: META.level },
+    { tabs: [{ id: 'sim', label: 'Simulation' }, { id: 'lesson', label: 'Lesson' }, { id: 'challenges', label: 'Challenges' }, { id: 'real', label: 'On real data' }] });
+  MLS.state.init({ id: META.id, get: STATE.get, set: STATE.set });
+  const fc = $('fourCast'); if (fc) fc.href = MLS.APP.fourCastUrl;
+  window.__mls = { S, get R() { return R; }, get D() { return D; } };
+  document.addEventListener('mls:theme', () => refresh());
+  start();
+})();
+</script>
+</body>
+</html>

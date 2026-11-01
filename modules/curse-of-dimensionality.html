@@ -1,0 +1,312 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Curse of Dimensionality | 4MLSim</title>
+  <meta name="theme-color" content="#1B2340">
+  <link rel="manifest" href="../manifest.json">
+  <link rel="icon" type="image/svg+xml" href="../assets/img/icon.svg">
+  <link rel="apple-touch-icon" href="../assets/img/apple-touch-icon.png">
+  <link rel="stylesheet" href="../assets/vendor/temml.css">
+  <link rel="stylesheet" href="../assets/css/4mlsim.css">
+  <script src="../assets/vendor/temml.min.js"></script>
+  <script src="../assets/js/core.js"></script>
+  <script src="../assets/js/stats.js"></script>
+  <script src="../assets/js/plot.js"></script>
+  <script src="../assets/js/modules.js"></script>
+  <script src="../assets/js/core-ml.js"></script>
+  <script src="../assets/js/classify-ui.js"></script>
+</head>
+<body>
+<div class="page">
+  <header id="mlsHeader" data-variant="compact"></header>
+  <div class="mod-top" id="mlsTop"><div id="mlsModBar"></div><div id="mlsTabs"></div></div>
+
+  <div class="intro-box" id="mlsIntro">
+    <h3>What this module shows</h3>
+    <div class="intro-cols">
+      <div>
+        <p>Many methods rely on <b>distances</b>: k-nearest neighbours, k-means, DBSCAN, kernel SVMs. In two or three dimensions "near" and "far" are clear. Add more inputs (dimensions) and something strange happens: <b>all points become about equally far from each other</b>, and the nearest neighbour is hardly nearer than the farthest point.</p>
+        <p>This is the <b>curse of dimensionality</b>: the space grows so fast that any data set becomes sparse, and distance-based methods lose their footing.</p>
+      </div>
+      <div>
+        <p><b>How to use it</b></p>
+        <ol>
+          <li>Raise the number of dimensions and watch the histogram of distances bunch together.</li>
+          <li>Read how large a neighbourhood must be to hold 10% of the data.</li>
+          <li>Add useless inputs to a classification problem and watch KNN's test accuracy fall.</li>
+        </ol>
+      </div>
+    </div>
+  </div>
+
+  <!-- ===================== SIMULATION ===================== -->
+  <section data-panel="sim">
+    <div class="mod-grid">
+      <aside class="side" aria-label="Controls">
+        <div class="card">
+          <div class="card-head"><h3>1. Data<button type="button" class="help" data-help="data">?</button></h3></div>
+          <div class="field-row"><label for="n">Observations<button type="button" class="help" data-help="n">?</button></label><output id="nVal"></output></div>
+          <input type="range" id="n" min="100" max="1000" step="50" value="500">
+          <div class="field-row"><label for="seed">Random seed<button type="button" class="help" data-help="seed">?</button></label></div>
+          <div class="inline-inputs"><input type="number" id="seed" min="1" max="99999" step="1" value="1" aria-label="Random seed"><button type="button" class="btn-ghost btn-icon" id="newSeed" title="New random data" style="flex:0 0 auto">&#127922;</button></div>
+        </div>
+        <div class="card">
+          <div class="card-head"><h3>2. Dimensions<button type="button" class="help" data-help="dims">?</button></h3></div>
+          <div class="field-row"><label for="d">Number of dimensions (inputs)<button type="button" class="help" data-help="d">?</button></label><output id="dVal"></output></div>
+          <input type="range" id="d" min="0" max="10" step="1" value="1">
+          <div class="seg full" role="group" aria-label="Quick choice" style="margin-top:10px"><button type="button" data-q="0">1</button><button type="button" data-q="1">2</button><button type="button" data-q="4">10</button><button type="button" data-q="7">100</button><button type="button" data-q="10">1000</button></div>
+        </div>
+      </aside>
+
+      <main class="main">
+        <div class="story" id="story"></div>
+        <div class="stat-grid" id="stats" style="margin-top:12px"></div>
+        <div id="statusLine" class="status-line" style="margin:10px 0"></div>
+        <div class="fig-grid">
+          <div id="figHist"></div>
+          <div id="figMap"></div>
+          <div id="figRatio"></div>
+          <div id="figEdge"></div>
+          <div id="figKnn" class="fig-wide"></div>
+        </div>
+      </main>
+    </div>
+  </section>
+
+  <!-- ===================== LESSON ===================== -->
+  <section data-panel="lesson" class="card lesson" hidden>
+    <div id="mlsMathCtl"></div>
+    <p class="lvl-only-intuition note" style="margin-bottom:8px">Showing the intuition only. Choose <b>Formulas</b> or <b>Deep dive</b> above to add the mathematics.</p>
+
+    <h4>Distances lose their meaning</h4>
+    <p>Spread points at random in a cube with d sides. In 2 dimensions some points are very close to a given point and some very far. As d grows, every distance is the sum of many small squared differences, one per input; by the law of large numbers these sums are all close to their average. The <b>nearest and the farthest points end up at almost the same distance</b>. A method that predicts from "the nearest" observations then works with neighbours that are not really near.</p>
+
+    <h4>The space is empty</h4>
+    <ul>
+      <li>To capture 10% of uniformly spread data with a small cube around a point, its edge must cover 10% of each input's range in 1 dimension, 32% in 2, <b>79% in 10</b> and 98% in 100. "Local" neighbourhoods are no longer local.</li>
+      <li>To keep the same density of observations, the data needed grows exponentially: 10 points per input means 10 in 1 dimension, 100 in 2, 10 billion in 10.</li>
+      <li>Most of the volume of a high-dimensional cube lies near its surface and its corners.</li>
+    </ul>
+
+    <h4>Useless inputs hurt</h4>
+    <p>In practice the problem appears when we add many inputs that carry no information: each adds noise to every distance. K-nearest neighbours with 2 useful inputs and 50 useless ones is close to guessing. More inputs are not always better.</p>
+
+    <h4>Remedies</h4>
+    <ul>
+      <li><b>Feature selection</b>: keep the inputs that matter (domain knowledge, importance measures, lasso).</li>
+      <li><b>Dimension reduction</b>: summarize many correlated inputs with a few components (PCA).</li>
+      <li><b>More data</b>, and <b>models that do not rely on distances</b> in all inputs at once (trees and their ensembles pick inputs one at a time; regularized regressions shrink useless coefficients).</li>
+      <li>Real data are rarely spread evenly: they usually lie near a lower-dimensional structure, which is why many methods still work with many inputs.</li>
+    </ul>
+
+    <div class="math-block lvl-math"><div class="mb-title">Two formulas</div>
+      <div class="tex-block">\text{relative contrast: } \frac{D_{\max} - D_{\min}}{D_{\min}} \;\longrightarrow\; 0 \quad \text{as } d \to \infty \text{ (for independent inputs)}</div>
+      <div class="tex-block">\text{edge of a sub-cube holding a share } r \text{ of uniform data: } e_d(r) = r^{1/d}, \qquad e_{10}(0.1) = 0.1^{0.1} \approx 0.79</div>
+    </div>
+    <div class="math-block deep lvl-deep"><div class="mb-title">Deep dive</div>
+      <p><b>Concentration of distances.</b> For points uniform in [0, 1]<sup>d</sup>, the squared distance between two points has mean d/6 and standard deviation of order √d, so the distance is about √(d/6) with a spread that does not grow: relative to its size, the spread shrinks like 1/√d.</p>
+      <p><b>The unit ball.</b> The volume of the ball of radius 1/2 inside the unit cube is about 0.785 in 2 dimensions, 0.0025 in 10 and practically 0 in 20: almost all of the cube is in its corners.</p>
+      <p class="note">References: Bellman (1961), <i>Adaptive Control Processes</i>; Beyer, Goldstein, Ramakrishnan and Shaft (1999), "When is nearest neighbor meaningful?", <i>ICDT</i>; Hastie, Tibshirani and Friedman (2009), <i>The Elements of Statistical Learning</i>, §2.5.</p>
+    </div>
+  </section>
+
+  <!-- ===================== CHALLENGES ===================== -->
+  <section data-panel="challenges" class="card" hidden>
+    <div class="card-head"><h3>Challenges</h3><span class="card-sub">Answer the "predict first" questions before testing them in the Simulation tab.</span></div>
+    <div id="challenges"></div>
+  </section>
+
+  <!-- ===================== REAL DATA ===================== -->
+  <section data-panel="real" class="card lesson" hidden>
+    <h4>From the simulation to real data</h4>
+    <ul>
+      <li>With many indicators (hundreds of macro series, text features, many firm ratios), prefer feature selection, regularization, PCA or tree ensembles to raw KNN or k-means.</li>
+      <li>Compare the cross-validation score with and without groups of inputs: if dropping inputs helps, they were adding noise.</li>
+    </ul>
+    <div class="crosslink"><span>&#10140;</span><span><a id="fourCast" target="_blank" rel="noopener"><b>4Cast Lab</b></a> works with your own data for forecasting and classification.</span></div>
+  </section>
+
+  <footer id="mlsFooter"></footer>
+</div>
+
+<script>
+(function () {
+  'use strict';
+  const MLS = window.MLS, ML = MLS.ml, CL = MLS.cls;
+  const META = MLS.moduleMeta('curse-of-dimensionality');
+  const $ = id => document.getElementById(id);
+  const F = MLS.fmt, pct = CL.pct;
+
+  const DL = [1, 2, 3, 5, 10, 20, 50, 100, 200, 500, 1000], DMAX = 1000, Q = 20, KN = 5;
+  const S = { n: 500, seed: 1, di: 1 };
+  let D = null, R = null;
+  const dim = () => DL[S.di];
+  function makeData() {
+    const r = ML.rng(S.seed), U = Array.from({ length: S.n }, () => { const a = new Float64Array(DMAX); for (let j = 0; j < DMAX; j++) a[j] = r.random(); return a; });
+    /* classification: 2 useful inputs (two groups) and up to 998 useless ones */
+    const g = ML.DATA.blobs2.gen(ML.rng(S.seed + 7), 300), sc = ML.scaler(g.X), te = ML.split(300, S.seed), rn = ML.rng(S.seed + 11);
+    const C = g.X.map((x, i) => { const a = new Float64Array(DMAX); const z = sc.t(x); a[0] = z[0]; a[1] = z[1]; for (let j = 2; j < DMAX; j++) a[j] = rn.normal(0, 1); return a; });
+    D = { U, C, y: g.y, te };
+    /* ratio nearest / farthest and KNN accuracy for every number of dimensions in the list */
+    D.curve = DL.map(d => {
+      let rat = 0, con = 0;
+      for (let q = 0; q < Q; q++) { const ds = dists(U, q, d); let lo = Infinity, hi = 0; ds.forEach((v, i) => { if (i !== q) { lo = Math.min(lo, v); hi = Math.max(hi, v); } }); rat += lo / hi / Q; con += (hi - lo) / lo / Q; }
+      return { d, ratio: rat, contrast: con, acc: knnAcc(d) };
+    });
+  }
+  function dists(U, q, d) { const a = U[q]; return U.map(b => { let s = 0; for (let j = 0; j < d; j++) { const t = a[j] - b[j]; s += t * t; } return Math.sqrt(s); }); }
+  function knnAcc(d) {
+    const C = D.C, tr = [], te = []; D.te.forEach((t, i) => (t ? te : tr).push(i)); let ok = 0;
+    te.forEach(i => {
+      const nb = tr.map(j => { let s = 0; for (let q = 0; q < d; q++) { const t = C[i][q] - C[j][q]; s += t * t; } return [s, j]; }).sort((a, b) => a[0] - b[0]).slice(0, KN);
+      const v = nb.reduce((s, [, j]) => s + D.y[j], 0); if ((v * 2 > KN ? 1 : 0) === D.y[i]) ok++;
+    });
+    return ok / te.length;
+  }
+  function compute() {
+    const d = dim(), ds = dists(D.U, 0, d), others = ds.map((v, i) => [v, i]).filter(p => p[1] !== 0).sort((a, b) => a[0] - b[0]);
+    R = { d, ds: others, lo: others[0][0], hi: others[others.length - 1][0], nn: others.slice(0, 5).map(p => p[1]), c: D.curve[S.di] };
+  }
+  function updateText() {
+    const card = MLS.statCard, d = dim(), c = R.c;
+    $('story').innerHTML = '<h3>' + S.n + ' points spread at random in a cube with ' + d + ' dimension' + (d > 1 ? 's' : '') + '</h3><p>Every input is uniform between 0 and 1. The distances are measured from one point (the query point) to all the others. For the classification test: 300 observations of two groups that differ in <b>2 useful inputs</b>, plus ' + Math.max(0, d - 2) + ' useless input' + (d - 2 === 1 ? '' : 's') + ' of pure noise; 80% training set, 20% test set.</p>';
+    $('stats').innerHTML =
+      card('Nearest ÷ farthest distance', F(R.lo / R.hi, 3), 'for the query point; 1 = all equally far', '', 'st_ratio') +
+      card('Relative contrast', F((R.hi - R.lo) / R.lo, 2), '(farthest − nearest) ÷ nearest', '', 'st_contrast') +
+      card('Edge holding 10% of the data', pct(Math.pow(0.1, 1 / d)), 'of each input\'s range', '', 'st_edge') +
+      card('KNN accuracy, test set', d >= 2 ? pct(c.acc) : 'n/a', d >= 2 ? '2 useful + ' + (d - 2) + ' useless inputs, k = 5' : 'needs 2 or more inputs', '', 'st_knn');
+    let msg, cls = 'status-line';
+    if (d <= 3) { msg = 'In ' + d + ' dimension' + (d > 1 ? 's' : '') + ' the nearest point is ' + F(R.hi / R.lo, 0) + ' times closer than the farthest: "near" and "far" are clearly different.'; cls += ' ok'; }
+    else if (R.lo / R.hi < 0.5) { msg = 'With ' + d + ' dimensions the nearest point is already at ' + pct(R.lo / R.hi) + ' of the farthest distance.'; }
+    else { msg = 'With ' + d + ' dimensions the nearest point is at ' + pct(R.lo / R.hi) + ' of the farthest distance: all points are about equally far. KNN with ' + (d - 2) + ' useless inputs: ' + pct(c.acc) + ' on the test set.'; cls += ' bad'; }
+    $('statusLine').textContent = msg; $('statusLine').className = cls;
+  }
+  const figHist = MLS.figure($('figHist'), { title: 'Distances from the query point', help: 'fighist', file: 'curse-distances', plot: { aspect: 0.7, margin: { l: 60, b: 48 }, x: { label: 'Distance ÷ largest distance' }, y: { label: 'Number of points' } } });
+  function drawHist() {
+    const P = figHist.plot, B = 25, cnt = new Array(B).fill(0), c1 = MLS.color('series-1');
+    R.ds.forEach(([v]) => cnt[Math.min(B - 1, Math.floor(v / R.hi * B))]++);
+    P.setX(0, 1); P.setY(0, Math.max(...cnt) * 1.1);
+    P.draw(P => {
+      cnt.forEach((c, b) => P.rect(b / B + 0.003, 0, (b + 1) / B - 0.003, c, { fill: MLS.rgba(c1, 0.8), tip: undefined }));
+      P.vline(R.lo / R.hi, { color: MLS.color('series-2'), width: 2.2 }); P.text(R.lo / R.hi, Math.max(...cnt) * 1.1, 'nearest', { anchor: R.lo / R.hi > 0.7 ? 'end' : 'start', dx: R.lo / R.hi > 0.7 ? -4 : 4, dy: 14, size: 12, weight: 800, color: MLS.color('series-2') });
+    });
+    figHist.caption('Each distance divided by the largest one. In few dimensions the distances spread from 0 to 1; in many, they bunch near 1 and the nearest point (orange) is barely nearer than the rest.');
+  }
+  const figMap = MLS.figure($('figMap'), { title: 'The 5 nearest neighbours, seen in the first 2 inputs', help: 'figmap', file: 'curse-neighbours', plot: { aspect: 0.85, margin: { l: 56, b: 48 }, x: { label: 'Input 1' }, y: { label: () => (dim() > 1 ? 'Input 2' : '') } } });
+  function drawMap() {
+    const P = figMap.plot, d = dim(), U = D.U, mu = MLS.color('chart-muted'), c2 = MLS.color('series-2'), ink = MLS.color('chart-ink'), yv = i => (d > 1 ? U[i][1] : 0.5);
+    P.setX(0, 1); P.setY(0, 1);
+    P.draw(P => {
+      R.nn.forEach(i => P.segment(U[0][0], yv(0), U[i][0], yv(i), { color: c2, width: 1.4 }));
+      P.points(U.map((u, i) => ({ x: u[0], y: yv(i), i })), { color: d => (d.i === 0 ? ink : R.nn.includes(d.i) ? c2 : MLS.rgba(mu, 0.45)), r: d => (d.i === 0 ? 7 : R.nn.includes(d.i) ? 5.5 : 2.6), ring: false, tip: d => (d.i === 0 ? '<b>Query point</b>' : 'Point ' + (d.i + 1)) + '<br>distance ' + F(dists([U[0], U[d.i]], 0, dim())[1], 3) });
+    });
+    figMap.legend([{ label: 'Query point', color: ink }, { label: 'Its 5 nearest neighbours in all ' + d + ' dimensions', color: c2 }]);
+    figMap.caption(d <= 2 ? 'In 2 dimensions the nearest neighbours are visibly close to the query point.' : 'The neighbours are nearest in all ' + d + ' dimensions together, but in the first 2 inputs they are scattered: no single input says they are close.');
+  }
+  const figRatio = MLS.figure($('figRatio'), { title: 'Nearest ÷ farthest, by dimensions', help: 'figratio', file: 'curse-ratio', plot: { aspect: 0.7, margin: { l: 60, b: 48 }, x: { label: 'Dimensions (log scale)', ticks: () => [0, 1, 2, 3], fmt: v => String(Math.round(10 ** v)) }, y: { label: 'Nearest ÷ farthest distance' } } });
+  function drawRatio() {
+    const P = figRatio.plot, c1 = MLS.color('series-1'), c2 = MLS.color('series-2');
+    P.setX(0, 3); P.setY(0, 1);
+    P.draw(P => {
+      P.line(D.curve.map(c => [Math.log10(c.d), c.ratio]), { color: c1, width: 2.2 });
+      P.points(D.curve.map(c => ({ x: Math.log10(c.d), y: c.ratio, d: c.d })), { color: p => (p.d === dim() ? c2 : c1), r: p => (p.d === dim() ? 7 : 4), tip: p => p.d + ' dimensions<br>nearest ÷ farthest ' + F(p.y, 3) });
+    });
+    figRatio.caption('Average over ' + Q + ' query points of the same data set. It climbs towards 1: the nearest point is almost as far as the farthest.');
+  }
+  const figEdge = MLS.figure($('figEdge'), { title: 'How big must a neighbourhood be?', help: 'figedge', file: 'curse-edge', plot: { aspect: 0.7, margin: { l: 60, b: 48 }, x: { label: 'Share of the data captured' }, y: { label: 'Edge of the sub-cube (share of range)' } } });
+  function drawEdge() {
+    const P = figEdge.plot, show = [1, 2, 3, 10, dim()].filter((v, i, a) => a.indexOf(v) === i).sort((a, b) => a - b);
+    P.setX(0, 0.6); P.setY(0, 1);
+    P.draw(P => {
+      show.forEach((d, k) => { const pts = []; for (let r = 0; r <= 0.6001; r += 0.005) pts.push([r, Math.pow(r, 1 / d)]); P.line(pts, { color: d === dim() ? MLS.color('series-2') : MLS.seriesColor(k === 3 ? 6 : k), width: d === dim() ? 3 : 1.6 }); P.text(0.6, Math.pow(0.6, 1 / d), 'd = ' + d, { anchor: 'end', dy: -5, size: 11.5, weight: 700 }); });
+      P.vline(0.1, { color: MLS.color('chart-muted'), width: 1, dash: '4 4' });
+    });
+    figEdge.caption('To capture 10% of the data (dashed line) in ' + dim() + ' dimension' + (dim() > 1 ? 's' : '') + ', a cube must span ' + pct(Math.pow(0.1, 1 / dim())) + ' of every input\'s range. Orange: the current number of dimensions.');
+  }
+  const figKnn = MLS.figure($('figKnn'), { title: 'KNN with useless inputs added', help: 'figknn', file: 'curse-knn', plot: { aspect: 0.32, margin: { l: 60, b: 48 }, x: { label: 'Dimensions: 2 useful inputs + useless ones (log scale)', ticks: () => [Math.log10(2), 1, 2, 3], fmt: v => String(Math.round(10 ** v)) }, y: { label: 'Accuracy, test set' } } });
+  function drawKnn() {
+    const P = figKnn.plot, cv = D.curve.filter(c => c.d >= 2), c3 = MLS.color('series-3'), c2 = MLS.color('series-2');
+    P.setX(Math.log10(2) - 0.05, 3.05); P.setY(0.4, 1);
+    P.draw(P => {
+      P.hline(0.5, { color: MLS.color('chart-muted'), width: 1, dash: '4 4' }); P.text(3.05, 0.5, 'guessing', { anchor: 'end', dy: -5, size: 11, color: MLS.color('chart-muted') });
+      P.line(cv.map(c => [Math.log10(c.d), c.acc]), { color: c3, width: 2.4 });
+      P.points(cv.map(c => ({ x: Math.log10(c.d), y: c.acc, d: c.d })), { color: p => (p.d === dim() ? c2 : c3), r: p => (p.d === dim() ? 7 : 4.5), tip: p => p.d + ' inputs (' + (p.d - 2) + ' useless)<br>accuracy ' + pct(p.y) });
+    });
+    figKnn.caption('K-nearest neighbours (k = 5) on two groups that differ only in the first 2 inputs. Every useless input adds noise to every distance, until the neighbours are random and the accuracy approaches guessing (50%).');
+  }
+  function syncUI() {
+    $('n').value = S.n; $('nVal').textContent = S.n; $('seed').value = S.seed; $('d').value = S.di; $('dVal').textContent = dim();
+    MLS.$$('[data-q]').forEach(b => b.setAttribute('aria-pressed', String(+b.dataset.q === S.di)));
+  }
+  function render() { syncUI(); updateText(); drawHist(); drawMap(); drawRatio(); drawEdge(); drawKnn(); if (ch) ch.check(); MLS.state.save(); }
+  function refresh() { compute(); render(); }
+  const full = () => { makeData(); refresh(); };
+  $('n').addEventListener('input', e => ($('nVal').textContent = e.target.value));
+  $('n').onchange = e => { S.n = +e.target.value; full(); };
+  $('seed').onchange = e => { S.seed = Math.max(1, Math.round(+e.target.value) || 1); full(); };
+  $('newSeed').onclick = () => { S.seed = MLS.newSeed(); full(); };
+  $('d').addEventListener('input', e => { S.di = +e.target.value; refresh(); });
+  MLS.$$('[data-q]').forEach(b => (b.onclick = () => { S.di = +b.dataset.q; refresh(); }));
+
+  MLS.registerHelp({
+    data: { title: 'Data', html: 'Points spread uniformly in a cube with up to 1000 dimensions (inputs between 0 and 1). Lower dimensions use the first inputs of the same points. For the KNN test: two groups that differ in 2 inputs, plus useless noise inputs.' },
+    n: { title: 'Observations', html: 'How many points are spread in the cube.' },
+    seed: { title: 'Random seed', html: 'Fixes the random numbers: the same seed gives the same points.' },
+    dims: { title: 'Dimensions', html: 'The number of inputs. Each one adds a coordinate to every point and a term to every distance.' },
+    d: { title: 'Number of dimensions', html: 'Move through 1, 2, 3, 5, 10, 20, 50, 100, 200, 500 and 1000 dimensions.' },
+    st_ratio: { title: 'Nearest ÷ farthest', html: 'The distance from the query point to its nearest neighbour divided by the distance to the farthest point. Near 0: neighbours are truly near. Near 1: all points are about equally far.' },
+    st_contrast: { title: 'Relative contrast', html: 'How much farther the farthest point is than the nearest, relative to the nearest. It shrinks towards 0 as dimensions grow.' },
+    st_edge: { title: 'Edge holding 10%', html: 'For data spread evenly, a cube that holds 10% of the points must have this edge, as a share of each input\'s range: 0.1 raised to the power 1/d.' },
+    st_knn: { title: 'KNN accuracy', html: 'Test-set accuracy of k-nearest neighbours (k = 5, standardized inputs) with the 2 useful inputs and the useless ones.' },
+    fighist: { title: 'Distances', html: 'Histogram of the distances from the query point to all other points, each divided by the largest.' },
+    figmap: { title: 'Nearest neighbours', html: 'All points in the first 2 inputs, with the query point and its 5 nearest neighbours computed in all dimensions.' },
+    figratio: { title: 'Ratio by dimensions', html: 'Nearest ÷ farthest distance, averaged over 20 query points of this data set, for every number of dimensions.' },
+    figedge: { title: 'Edge length', html: 'For 1, 2, 3, 10 and the current number of dimensions: the edge of the sub-cube needed to capture a given share of evenly spread data.' },
+    figknn: { title: 'KNN and useless inputs', html: 'Test-set accuracy of KNN as useless inputs are added to the 2 useful ones.' }
+  });
+
+  function setup(o) { Object.assign(S, o); MLS.pickTab('sim'); full(); window.scrollTo({ top: 0, behavior: 'smooth' }); }
+  const ch = MLS.challenges($('challenges'), META.id, [
+    { type: 'predict', q: 'As the number of dimensions grows, the nearest ÷ farthest distance ratio...',
+      options: ['climbs towards 1: all points become about equally far', 'falls towards 0', 'stays the same'], answer: 0,
+      explain: 'Each distance adds up many small differences, one per input, and such sums are all close to their average. The nearest point is then barely nearer than the farthest.',
+      tryIt: () => setup({ di: 7 }) },
+    { type: 'task', q: 'Find a number of dimensions where the nearest point is at least 70% as far as the farthest one.', hint: 'Raise the number of dimensions and watch the first tile.',
+      check: () => R && R.lo / R.hi >= 0.7 },
+    { type: 'predict', q: 'In 10 dimensions, a cube that holds 10% of evenly spread data must span about...',
+      options: ['10% of each input\'s range', 'about 80% of each input\'s range', '1% of each input\'s range'], answer: 1,
+      explain: '0.1 to the power 1/10 is about 0.79. A "neighbourhood" with 10% of the data covers most of every input: it is no longer local.',
+      tryIt: () => setup({ di: 4 }) },
+    { type: 'predict', q: 'KNN on two groups that differ in 2 inputs. You add 100 useless inputs. The test accuracy...',
+      options: ['rises, because there is more information', 'stays the same', 'falls towards guessing'], answer: 2,
+      explain: 'The useless inputs add noise to every distance and drown the 2 useful ones: the nearest neighbours become almost random.',
+      tryIt: () => setup({ di: 7 }) },
+    { type: 'task', q: 'Raise the dimensions until the KNN test accuracy falls below 70%.', hint: 'Watch the last tile and the KNN chart.',
+      check: () => R && dim() >= 2 && R.c.acc < 0.7 },
+    { type: 'predict', q: 'Which remedy helps against the curse of dimensionality?',
+      options: ['Add more inputs', 'Use a smaller k in KNN', 'Select the useful inputs, reduce dimensions (e.g. PCA) or get more data'], answer: 2,
+      explain: 'Fewer, better inputs and more observations make neighbourhoods meaningful again. Models that pick inputs one at a time (trees) or shrink coefficients (lasso) also suffer less.',
+      tryIt: () => setup({ di: 1 }) }
+  ]);
+  const STATE = {
+    get: () => ({ n: S.n, seed: S.seed, di: S.di }),
+    set: o => {
+      if (Number.isFinite(o.n)) S.n = Math.max(100, Math.min(1000, o.n));
+      if (Number.isFinite(o.seed)) S.seed = o.seed;
+      if (Number.isFinite(o.di)) S.di = Math.max(0, Math.min(10, o.di));
+    }
+  };
+  const start = full;
+  MLS.moduleBar({ id: META.id, title: META.title, section: META.sectionTitle, level: META.level },
+    { tabs: [{ id: 'sim', label: 'Simulation' }, { id: 'lesson', label: 'Lesson' }, { id: 'challenges', label: 'Challenges' }, { id: 'real', label: 'On real data' }] });
+  MLS.state.init({ id: META.id, get: STATE.get, set: STATE.set });
+  const fc = $('fourCast'); if (fc) fc.href = MLS.APP.fourCastUrl;
+  window.__mls = { S, get R() { return R; }, get D() { return D; } };
+  document.addEventListener('mls:theme', () => refresh());
+  start();
+})();
+</script>
+</body>
+</html>

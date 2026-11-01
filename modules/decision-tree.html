@@ -1,0 +1,359 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Decision Tree | 4MLSim</title>
+  <meta name="theme-color" content="#1B2340">
+  <link rel="manifest" href="../manifest.json">
+  <link rel="icon" type="image/svg+xml" href="../assets/img/icon.svg">
+  <link rel="apple-touch-icon" href="../assets/img/apple-touch-icon.png">
+  <link rel="stylesheet" href="../assets/vendor/temml.css">
+  <link rel="stylesheet" href="../assets/css/4mlsim.css">
+  <script src="../assets/vendor/temml.min.js"></script>
+  <script src="../assets/js/core.js"></script>
+  <script src="../assets/js/stats.js"></script>
+  <script src="../assets/js/plot.js"></script>
+  <script src="../assets/js/modules.js"></script>
+  <script src="../assets/js/core-ml.js"></script>
+  <script src="../assets/js/classify-ui.js"></script>
+  <script src="../assets/js/trees-ui.js"></script>
+</head>
+<body>
+<div class="page">
+  <header id="mlsHeader" data-variant="compact"></header>
+  <div class="mod-top" id="mlsTop"><div id="mlsModBar"></div><div id="mlsTabs"></div></div>
+
+  <div class="intro-box" id="mlsIntro">
+    <h3>What this module shows</h3>
+    <div class="intro-cols">
+      <div>
+        <p>A <b>decision tree</b> decides in steps, like we do every day ("Will I accept the job? Is the salary above 40,000? Is the commute under 30 minutes?"). Each split asks one yes/no question about one input.</p>
+        <p>The tree is grown <b>split by split</b>: at each step it tries every possible question and keeps the one that makes the groups <b>purest</b> (lowest Gini impurity or entropy; for numbers, the smallest squared error). It works for classification and for regression.</p>
+      </div>
+      <div>
+        <p><b>How to use it</b></p>
+        <ol>
+          <li>Choose classification or regression, and the data.</li>
+          <li>Press <b>Reset</b>, then <b>Step</b>: one split at a time. The next node to split is outlined in orange.</li>
+          <li>Read "Choosing the question": the impurity for every possible threshold.</li>
+          <li>Raise the maximum depth and compare training and test results.</li>
+        </ol>
+      </div>
+    </div>
+  </div>
+
+  <!-- ===================== SIMULATION ===================== -->
+  <section data-panel="sim">
+    <div class="mod-grid">
+      <aside class="side" aria-label="Controls">
+        <div class="card">
+          <div class="card-head"><h3>1. Task and data<button type="button" class="help" data-help="task">?</button></h3></div>
+          <div class="seg full" role="group" aria-label="Task"><button type="button" data-task="class">Classification</button><button type="button" data-task="reg">Regression</button></div>
+          <select id="ds" aria-label="Data set" style="margin-top:10px"></select>
+          <div class="field-row"><label for="n">Observations<button type="button" class="help" data-help="n">?</button></label><output id="nVal"></output></div>
+          <input type="range" id="n" min="40" max="400" step="20" value="120">
+          <div class="field-row"><label for="seed">Random seed<button type="button" class="help" data-help="seed">?</button></label></div>
+          <div class="inline-inputs"><input type="number" id="seed" min="1" max="99999" step="1" value="1" aria-label="Random seed"><button type="button" class="btn-ghost btn-icon" id="newSeed" title="New random data" style="flex:0 0 auto">&#127922;</button></div>
+        </div>
+        <div class="card">
+          <div class="card-head"><h3>2. The tree<button type="button" class="help" data-help="tree">?</button></h3></div>
+          <div id="critRow">
+            <div class="field-row"><label>Impurity measure<button type="button" class="help" data-help="crit">?</button></label></div>
+            <div class="seg full" role="group" aria-label="Impurity"><button type="button" data-crit="gini">Gini</button><button type="button" data-crit="entropy">Entropy</button></div>
+          </div>
+          <p class="note" id="critNote" hidden>Regression trees choose the split with the smallest squared error.</p>
+          <div class="field-row"><label for="depth">Maximum depth<button type="button" class="help" data-help="depth">?</button></label><output id="depthVal"></output></div>
+          <input type="range" id="depth" min="1" max="8" step="1" value="3">
+          <div class="field-row"><label for="minLeaf">Minimum observations per leaf<button type="button" class="help" data-help="minleaf">?</button></label><output id="minLeafVal"></output></div>
+          <input type="range" id="minLeaf" min="1" max="20" step="1" value="1">
+        </div>
+        <div class="card">
+          <div class="card-head"><h3>3. Grow it split by split<button type="button" class="help" data-help="grow">?</button></h3></div>
+          <div id="stepper"></div>
+          <p class="note" id="stepNote"></p>
+        </div>
+      </aside>
+
+      <main class="main">
+        <div class="story" id="story"></div>
+        <div class="stat-grid" id="stats" style="margin-top:12px"></div>
+        <div id="statusLine" class="status-line" style="margin:10px 0"></div>
+        <div class="fig-grid">
+          <div id="figMap" class="fig-wide"></div>
+          <div id="figTree" class="fig-wide"></div>
+          <div id="figQ"></div>
+          <div class="card" id="rulesCard"></div>
+        </div>
+      </main>
+    </div>
+  </section>
+
+  <!-- ===================== LESSON ===================== -->
+  <section data-panel="lesson" class="card lesson" hidden>
+    <div id="mlsMathCtl"></div>
+    <p class="lvl-only-intuition note" style="margin-bottom:8px">Showing the intuition only. Choose <b>Formulas</b> or <b>Deep dive</b> above to add the mathematics.</p>
+
+    <h4>Decisions in steps</h4>
+    <p>Decision trees are easy to understand: we use the same logic every day. A tree starts with all the training observations at the top (the <b>root</b>). It asks one yes/no question about one input, for example "Is the diameter at most 3 cm?", and sends the observations left (yes) or right (no). Each group is split again, until the groups are pure or the tree reaches its maximum depth. The final groups are the <b>leaves</b>; a new observation follows the questions down to a leaf and gets its prediction: the most common class in the leaf (classification) or the average value (regression).</p>
+
+    <h4>Choosing the question: impurity</h4>
+    <p>For every input and every possible threshold (halfway between two neighbouring values), the tree computes how mixed the two resulting groups would be, and keeps the question with the purest groups. <b>Gini impurity</b> measures how "messy" a group is: imagine a box of balls of different colours; pick two at random, with replacement. Gini is the probability that they have different colours. A box of one colour has Gini 0; half red and half blue gives 0.5. <b>Entropy</b> is a similar measure from information theory: 0 for a pure group, 1 bit for a 50/50 mix of two classes. Both usually choose the same questions.</p>
+    <div class="math-block lvl-math"><div class="mb-title">Impurity of a group with class shares p<sub>k</sub>, and the split score</div>
+      <div class="tex-block">\text{Gini} = 1 - \sum_k p_k^2, \qquad \text{Entropy} = -\sum_k p_k \log_2 p_k</div>
+      <div class="tex-block">\text{impurity after the split} = \frac{n_L}{n}\, I_L + \frac{n_R}{n}\, I_R \qquad \text{(choose the smallest)}</div>
+      <p class="note">Regression trees use the squared error: I = average of (y − group mean)². The prediction of a leaf is the group mean.</p>
+    </div>
+
+    <h4>How deep?</h4>
+    <ul>
+      <li>A deep tree keeps splitting until almost every leaf is pure: it fits the training set very well, but the last splits follow noise. The test set shows the <b>overfitting</b>.</li>
+      <li>A shallow tree (depth 1 or 2) may miss real patterns (underfitting).</li>
+      <li>Depth and the minimum number of observations per leaf are chosen by cross-validation on the training set; pruning cuts back splits that do not help.</li>
+    </ul>
+
+    <h4>Strengths and weaknesses</h4>
+    <ul>
+      <li><b>Strengths</b>: simple to build, use and interpret; no scaling needed; handles numbers and categories; the rules can be read and audited (credit, medicine, the electricity theft example).</li>
+      <li><b>Weaknesses</b>: unstable (a small change in the data can give a very different tree) and inaccurate on their own. Random forests and boosting combine many trees to fix this.</li>
+      <li>The boundaries are always made of straight lines parallel to the axes: boxes.</li>
+    </ul>
+
+    <div class="math-block deep lvl-deep"><div class="mb-title">Deep dive</div>
+      <p><b>CART.</b> The algorithm here is CART (Breiman, Friedman, Olshen and Stone, 1984), as in scikit-learn: binary splits, thresholds at midpoints, greedy choice of the best split at each node. Greedy means the best question now, not the best tree overall: finding the optimal tree is computationally infeasible.</p>
+      <p><b>Information gain.</b> With entropy, the drop in impurity is the information gain of the question. Gini and entropy differ in only a few percent of splits in practice.</p>
+      <p><b>Cost-complexity pruning.</b> Grow a large tree, then remove the splits whose reduction in error is smallest relative to the number of leaves they add, choosing the penalty α by cross-validation.</p>
+      <p class="note">References: Breiman, Friedman, Olshen and Stone (1984), <i>Classification and Regression Trees</i>; Quinlan (1986), "Induction of decision trees", <i>Machine Learning</i> 1; Hastie, Tibshirani and Friedman (2009), <i>The Elements of Statistical Learning</i>, §9.2.</p>
+    </div>
+  </section>
+
+  <!-- ===================== CHALLENGES ===================== -->
+  <section data-panel="challenges" class="card" hidden>
+    <div class="card-head"><h3>Challenges</h3><span class="card-sub">Answer the "predict first" questions before testing them in the Simulation tab.</span></div>
+    <div id="challenges"></div>
+  </section>
+
+  <!-- ===================== REAL DATA ===================== -->
+  <section data-panel="real" class="card lesson" hidden>
+    <h4>From the simulation to real data</h4>
+    <ul>
+      <li>Credit and lending decisions, fraud and electricity theft detection, medical triage: wherever the rules must be read and explained, a small tree is attractive.</li>
+      <li>Choose the depth (or the minimum leaf size) by cross-validation on the training set, then test once.</li>
+      <li>For accuracy, use many trees: random forests and gradient boosting (next modules).</li>
+    </ul>
+    <div class="crosslink"><span>&#10140;</span><span><a id="fourCast" target="_blank" rel="noopener"><b>4Cast Lab</b></a> grows decision trees on your own data and shows the rules and the variable importance.</span></div>
+  </section>
+
+  <footer id="mlsFooter"></footer>
+</div>
+
+<script>
+(function () {
+  'use strict';
+  const MLS = window.MLS, ML = MLS.ml, CL = MLS.cls, TR = MLS.trees;
+  const META = MLS.moduleMeta('decision-tree');
+  const $ = id => document.getElementById(id);
+  const F = MLS.fmt, pct = CL.pct;
+  const LISTS = { class: ['fruits', 'banks', 'circles'], reg: ['kwh', 'power'] };
+
+  const S = { task: 'class', data: { class: 'fruits', reg: 'kwh' }, n: {}, seed: 1, crit: 'gini', depth: 3, minLeaf: 1, step: -1 };
+  let D = null, R = null;
+  const dkey = () => S.data[S.task], nObs = () => S.n[dkey()] || TR.DATA[dkey()].n;
+
+  function compute() {
+    D = TR.make(dkey(), S.seed, nObs());
+    const X = D.train.map(p => p.x), y = D.train.map(p => p.y);
+    R = ML.cart(X, y, X.map((_, i) => i), { K: D.task === 'class' ? D.K : 0, crit: D.task === 'class' ? S.crit : 'mse', maxDepth: S.depth, minLeaf: S.minLeaf });
+    R.X = X; R.y = y;
+    if (S.step > R.order.length) S.step = -1;
+  }
+  const upto = () => (S.step < 0 ? R.order.length : S.step);
+  const f = x => ML.cartLeaf(R.root, x, upto()).value;
+  const nextNode = () => R.order[upto()] || null;
+  /* box of a node: the input ranges that lead to it */
+  function bounds(target) {
+    const b = [D.dom.x.slice(), D.task === 'class' ? D.dom.y.slice() : [-Infinity, Infinity]];
+    let found = null;
+    (function walk(nd, bb) { if (nd === target) { found = bb; return; } if (!nd.left) return;
+      const l = bb.map(v => v.slice()), r = bb.map(v => v.slice()); l[nd.feat][1] = Math.min(l[nd.feat][1], nd.thr); r[nd.feat][0] = Math.max(r[nd.feat][0], nd.thr);
+      walk(nd.left, l); walk(nd.right, r); })(R.root, b);
+    return found;
+  }
+  const leavesNow = () => { const out = []; (function w(nd) { if (nd.left && nd.split < upto()) { w(nd.left); w(nd.right); } else out.push(nd); })(R.root); return out; };
+  const nm = j => D.short[j];
+  const predText = nd => (D.task === 'class' ? D.classes[TR.argmax(nd.value)] : F(nd.value, 2));
+  const impName = () => (D.task === 'class' ? (S.crit === 'gini' ? 'Gini' : 'entropy') : 'sq. error');
+
+  function updateText() {
+    const sTr = TR.score(D, D.train, f), sTe = TR.score(D, D.test, f), lv = leavesNow(), dep = Math.max(...lv.map(l => l.depth)), u = upto(), N = R.order.length;
+    $('story').innerHTML = '<h3>Data: ' + MLS.esc(D.label) + '</h3><p>' + ML.DATA[D.key].note + ' <b>' + D.train.length + ' ' + D.unit + ' in the training set (filled), ' + D.test.length + ' in the test set (rings).</b> The tree is grown on the training set.</p>';
+    const card = MLS.statCard, sn = TR.scoreName(D), unit = D.task === 'reg' ? TR.unitY(D) + ', ' : '';
+    $('stats').innerHTML =
+      card(sn + ', training set', TR.fmtScore(D, sTr), unit + D.train.length + ' ' + D.unit, '', 'st_score') +
+      card(sn + ', test set', TR.fmtScore(D, sTe), unit + D.test.length + ' new ' + D.unit, '', 'st_score') +
+      card('Leaves', String(lv.length), u + ' split' + (u === 1 ? '' : 's') + ' of ' + N, '', 'st_leaves') +
+      card('Depth', String(dep), 'maximum allowed ' + S.depth, '', 'depth');
+    const gap = D.task === 'class' ? sTr - sTe : (sTe - sTr) / Math.max(sTr, 1e-9);
+    let msg, cls = 'status-line';
+    if (u === 0) msg = 'Step 0: one leaf with all ' + D.train.length + ' training ' + D.unit + '; everything gets the same prediction (' + predText(R.root) + '). Press Step to make the first split.';
+    else if (gap > (D.task === 'class' ? 0.08 : 0.3)) { msg = 'The tree fits the training set much better than the test set (' + TR.fmtScore(D, sTr) + ' vs ' + TR.fmtScore(D, sTe) + '): the last splits follow noise (overfitting). Try a smaller depth or a larger minimum leaf.'; cls += ' bad'; }
+    else { msg = u + ' split' + (u === 1 ? '' : 's') + ', ' + lv.length + ' leaves. ' + sn + ': training ' + TR.fmtScore(D, sTr) + ', test ' + TR.fmtScore(D, sTe) + '.' + (u < N ? ' Next: the node outlined in orange.' : ''); cls += ' ok'; }
+    $('statusLine').textContent = msg; $('statusLine').className = cls;
+    $('stepNote').innerHTML = 'Split <b>' + u + '</b> of ' + N + '.' + (nextNode() ? ' Next question: <b>' + nm(nextNode().feat) + ' &le; ' + F(nextNode().thr, 2) + '?</b>' : ' The tree is complete.');
+  }
+
+  /* chart of the data, the boxes and the next node */
+  const figMap = MLS.figure($('figMap'), { title: 'The data and the tree\'s predictions', help: 'figmap', file: 'decision-tree-map',
+    plot: { aspect: 0.55, margin: { l: 66, b: 50 }, x: { label: () => D.names[0] }, y: { label: () => D.names[1] } },
+    data: () => ({ cols: D.task === 'class' ? [D.names[0], D.names[1], 'Actual', 'Predicted', 'Set'] : [D.names[0], D.names[1], 'Forecast', 'Set'], rows: D.pts.map(p => (D.task === 'class' ? [p.x[0], p.x[1], D.classes[p.y], D.classes[TR.argmax(f(p.x))], p.te ? 'test' : 'training'] : [p.x[0], p.y, f(p.x), p.te ? 'test' : 'training'])) }) });
+  function drawMap() {
+    const ink = MLS.color('chart-ink'), or = MLS.color('series-2'), nx = nextNode();
+    TR.drawData(figMap.plot, D, f, {
+      after: P => {
+        const box = (b, o) => { const y0 = D.task === 'class' ? b[1][0] : D.dom.y[0], y1 = D.task === 'class' ? b[1][1] : D.dom.y[1]; P.rect(b[0][0], y0, b[0][1], y1, Object.assign({ fill: 'none' }, o)); };
+        if (D.task === 'class') leavesNow().forEach(l => box(bounds(l), { stroke: ink, width: 1, opacity: 0.6 }));
+        else leavesNow().forEach(l => { const b = bounds(l); if (b[0][0] > D.dom.x[0]) P.vline(b[0][0], { color: ink, width: 0.8, dash: '2 3' }); });
+        if (nx) box(bounds(nx), { stroke: or, width: 3 });
+      }
+    });
+    figMap.legend(TR.legendData(D, D.task === 'class' ? [{ label: 'Leaf boxes', color: ink, line: true }, { label: 'Next node to split', color: or, line: true }] : [{ label: 'Forecast: the average of each leaf', color: or, line: true }, { label: 'Next node to split', color: or, line: true }]));
+    figMap.caption(D.task === 'class' ? 'Each box is a leaf: its colour is the class the tree predicts there (paler = a more mixed leaf). The boundaries are always parallel to the axes.' : 'The forecast is a step function: each leaf predicts the average of its training ' + D.unit + '. Dotted lines: the splits.');
+  }
+  /* the tree diagram */
+  const figTree = MLS.figure($('figTree'), { title: 'The tree', help: 'figtree', file: 'decision-tree-diagram',
+    plot: { height: w => (R ? TR.treeHeight(Math.min(4, TR.shownDepth(R.root, { upto: upto(), maxDepth: 4 })))(w) : 200), margin: { l: 8, r: 8, t: 10, b: 10 }, x: { ticks: false }, y: { ticks: false } } });
+  function drawTree() {
+    const nx = nextNode(), ink = MLS.color('chart-ink');
+    const r = TR.drawTree(figTree.plot, R.root, { upto: upto(), maxDepth: 4, highlight: nd => nd === nx,
+      lines: (nd, open) => (open ? [nm(nd.feat) + ' ≤ ' + F(nd.thr, 2) + '?', impName() + ' ' + F(nd.imp, 3), 'n = ' + nd.n] : [predText(nd), impName() + ' ' + F(nd.imp, 3), 'n = ' + nd.n]),
+      fill: (nd, open) => (open ? MLS.color('surface') : D.task === 'class' ? MLS.rgba(CL.color(TR.argmax(nd.value)), 0.22) : MLS.rgba(MLS.color('series-2'), 0.14)),
+      tip: (nd, open) => (open ? 'Question: <b>' + D.names[nd.feat] + ' ≤ ' + F(nd.thr, 2) + '?</b><br>' : '<b>Leaf</b>: predicts ' + predText(nd) + '<br>') + nd.n + ' training ' + D.unit + (D.task === 'class' ? '<br>' + D.classes.map((c, k) => MLS.esc(c) + ' ' + nd.counts[k]).join(', ') : '<br>average ' + F(nd.value, 2)) + '<br>' + impName() + ' ' + F(nd.imp, 4) });
+    figTree.caption('Read from the top: each box asks a question; "yes" goes left, "no" right. Bottom boxes are leaves with their prediction. Each box shows its ' + impName() + ' and the number of training ' + D.unit + '.' + (TR.shownDepth(R.root, { upto: upto(), maxDepth: 99 }) > 4 ? ' Only the first 4 levels are drawn; the rules below list every leaf.' : ''));
+  }
+  /* choosing the question for the next node (or the last split) */
+  const figQ = MLS.figure($('figQ'), { title: 'Choosing the question', help: 'figq', file: 'decision-tree-question',
+    plot: { aspect: 0.8, margin: { l: 62, b: 50 }, x: { label: () => (D.task === 'class' ? 'Threshold: from the smallest to the largest value of each input' : 'Threshold: ' + D.names[0]), fmt: v => (D.task === 'class' ? '' : F(v, 1)) }, y: { label: () => (D.task === 'class' ? (S.crit === 'gini' ? 'Gini' : 'Entropy') + ' after the split' : 'Squared error after the split') } } });
+  function drawQ() {
+    const nd = nextNode() || R.order[R.order.length - 1];
+    const host = $('figQ'); host.hidden = !nd; if (!nd) return;
+    const P = figQ.plot, curves = D.names.slice(0, D.task === 'class' ? 2 : 1).map((_, j) => ML.splitCurve(R.X, R.y, nd.rows, j, D.task === 'class' ? D.K : 0, S.crit));
+    const all = curves.flat(), xs = all.map(p => p[0]), ys = all.map(p => p[1]).concat([nd.imp]);
+    if (!all.length) { host.hidden = true; return; }
+    /* two inputs with different units: show each on its own scale, mapped to 0..1 */
+    const two = curves.length === 2, rng = curves.map(c => c.length ? [Math.min(...c.map(p => p[0])), Math.max(...c.map(p => p[0]))] : [0, 1]);
+    const tx = (j, v) => (two ? (v - rng[j][0]) / ((rng[j][1] - rng[j][0]) || 1) : v);
+    P.setX(two ? -0.02 : Math.min(...xs), two ? 1.02 : Math.max(...xs)); P.setY(0, Math.max(...ys) * 1.1);
+    const cols = [MLS.color('series-1'), MLS.color('series-7')];
+    P.draw(P => {
+      P.hline(nd.imp, { color: MLS.color('chart-muted'), dash: '5 4', width: 1.3 }); P.text(P.xd[1], nd.imp, 'before the split: ' + F(nd.imp, 3), { anchor: 'end', dy: -5, size: 11.5, color: MLS.color('chart-muted') });
+      curves.forEach((c, j) => { const pts = c.map(p => [tx(j, p[0]), p[1]]); P.line(pts, { color: cols[j], width: 2 }); P.points(c.map(p => ({ x: tx(j, p[0]), y: p[1], t: p[0] })), { color: cols[j], r: 2.6, ring: false, tip: d => D.names[j] + ' ≤ ' + F(d.t, 2) + '?<br>' + (D.task === 'class' ? (S.crit === 'gini' ? 'Gini' : 'Entropy') : 'Squared error') + ' after the split: <b>' + F(d.y, 4) + '</b>' }); });
+      const bj = nd.feat, bx = tx(bj, nd.thr), by = (nd.left.n * nd.left.imp + nd.right.n * nd.right.imp) / nd.n;
+      P.points([{ x: bx, y: by }], { color: MLS.color('series-2'), shape: 'star', r: 9, ringColor: MLS.color('chart-ink'), tip: () => 'Best question: <b>' + D.names[bj] + ' ≤ ' + F(nd.thr, 2) + '?</b><br>after the split ' + F(by, 4) });
+    });
+    figQ.legend(curves.map((c, j) => ({ label: D.names[j] + (two ? ' (from ' + F(rng[j][0], 1) + ' to ' + F(rng[j][1], 1) + ')' : ''), color: cols[j], line: true })).concat([{ label: 'Best question', color: MLS.color('series-2'), shape: 'star' }, { label: 'Before the split', color: MLS.color('chart-muted'), line: true, dash: '5 4' }]));
+    figQ.caption((nextNode() ? 'For the next node (outlined in orange, ' + nd.n + ' training ' + D.unit + ')' : 'For the last split made (' + nd.n + ' training ' + D.unit + ')') + ': every possible threshold of every input, and the impurity the two groups would have. The tree keeps the lowest point (the star).' + (two ? ' Each input runs over its own range from left to right.' : ''));
+  }
+  function drawRules() {
+    const rules = [];
+    (function walk(nd, cond) {
+      if (!(nd.left && nd.split < upto())) { rules.push('<li>' + (cond.length ? 'If ' + cond.join(' and ') : 'Always') + ' &rarr; <b>' + MLS.esc(predText(nd)) + '</b> (' + nd.n + ' training ' + D.unit + (D.task === 'class' ? ', ' + nd.counts[TR.argmax(nd.value)] + ' of them ' + MLS.esc(predText(nd)) : '') + ')</li>'); return; }
+      walk(nd.left, cond.concat([MLS.esc(D.names[nd.feat]) + ' &le; ' + F(nd.thr, 2)])); walk(nd.right, cond.concat([MLS.esc(D.names[nd.feat]) + ' &gt; ' + F(nd.thr, 2)]));
+    })(R.root, []);
+    $('rulesCard').innerHTML = '<div class="card-head"><h3>The rules of the tree' + MLS.helpBtn('rules') + '</h3><span class="card-sub">' + rules.length + ' leaves</span></div><ol style="font-size:13.5px;line-height:1.55;margin:0;padding-left:20px">' + rules.join('') + '</ol>';
+  }
+
+  /* controls */
+  const stepper = MLS.stepper($('stepper'), { speed: 2, runMax: 500,
+    step: () => { const u = upto(); if (u >= R.order.length) return false; S.step = u + 1; return true; },
+    reset: () => { S.step = 0; }, after: () => refresh(false) });
+  function syncUI() {
+    MLS.$$('[data-task]').forEach(b => b.setAttribute('aria-pressed', String(b.dataset.task === S.task)));
+    $('ds').innerHTML = LISTS[S.task].map(k => '<option value="' + k + '"' + (k === dkey() ? ' selected' : '') + '>' + TR.DATA[k].label + '</option>').join('');
+    $('n').value = nObs(); $('nVal').textContent = nObs(); $('seed').value = S.seed;
+    MLS.$$('[data-crit]').forEach(b => b.setAttribute('aria-pressed', String(b.dataset.crit === S.crit)));
+    $('critRow').hidden = S.task === 'reg'; $('critNote').hidden = S.task !== 'reg';
+    $('depth').value = S.depth; $('depthVal').textContent = S.depth; $('minLeaf').value = S.minLeaf; $('minLeafVal').textContent = S.minLeaf;
+  }
+  function refresh(re) { if (re !== false) compute(); syncUI(); updateText(); drawMap(); drawTree(); drawQ(); drawRules(); figMap.refreshTable(); if (ch) ch.check(); MLS.state.save(); }
+  const full = () => { S.step = -1; refresh(); };
+  MLS.$$('[data-task]').forEach(b => (b.onclick = () => { S.task = b.dataset.task; full(); }));
+  $('ds').onchange = e => { S.data[S.task] = e.target.value; full(); };
+  $('n').addEventListener('input', e => ($('nVal').textContent = e.target.value));
+  $('n').onchange = e => { S.n[dkey()] = +e.target.value; full(); };
+  $('seed').onchange = e => { S.seed = Math.max(1, Math.round(+e.target.value) || 1); full(); };
+  $('newSeed').onclick = () => { S.seed = MLS.newSeed(); full(); };
+  MLS.$$('[data-crit]').forEach(b => (b.onclick = () => { S.crit = b.dataset.crit; full(); }));
+  $('depth').addEventListener('input', e => ($('depthVal').textContent = e.target.value));
+  $('depth').onchange = e => { S.depth = +e.target.value; full(); };
+  $('minLeaf').addEventListener('input', e => ($('minLeafVal').textContent = e.target.value));
+  $('minLeaf').onchange = e => { S.minLeaf = +e.target.value; full(); };
+
+  MLS.registerHelp({
+    task: { title: 'Task and data', html: '<b>Classification</b>: predict a class (fruits from diameter and height, as in the lecture; failed or healthy banks; circles). <b>Regression</b>: predict a number (daily electricity use from the temperature; the electricity price from the gas price). Simulated data; 80% training set, 20% test set.' },
+    n: { title: 'Observations', html: 'How many observations are simulated; 80% are used to grow the tree.' },
+    tree: { title: 'The tree', html: 'The settings that decide how far the tree grows. The tree is grown on the training set only.' },
+    crit: { title: 'Impurity measure', html: '<b>Gini</b>: the probability that two observations picked at random from the group have different classes (0 = pure). <b>Entropy</b>: −Σ p log₂ p, from information theory (0 = pure; 1 = a 50/50 mix of two classes). Both usually pick the same questions.' },
+    depth: { title: 'Maximum depth', html: 'The largest number of questions on the way from the root to a leaf. Deeper trees fit the training set better and overfit more.' },
+    minleaf: { title: 'Minimum observations per leaf', html: 'A split is allowed only if both new groups keep at least this many training observations. Larger values give simpler, more stable trees.' },
+    grow: { title: 'Grow it split by split', html: '<b>Reset</b>: one leaf with all observations. <b>Step</b>: make the next split (level by level, from left to right). <b>Play</b>: one split per half second. <b>End</b>: the full tree. The final tree does not depend on the order in which the splits are shown.' },
+    st_score: { title: 'Accuracy or RMSE', html: 'Classification: the share of observations given the correct class. Regression: RMSE, the typical forecast error in the units of the target. Training set: data the tree was grown on. Test set: new data.' },
+    st_leaves: { title: 'Leaves', html: 'The number of final groups. Each split turns one leaf into two.' },
+    figmap: { title: 'The data and the tree\'s predictions', html: 'Classification: the boxes are the leaves, coloured by the class predicted there; the orange box is the node that will be split next. Regression: the forecast line is a step function (the average of each leaf).' },
+    figtree: { title: 'The tree', html: 'Each box shows the question (or, for a leaf, the prediction), the impurity and the number of training observations. Hover over a box for the class counts. The orange box will be split next.' },
+    figq: { title: 'Choosing the question', html: 'For the node outlined in orange: the impurity of the two groups (weighted by their sizes) for every possible threshold of every input. The tree takes the lowest point: the star. The dashed line is the impurity before the split.' },
+    rules: { title: 'The rules of the tree', html: 'Every leaf written as one rule: the answers on the way from the root, and the prediction.' }
+  });
+
+  let grew = false;
+  function setup(o) { const s = o.step; delete o.step; Object.assign(S, o); MLS.pickTab('sim'); full(); if (s !== undefined) { S.step = s; refresh(false); } window.scrollTo({ top: 0, behavior: 'smooth' }); }
+  const ch = MLS.challenges($('challenges'), META.id, [
+    { type: 'predict', q: 'A group has 50% apples and 50% pears. Its Gini impurity is...',
+      options: ['0', '0.5', '1'], answer: 1,
+      explain: 'Gini = 1 − (0.5² + 0.5²) = 0.5. Pick two fruits at random (with replacement): half the time they differ. A pure group has Gini 0.',
+      tryIt: () => setup({ task: 'class', data: Object.assign(S.data, { class: 'fruits' }), step: 0 }) },
+    { type: 'predict', q: 'Fruits: which question will the tree ask first?',
+      options: ['A question on the diameter or the height that separates the bananas or the grapes, the most different fruits', 'Is the fruit an apple?', 'A random question'], answer: 0,
+      explain: 'The first split must separate the classes best overall. Bananas (tall and thin) and grapes (small) are far from the rest, so a single threshold isolates one of them almost perfectly. Apples and pears overlap and are split later.',
+      tryIt: () => setup({ task: 'class', data: Object.assign(S.data, { class: 'fruits' }), step: 1 }) },
+    { type: 'predict', q: 'You raise the maximum depth from 3 to 8 on the bank data. The training accuracy will...',
+      options: ['fall', 'stay the same', 'rise, while the test accuracy rises less or even falls (overfitting)'], answer: 2,
+      explain: 'Extra splits can always make the training groups purer, so the training accuracy rises. The last splits isolate single noisy banks, which does not help on new banks.',
+      tryIt: () => setup({ task: 'class', data: Object.assign(S.data, { class: 'banks' }), depth: 8 }) },
+    { type: 'task', q: 'Bank failures: find a depth where the training accuracy is at least 8 points above the test accuracy.', hint: 'Section 2: raise the maximum depth and keep the minimum leaf at 1.',
+      check: () => R && S.task === 'class' && dkey() === 'banks' && upto() === R.order.length && TR.score(D, D.train, f) - TR.score(D, D.test, f) >= 0.08 },
+    { type: 'predict', q: 'Regression tree on the temperature data. The forecast line will look like...',
+      options: ['a smooth curve', 'a staircase: each leaf forecasts one constant value, the average of its days', 'a straight line'], answer: 1,
+      explain: 'Each leaf predicts the mean of its training days, so the forecast jumps at each split and is flat in between. Deeper trees give more and smaller steps.',
+      tryIt: () => setup({ task: 'reg', data: Object.assign(S.data, { reg: 'kwh' }) }) },
+    { type: 'predict', q: 'Circles data (one class inside a ring of the other). What will the boundary of a deep tree look like?',
+      options: ['A smooth circle', 'A staircase of boxes approximating the circle', 'One straight diagonal line'], answer: 1,
+      explain: 'Every split is parallel to an axis, so a tree can only build boxes. With enough depth the boxes approximate the circle like pixels.',
+      tryIt: () => setup({ task: 'class', data: Object.assign(S.data, { class: 'circles' }), depth: 6 }) },
+    { type: 'task', q: 'Grow a tree split by split: press Reset, then Step until the tree is complete.', hint: 'Section 3.',
+      check: () => R && grew && upto() === R.order.length && R.order.length > 0 }
+  ]);
+  $('stepper').addEventListener('click', e => { const b = e.target.closest('button'); if (b && b.dataset.a === 'reset') grew = true; });
+
+  MLS.moduleBar({ id: META.id, title: META.title, section: META.sectionTitle, level: META.level },
+    { tabs: [{ id: 'sim', label: 'Simulation' }, { id: 'lesson', label: 'Lesson' }, { id: 'challenges', label: 'Challenges' }, { id: 'real', label: 'On real data' }] });
+  MLS.state.init({
+    id: META.id,
+    get: () => ({ task: S.task, data: S.data, n: S.n, seed: S.seed, crit: S.crit, depth: S.depth, minLeaf: S.minLeaf }),
+    set: o => {
+      if (LISTS[o.task]) S.task = o.task;
+      if (o.data) Object.keys(LISTS).forEach(t => { if (LISTS[t].includes(o.data[t])) S.data[t] = o.data[t]; });
+      if (o.n) Object.keys(o.n).forEach(k => { if (TR.DATA[k] && Number.isFinite(o.n[k])) S.n[k] = Math.max(40, Math.min(400, o.n[k])); });
+      if (Number.isFinite(o.seed)) S.seed = o.seed;
+      if (o.crit === 'gini' || o.crit === 'entropy') S.crit = o.crit;
+      if (Number.isFinite(o.depth)) S.depth = Math.max(1, Math.min(8, o.depth));
+      if (Number.isFinite(o.minLeaf)) S.minLeaf = Math.max(1, Math.min(20, o.minLeaf));
+    }
+  });
+  $('fourCast').href = MLS.APP.fourCastUrl;
+  window.__mls = { S, get R() { return R; }, get D() { return D; } };
+  document.addEventListener('mls:theme', () => refresh(false));
+  full();
+})();
+</script>
+</body>
+</html>

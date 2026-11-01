@@ -1,0 +1,646 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Time-Series Validation | 4MLSim</title>
+  <meta name="theme-color" content="#1B2340">
+  <link rel="manifest" href="../manifest.json">
+  <link rel="icon" type="image/svg+xml" href="../assets/img/icon.svg">
+  <link rel="apple-touch-icon" href="../assets/img/apple-touch-icon.png">
+  <link rel="stylesheet" href="../assets/vendor/temml.css">
+  <link rel="stylesheet" href="../assets/css/4mlsim.css">
+  <script src="../assets/vendor/temml.min.js"></script>
+  <script src="../assets/js/core.js"></script>
+  <script src="../assets/js/stats.js"></script>
+  <script src="../assets/js/plot.js"></script>
+  <script src="../assets/js/modules.js"></script>
+  <style>
+    .step-box { background:var(--card); border:2px solid var(--tint-border); border-radius:10px; padding:12px 16px; box-shadow:var(--shadow); min-height:150px; }
+    .step-box h3 { font-size:17px; margin:0 0 6px; color:var(--heading); }
+    .step-box ul { margin:0; padding-left:20px; font-size:14.5px; line-height:1.7; }
+    .step-box .tag { display:inline-block; font-size:12px; font-weight:800; padding:1px 8px; border-radius:999px; margin-left:6px; vertical-align:2px; color:#fff; }
+    #stats .stat { min-height:122px; }
+    .tbl td.num, .tbl th.num { text-align:right; }
+    .tbl tr.cur td { background:var(--tint); font-weight:700; }
+    .now-lines { font-size:14.5px; line-height:1.6; margin:2px 0 6px; }
+    .now-lines b { color:var(--heading); }
+    .meth-seg { display:grid; grid-template-columns:1fr; gap:4px; }
+    .meth-seg button { text-align:left; }
+    .done-mark { color:var(--success); font-weight:800; }
+  </style>
+</head>
+<body>
+<div class="page">
+  <header id="mlsHeader" data-variant="compact"></header>
+  <div class="mod-top" id="mlsTop"><div id="mlsModBar"></div><div id="mlsTabs"></div></div>
+
+  <div class="intro-box" id="mlsIntro">
+    <h3>What this module shows</h3>
+    <div class="intro-cols">
+      <div>
+        <p>A forecaster predicts monthly inflation with a machine learning model. Every month she stands at <b>now</b>: she knows the months up to now and nothing after. How do we check such a model on past data, without letting it see the future?</p>
+        <ul>
+          <li><b>Training set</b>: the first 80% of the months. Forecasts of these months give the <b>validation error</b>, used to choose the method.</li>
+          <li><b>Test (hold-out) set</b>: the last 20% of the months. Their forecasts give the <b>test error</b>, reported once at the end.</li>
+        </ul>
+        <p>Three methods, in this order: <b>1. time-series split</b> (blocks of months, like the usual cross-validation), <b>2. expanding window</b>, <b>3. rolling window</b>.</p>
+      </div>
+      <div>
+        <p><b>How to use it</b></p>
+        <ol>
+          <li>Start with method 1 and press <b>Next</b> (or <b>Play</b>) until the end.</li>
+          <li>Then choose method 2, walk to the end; then method 3.</li>
+          <li>After all three, the comparison table shows which method is chosen and its test error.</li>
+          <li>Switch the <b>regime change</b> on and off and compare again. At the bottom: why shuffled k-fold is wrong for a time series.</li>
+        </ol>
+      </div>
+    </div>
+  </div>
+
+  <!-- ===================== SIMULATION ===================== -->
+  <section data-panel="sim">
+    <div class="mod-grid">
+      <aside class="side" aria-label="Controls">
+        <div class="card">
+          <div class="card-head"><h3>1. Data<button type="button" class="help" data-help="data">?</button></h3></div>
+          <div class="field-row"><label for="T">Number of months<button type="button" class="help" data-help="T">?</button></label><output id="TVal"></output></div>
+          <input type="range" id="T" min="60" max="240" step="12" value="120">
+          <label class="check" style="margin-top:8px"><input type="checkbox" id="brk" checked> Regime change: inflation jumps by 3 points<button type="button" class="help" data-help="brk">?</button></label>
+          <div class="field-row"><label for="seed">Random seed<button type="button" class="help" data-help="seed">?</button></label></div>
+          <div class="inline-inputs"><input type="number" id="seed" min="1" max="99999" step="1" value="34" aria-label="Random seed"><button type="button" class="btn-ghost btn-icon" id="newSeed" title="New random series" style="flex:0 0 auto">&#127922;</button></div>
+          <p class="note" id="dataNote"></p>
+        </div>
+        <div class="card">
+          <div class="card-head"><h3>2. How to forecast<button type="button" class="help" data-help="model">?</button></h3></div>
+          <div class="field-row"><label>Evaluation method<button type="button" class="help" data-help="meth">?</button></label></div>
+          <div class="seg meth-seg" role="group" aria-label="Evaluation method">
+            <button type="button" data-meth="split">1. Time-series split</button>
+            <button type="button" data-meth="exp">2. Expanding window</button>
+            <button type="button" data-meth="roll">3. Rolling window</button>
+          </div>
+          <div class="field-row" style="margin-top:10px"><label for="h">Horizon h (months ahead)<button type="button" class="help" data-help="h">?</button></label><output id="hVal"></output></div>
+          <input type="range" id="h" min="1" max="12" step="1" value="1">
+          <div class="field-row" style="margin-top:8px"><label for="W" id="WLab">Initial window W (months)</label><output id="WVal"></output></div>
+          <input type="range" id="W" min="12" max="60" step="1" value="24">
+          <div id="BRow">
+            <div class="field-row" style="margin-top:8px"><label for="B">Block length (months)<button type="button" class="help" data-help="B">?</button></label><output id="BVal"></output></div>
+            <input type="range" id="B" min="3" max="24" step="1" value="10">
+          </div>
+          <p class="note" id="wNote"></p>
+        </div>
+        <div class="card">
+          <div class="card-head"><h3>3. Move through time<button type="button" class="help" data-help="steps">?</button></h3></div>
+          <div class="now-lines" id="nowLines"></div>
+          <label for="step" class="note" id="stepLab" style="display:block;margin-bottom:2px">Move now forward</label>
+          <input type="range" id="step" min="0" max="10" step="1" value="0">
+          <div class="btn-row fill" style="margin-top:6px">
+            <button type="button" class="btn-ghost btn-small" id="back">&#9664; Back</button>
+            <button type="button" class="btn-secondary btn-small" id="next">Next &#9654;</button>
+          </div>
+          <div class="btn-row fill" style="margin-top:6px">
+            <button type="button" class="btn-ghost btn-small" id="play">&#9654; Play</button>
+            <button type="button" class="btn-ghost btn-small" id="toStart">&#8634; Start</button>
+            <button type="button" class="btn-ghost btn-small" id="toEnd">End &#9197;</button>
+          </div>
+        </div>
+      </aside>
+
+      <main class="main">
+        <div class="step-box" id="stepBox"></div>
+        <div class="stat-grid" id="stats"></div>
+        <div class="fig-grid">
+          <div id="figSeries" class="fig-wide"></div>
+          <div class="res-card fig-wide" id="scoreCard">
+            <h3>Comparison of the three methods<button type="button" class="help" data-help="scores">?</button></h3>
+            <div id="scoreBody"></div>
+          </div>
+          <div id="figWin" class="fig-wide"></div>
+          <div id="figErr" class="fig-wide"></div>
+          <div id="figShufPic"></div>
+          <div id="figShuf"></div>
+        </div>
+      </main>
+    </div>
+  </section>
+
+  <!-- ===================== LESSON ===================== -->
+  <section data-panel="lesson" class="card lesson" hidden>
+    <div id="mlsMathCtl"></div>
+    <p class="lvl-only-intuition note" style="margin-bottom:8px">Showing the intuition only. Choose <b>Formulas</b> or <b>Deep dive</b> above to add the mathematics.</p>
+
+    <h4>Why time series need their own validation</h4>
+    <p>In ordinary cross-validation the observations can be shuffled into folds: their order does not matter. In a time series the order is the whole point. A forecaster knows the months up to today and nothing after. A validation that lets the model see later months measures a skill the forecaster will never have.</p>
+
+    <h4>The words we use</h4>
+    <ul>
+      <li><b>Now</b>: the month in which the forecast is made, the last month we know.</li>
+      <li><b>Input month</b>: the month whose data we use to forecast.</li>
+      <li><b>Target month</b>: the month we forecast, h months after the input month.</li>
+      <li><b>Horizon h</b>: how many months ahead we forecast.</li>
+    </ul>
+
+    <h4>The model</h4>
+    <p class="model-rule"><b>inflation in the target month = f(latest inflation values)</b>, &nbsp; <span class="tex">\pi_{t+h} = f(\pi_t, \pi_{t-1}, \ldots, \pi_{t-p})</span></p>
+    <p>f is learned from <b>training examples</b> (input month, target month): for example with h = 3, the examples (1, 4), (2, 5), (3, 6), and so on. f can be any machine learning model: a linear model, a random forest, a neural network. In this simulation it is a simple linear one, so that the effect of the evaluation methods is easy to see; the same evaluation applies to any ML model.</p>
+    <p><b>Static forecasts.</b> Each forecast uses the actual inflation of its input month: inflation is published every month, so when month 60 is forecast with h = 1, the actual value of month 59 is known. A <b>dynamic</b> forecast would instead feed the model's own earlier forecasts back in as inputs, as if no new data arrived after the end of training. This module uses static forecasts.</p>
+    <p><b>The gap.</b> With h = 3, a model trained on months up to 50 makes its first forecast for month 53. Months 51 and 52, h − 1 = 2 months, lie in between: they are not yet known when the forecast is made. In the windows chart this empty space is labelled <b>gap</b>.</p>
+    <p><b>For training we use only the examples whose target month is already known.</b> With h = 3 and now = month 50, the last training example is (47, 50). <b>Why not (48, 51)?</b> When we evaluate on past data, our data file already contains months 51, 52, 53 and so on, so we <i>could</i> train with (48, 51). But a forecaster at month 50 does not know month 51 yet. Using it would be <b>leakage</b>, and the error would look smaller than in real forecasting.</p>
+
+    <h4>Method 1: time-series split</h4>
+    <p>It looks like the usual k-fold cross-validation, with one rule added: train only on months <b>before</b> the validation block. With 40 training months and blocks of 10:</p>
+    <ol>
+      <li>Round 1: train on months 1-10, validate on months 11-20.</li>
+      <li>Round 2: train on months 1-20, validate on months 21-30.</li>
+      <li>Round 3: train on months 1-30, validate on months 31-40.</li>
+    </ol>
+    <p>The <b>validation error</b> is computed over all validated months. The model is trained once per round. (In scikit-learn: TimeSeriesSplit.)</p>
+
+    <h4>Method 2: expanding window</h4>
+    <p>The same idea with blocks of <b>1 month</b>: the model is re-trained every month on all months from 1 to now, and forecasts the next target month. The training window grows by one month each time. Econometricians call this the <b>recursive</b> scheme.</p>
+
+    <h4>Method 3: rolling window</h4>
+    <p>Like the expanding window, but the model is trained only on the <b>last W months</b> (with W = 24: now = month 50 trains on months 27-50). Old months drop out. Also called a <b>sliding window</b>.</p>
+    <ul>
+      <li>When the series behaves the same way all the time, more data is better: the expanding window usually wins.</li>
+      <li>After a <b>regime change</b> (a new monetary policy, a crisis, an energy shock), old months describe a world that no longer exists. The rolling window forgets them after W months; the expanding window keeps them forever.</li>
+    </ul>
+
+    <h4>Choosing and testing</h4>
+    <ul>
+      <li>Each method gets a validation error on the training months. The method with the smallest validation error is chosen.</li>
+      <li>The test is done <b>once</b>, as in the Cross-Validation module: the final model is trained on the whole training set (months 1-96 at the defaults; rolling window: its last W months, 73-96) and forecasts all test months, 97-120, without re-training. Its <b>test error</b> is reported once.</li>
+      <li>In practice forecasters often keep re-training their model as new months arrive. That is a different exercise from the final test, which checks once the model we chose.</li>
+    </ul>
+
+    <h4>Why not shuffled k-fold?</h4>
+    <p>Shuffled folds put random months in the validation fold. To validate month 50, the model is trained on the other folds, which include months 51, 52, ... after it: the future. With a regime change, the model then learns the new regime from months it is not supposed to know, and its error looks too small. Flexible ML models can cheat even more, by copying neighbouring months (see the Data Leakage module).</p>
+
+    <div class="math-block lvl-math"><div class="mb-title">The model in this simulation</div>
+      <div class="tex-block">f(\pi_t) = a + b\,\pi_t, \qquad (\hat a, \hat b) = \arg\min_{a,b} \sum_{s=L}^{\,\text{now}-h} \bigl(\pi_{s+h} - a - b\,\pi_s\bigr)^2</div>
+      <p class="note">Expanding window and time-series split: <span class="tex">L = 1</span>. Rolling window of length W: <span class="tex">L = \text{now} - W + 1</span>. The upper limit now − h keeps only examples whose target month is known.</p>
+      <div class="tex-block">\text{validation error} = \sqrt{\frac{1}{n_V}\sum \bigl(\pi_{\text{target}} - \hat\pi_{\text{target}}\bigr)^2}\quad\text{(RMSE over the forecasts of the training months)}</div>
+    </div>
+
+    <div class="math-block deep lvl-deep"><div class="mb-title">Deep dive</div>
+      <p><b>When is k-fold acceptable?</b> Bergmeir, Hyndman and Koo (2018) show that for a purely autoregressive model with uncorrelated errors on a stable series, standard k-fold cross-validation is valid. Problems arise with flexible models that can copy neighbouring observations, with correlated errors, and with series that change over time.</p>
+      <p><b>Breaks and window choice.</b> Pesaran and Timmermann (2007) study how to choose the estimation window when there are structural breaks: post-break windows reduce bias but increase variance.</p>
+      <p><b>Real-time data.</b> Macroeconomic series are revised. An honest evaluation uses, at each month, the data published at that time (Croushore and Stark, 2001), not today's revised series.</p>
+      <p class="note">References: Tashman (2000), "Out-of-sample tests of forecasting accuracy: an analysis and review", <i>International Journal of Forecasting</i> 16(4); Bergmeir, Hyndman and Koo (2018), "A note on the validity of cross-validation for evaluating autoregressive time series prediction", <i>Computational Statistics &amp; Data Analysis</i> 120; Pesaran and Timmermann (2007), "Selection of estimation window in the presence of breaks", <i>Journal of Econometrics</i> 137(1); Croushore and Stark (2001), "A real-time data set for macroeconomists", <i>Journal of Econometrics</i> 105(1); Hyndman and Athanasopoulos, <i>Forecasting: Principles and Practice</i>, 3rd ed., §5.10; scikit-learn documentation, TimeSeriesSplit.</p>
+    </div>
+  </section>
+
+  <!-- ===================== CHALLENGES ===================== -->
+  <section data-panel="challenges" class="card" hidden>
+    <div class="card-head"><h3>Challenges</h3><span class="card-sub">Answer the "predict first" questions before testing them in the Simulation tab.</span></div>
+    <div id="challenges"></div>
+  </section>
+
+  <!-- ===================== REAL DATA ===================== -->
+  <section data-panel="real" class="card lesson" hidden>
+    <h4>From the simulation to real data</h4>
+    <ul>
+      <li>Set the horizon h to the decision: a central bank cares about inflation 12 to 24 months ahead, a treasury desk about next month.</li>
+      <li>Keep the last 20% of the months as the test (hold-out) set. Choose models, methods and window lengths with the validation error on the earlier months only.</li>
+      <li>Look at the errors over time: are they large around crises or policy changes? A rolling window may be needed.</li>
+      <li>For macroeconomic series, use the data published at each date (real-time data), not today's revised series.</li>
+    </ul>
+    <div class="crosslink"><span>&#10140;</span><span><a id="fourCast" target="_blank" rel="noopener"><b>4Cast Lab</b></a> runs this kind of evaluation on your own series, with expanding and rolling windows and many forecasting models.</span></div>
+  </section>
+
+  <footer id="mlsFooter"></footer>
+</div>
+
+<script>
+(function () {
+  'use strict';
+  const MLS = window.MLS;
+  const META = MLS.moduleMeta('ts-validation');
+  const $ = id => document.getElementById(id);
+  const F = MLS.fmt;
+  const JUMP = 3, PHI = 0.5, SD = 0.5, TEST = 0.2;
+  const METHODS = ['split', 'exp', 'roll'];
+  const MNAME = { split: 'Time-series split', exp: 'Expanding window', roll: 'Rolling window' };
+
+  const S = { T: 120, brk: true, seed: 34, h: 1, meth: 'split', W: 24, B: 10, step: 0, done: { split: false, exp: false, roll: false } };
+  let R = null, timer = null;
+
+  /* ==================================================================
+     data and forecasts. Months are numbered 1..T; y[m - 1] is month m.
+     ================================================================== */
+  const breakMonth = T => Math.round(T / 3);                     /* the new regime starts in month breakMonth + 1 */
+  function gen(seed, T, brk) {
+    const r = MLS.rng(seed), y = [], B = breakMonth(T); let e = 0;
+    for (let t = 0; t < T; t++) { e = PHI * e + r.normal(0, SD); y.push(2 + (brk && t >= B ? JUMP : 0) + e); }
+    return y;
+  }
+  /* the model f, trained on examples (input month s, target month s + h) with s >= lo and s + h <= now */
+  function fitModel(y, lo, now, h) {
+    const X = [], Y = []; for (let s = lo; s + h <= now; s++) { X.push([1, y[s - 1]]); Y.push(y[s + h - 1]); }
+    const b = MLS.lstsq(X, Y).b; return x => b[0] + b[1] * x;
+  }
+  const rmse = e => (e.length ? Math.sqrt(e.reduce((s, v) => s + v * v, 0) / e.length) : NaN);
+  /* every method is a list of steps; a step trains the model once and makes one or more forecasts.
+     Forecasts are static: each uses the actual inflation of its input month.
+     Validation steps forecast the training months W+h..nTr; then ONE test step: the final model is
+     trained once on the training set (rolling window: its last W months) and forecasts all test months. */
+  function walk(y, T, h, W, B, meth) {
+    const nTr = Math.round((1 - TEST) * T), steps = [];
+    const fc = (f, m) => { const v = f(y[m - h - 1]), a = y[m - 1]; return { tgt: m, f: v, a, e: a - v, set: m <= nTr ? 'val' : 'test' }; };
+    if (meth === 'split') {
+      const blocks = (a, b) => { const out = []; for (let s = a; s <= b; s += B) out.push([s, Math.min(b, s + B - 1)]); const L = out[out.length - 1]; if (out.length > 1 && L[1] - L[0] + 1 < Math.ceil(B / 2)) { out.pop(); out[out.length - 1][1] = L[1]; } return out; };   /* a short last block is merged into the previous one */
+      blocks(W + h, nTr).forEach(([a, b]) => {
+        const now = a - h, f = fitModel(y, 1, now, h), list = []; for (let m = a; m <= b; m++) list.push(fc(f, m));
+        steps.push({ now, lo: 1, a, b, fc: list, set: 'val' });
+      });
+    } else {
+      for (let now = W; now + h <= nTr; now++) {
+        const lo = meth === 'exp' ? 1 : now - W + 1, f = fitModel(y, lo, now, h), one = fc(f, now + h);
+        steps.push({ now, lo, a: now + h, b: now + h, fc: [one], set: 'val' });
+      }
+    }
+    {
+      const lo = meth === 'roll' ? nTr - W + 1 : 1, f = fitModel(y, lo, nTr, h), list = [];
+      for (let m = nTr + 1; m <= T; m++) list.push(fc(f, m));
+      steps.push({ now: nTr, lo, a: nTr + 1, b: T, fc: list, set: 'test', final: true });
+    }
+    const all = steps.flatMap(s => s.fc);
+    return { steps, nv: all.filter(o => o.set === 'val').length, nt: all.filter(o => o.set === 'test').length,
+      val: rmse(all.filter(o => o.set === 'val').map(o => o.e)), test: rmse(all.filter(o => o.set === 'test').map(o => o.e)) };
+  }
+  /* shuffled 4-fold CV of the same model on the same validation months */
+  function contrast(y, T, h, W, seed) {
+    const nTr = Math.round((1 - TEST) * T), ex = []; for (let s = 1; s + h <= nTr; s++) ex.push(s);    /* input months of the training examples */
+    const idx = ex.slice(); MLS.rng(seed * 7 + 1).shuffle(idx); const fold = {}; idx.forEach((s, i) => (fold[s] = i % 4));
+    const targets = ex.filter(s => s + h >= W + h);
+    const e = targets.map(s => { const use = ex.filter(q => fold[q] !== fold[s]); const b = MLS.lstsq(use.map(q => [1, y[q - 1]]), use.map(q => y[q + h - 1])).b; return y[s + h - 1] - b[0] - b[1] * y[s - 1]; });
+    const tf = {}; ex.forEach(s => (tf[s + h] = fold[s]));                 /* fold of each target month */
+    return { shuf: rmse(e), tf, n: targets.length, pick: Math.min(nTr - 6, Math.max(W + h + 6, 50)) };
+  }
+  function compute() {
+    const T = S.T, h = S.h, W = S.W, y = gen(S.seed, T, S.brk), nTr = Math.round((1 - TEST) * T);
+    R = { y, T, h, W, B: S.B, nTr, B0: breakMonth(T) };
+    METHODS.forEach(k => (R[k] = walk(y, T, h, W, S.B, k)));
+    R.con = contrast(y, T, h, W, S.seed); R.con.wf = R.exp.val;
+  }
+  const cur = () => R[S.meth];
+  function scoresNow() {
+    const done = cur().steps.slice(0, S.step + 1).flatMap(s => s.fc), v = done.filter(o => o.set === 'val'), t = done.filter(o => o.set === 'test');
+    return { v: rmse(v.map(o => o.e)), nv: v.length, t: rmse(t.map(o => o.e)), nt: t.length };
+  }
+  const allDone = () => METHODS.every(k => S.done[k]);
+  const chosen = () => (allDone() ? METHODS.slice().sort((a, b) => R[a].val - R[b].val)[0] : null);
+  function clampParams() {
+    const nTr = Math.round((1 - TEST) * S.T);
+    S.W = Math.max(S.h + 8, Math.min(S.W, nTr - S.h - 6));
+  }
+
+  /* ==================================================================
+     text: left panel, step box, tiles, comparison
+     ================================================================== */
+  function updateText() {
+    const st = cur().steps[S.step], h = R.h, c = col(), sc = scoresNow(), nTr = R.nTr, split = S.meth === 'split';
+    const tag = st.set === 'val' ? '<span class="tag" style="background:' + c.val + '">validation</span>' : '<span class="tag" style="background:' + c.te + '">test</span>';
+    if (st.final) {
+      $('stepBox').innerHTML = '<h3>Final test, done once: forecasting months ' + st.a + '-' + st.b + tag + '</h3><ul>' +
+        '<li>Training: months ' + st.lo + '-' + st.now + (S.meth === 'roll' ? ' (the last ' + R.W + ' months of the training set)' : ' (the whole training set)') + '. The final model is trained once.</li>' +
+        '<li>It forecasts all ' + st.fc.length + ' test months, ' + st.a + '-' + st.b + ', without re-training. Each forecast uses the actual inflation of its input month (static forecasts).</li>' +
+        '<li>Test error: RMSE ' + F(rmse(st.fc.map(o => o.e)), 2) + '.</li></ul>';
+      $('nowLines').innerHTML = 'Training ends: <b>month ' + st.now + '</b><br>Forecasting: <b>months ' + st.a + '-' + st.b + '</b> (test)';
+      $('stepLab').textContent = split ? 'Move to the next round' : 'Move now forward';
+    } else if (split) {
+      const k = S.step + 1, nR = cur().steps.length - 1, eR = rmse(st.fc.map(o => o.e));
+      $('stepBox').innerHTML = '<h3>' + MNAME.split + ', round ' + k + ' of ' + nR + ': forecasting months ' + st.a + '-' + st.b + tag + '</h3><ul>' +
+        '<li>Training: months 1-' + st.now + ' (the model is trained once for this round).</li>' +
+        '<li>The model forecasts each month of the block, ' + st.a + '-' + st.b + ': ' + st.fc.length + ' forecast' + (st.fc.length > 1 ? 's' : '') + (h > 1 ? ', each ' + h + ' months ahead' : '') + '.</li>' +
+        '<li>Error of this round: RMSE ' + F(eR, 2) + '.</li></ul>';
+      $('nowLines').innerHTML = 'Round: <b>' + k + ' of ' + nR + '</b><br>Forecasting: <b>months ' + st.a + '-' + st.b + '</b>';
+      $('stepLab').textContent = 'Move to the next round';
+    } else {
+      const o = st.fc[0];
+      $('stepBox').innerHTML = '<h3>' + MNAME[S.meth] + '. Now: month ' + st.now + ', forecasting month ' + o.tgt + tag + '</h3><ul>' +
+        '<li>Known: months 1-' + st.now + '.</li>' +
+        '<li>Training: months ' + st.lo + '-' + st.now + (S.meth === 'roll' ? ' (the last ' + R.W + ' months)' : ' (all months up to now)') + '.</li>' +
+        '<li>Forecast for month ' + o.tgt + ': <b>' + F(o.f, 2) + '%</b>. Actual: <b>' + F(o.a, 2) + '%</b>. Error: ' + F(o.e, 2) + '.</li></ul>';
+      $('nowLines').innerHTML = 'Now: <b>month ' + st.now + '</b><br>Forecasting: <b>month ' + o.tgt + '</b>';
+      $('stepLab').textContent = 'Move now forward';
+    }
+    const card = MLS.statCard, M = MNAME[S.meth].toLowerCase(), ch = chosen(), nDone = METHODS.filter(k => S.done[k]).length;
+    $('stats').innerHTML =
+      card('Validation RMSE, ' + M, sc.nv ? F(sc.v, 2) : '–', sc.nv + ' of ' + cur().nv + ' forecasts (target months ' + (R.W + h) + '-' + nTr + ')', '', 'st_val') +
+      card('Test RMSE, ' + M, sc.nt ? F(sc.t, 2) : '–', sc.nt ? 'final model, ' + sc.nt + ' test months (' + (nTr + 1) + '-' + R.T + ')' : 'not yet: done once, at the last step (months ' + (nTr + 1) + '-' + R.T + ')', '', 'st_test') +
+      card('Chosen method', ch ? MNAME[ch] : 'not yet', ch ? 'smallest validation error' : 'walk all three methods to the end (' + nDone + ' of 3 done)', '', 'st_chosen');
+    /* comparison card */
+    if (!allDone()) {
+      $('scoreBody').innerHTML = '<p class="note" style="font-size:14.5px">Walk each method to the end to compare them: ' + METHODS.map(k => MNAME[k] + ' ' + (S.done[k] ? '<span class="done-mark">&#10003;</span>' : '&#9744;')).join(', &nbsp;') + '.</p>';
+    } else {
+      $('scoreBody').innerHTML = '<div class="fig-table" style="max-height:none"><table class="tbl"><thead><tr><th>Method</th><th class="num">Validation error<br>(' + R.exp.nv + ' forecasts)</th><th class="num">Test error<br>(' + R.exp.nt + ' forecasts)</th></tr></thead><tbody>' +
+        METHODS.map(k => '<tr' + (k === ch ? ' class="cur"' : '') + '><td>' + MNAME[k] + (k === 'roll' ? ' (' + R.W + ' months)' : k === 'split' ? ' (blocks of ' + R.B + ')' : '') + (k === ch ? ' &#10003; chosen' : '') + '</td><td class="num">' + F(R[k].val, 2) + '</td><td class="num">' + (k === ch ? '<b>' + F(R[k].test, 2) + '</b>' : F(R[k].test, 2)) + '</td></tr>').join('') +
+        '</tbody></table></div><p class="note" style="margin-top:8px">Error = average forecast error (RMSE), in percentage points of inflation. Lower is better. The method with the smallest validation error is chosen; its test error (bold) is the one we report. The other test errors are shown only for teaching.</p>';
+    }
+  }
+
+  /* ==================================================================
+     figures
+     ================================================================== */
+  const col = () => ({ ink: MLS.color('chart-ink'), mu: MLS.color('chart-muted'), val: MLS.color('series-1'), te: MLS.color('series-2'), split: MLS.color('series-4'), exp: MLS.color('series-7'), roll: MLS.color('series-3'), ok: MLS.color('series-3'), bad: MLS.color('series-8') });
+  const tip = (P, el, html) => { el.setAttribute('data-tip', P.tips.length); P.tips.push(() => html); return el; };
+  function monthAxis(P, a, b, y0) {
+    const ppm = (P.W - P.m.l - P.m.r) / (b - a + 1), st = [1, 2, 3, 6, 12, 24, 48].find(v => v * ppm >= 34) || 60;
+    for (let m = Math.ceil(a / st) * st; m <= b; m += st) { if (m < 1) continue; P.vline(m, { color: P.C.grid, width: 1 }); P.text(m, y0, String(m), { anchor: 'middle', dy: 17, size: 11.5, weight: 500, halo: false }); }
+    if (st > 1 && a <= 1) P.text(1, y0, '1', { anchor: 'middle', dy: 17, size: 11.5, weight: 500, halo: false });
+  }
+  const nowLabel = () => (S.meth === 'split' || (R && cur().steps[S.step].final) ? 'End of training' : 'Now (last known month)');
+  const lineItems = c => [{ label: nowLabel(), color: c.ink, line: true }, { label: 'Start of the test set (month ' + (R.nTr + 1) + ')', color: c.te, line: true, dash: '5 4' }].concat(S.brk ? [{ label: 'Regime change (month ' + (R.B0 + 1) + ')', color: c.ink, line: true, dash: '2 3' }] : []);
+  function background(P, c, y0, y1, labels) {
+    P.rect(R.nTr + 0.5, y0, R.T + 0.5, y1, { fill: MLS.rgba(c.te, 0.09) });
+    P.vline(R.nTr + 0.5, { color: c.te, width: 1.4, dash: '5 4' });
+    if (labels) {
+      P.text((1 + R.nTr) / 2, y1, 'training set: months 1-' + R.nTr, { anchor: 'middle', dy: 15, size: 12, weight: 700, color: c.mu });
+      P.text((R.nTr + 1 + R.T) / 2, y1, 'test: ' + (R.nTr + 1) + '-' + R.T, { anchor: 'middle', dy: 15, size: 12, weight: 700, color: c.te });
+    }
+    if (S.brk) { P.vline(R.B0 + 0.5, { color: c.ink, width: 1.2, dash: '2 3' }); if (labels) P.text(R.B0 + 0.5, y0, 'regime change', { anchor: 'start', dx: 4, dy: -8, size: 11.5, weight: 700 }); }
+  }
+
+  /* --- series with forecasts --- */
+  const figSeries = MLS.figure($('figSeries'), {
+    title: 'Inflation and the forecasts', help: 'figseries', file: 'ts-forecasts',
+    plot: { aspect: 0.36, margin: { l: 56, b: 44 }, x: { ticks: false, label: 'Month' }, y: { label: 'Inflation (%)' } },
+    data: () => ({ cols: ['Method', 'Step', 'Training from', 'Training to', 'Target month', 'Set', 'Forecast', 'Actual', 'Error'], rows: cur().steps.flatMap((s, i) => s.fc.map(o => [MNAME[S.meth], i + 1, s.lo, s.now, o.tgt, o.set === 'val' ? 'validation' : 'test', o.f, o.a, o.e])) })
+  });
+  function drawSeries() {
+    const P = figSeries.plot, c = col(), y = R.y, st = cur().steps[S.step], done = cur().steps.slice(0, S.step + 1).flatMap(s => s.fc);
+    const all = y.concat(cur().steps.flatMap(s => s.fc.map(q => q.f))), yd = MLS.niceDomain(Math.min(...all), Math.max(...all), 0.08); yd[1] += (yd[1] - yd[0]) * 0.14;
+    P.setX(0.5, R.T + 0.5); P.setY(yd[0], yd[1]);
+    const nV = done.filter(q => q.set === 'val').length, nT = done.length - nV, split = S.meth === 'split', block = split || !!st.final;
+    P.draw(P => {
+      monthAxis(P, 1, R.T, yd[0]);
+      P.rect(st.lo - 0.5, yd[0], st.now + 0.5, yd[1], { fill: MLS.rgba(c.val, 0.13) });
+      if (block) P.rect(st.a - 0.5, yd[0], st.b + 0.5, yd[1], { fill: MLS.rgba(st.set === 'val' ? c.val : c.te, 0.06), stroke: st.set === 'val' ? c.val : c.te, width: 1 });
+      background(P, c, yd[0], yd[1], true);
+      P.line(y.map((v, i) => [i + 1, v]), { color: c.ink, width: 1.6 });
+      done.forEach(q => P.segment(q.tgt, q.f, q.tgt, q.a, { color: q.set === 'val' ? c.val : c.te, width: 1.2, opacity: 0.6 }));
+      const ft = q => 'Target month ' + q.tgt + ' (' + (q.set === 'val' ? 'validation' : 'test') + ')<br>Forecast <b>' + F(q.f, 2) + '%</b>, actual ' + F(q.a, 2) + '%<br>Error ' + F(q.e, 2);
+      P.points(done.map(q => ({ x: q.tgt, y: q.f, q })), { color: d => (d.q.set === 'val' ? c.val : c.te), r: 3.6, tip: d => ft(d.q) });
+      P.vline(st.now + 0.5, { color: c.ink, width: 1.8 });
+      if (!block) P.points([{ x: st.fc[0].tgt, y: st.fc[0].f }], { color: st.set === 'val' ? c.val : c.te, shape: 'star', r: 9, tip: () => ft(st.fc[0]) });
+      else P.points(st.fc.map(q => ({ x: q.tgt, y: q.f, q })), { color: st.set === 'val' ? c.val : c.te, r: 5, tip: d => ft(d.q) });
+      P.text(st.now + 0.5, yd[1], (block ? 'training ends: month ' : 'now: month ') + st.now, { anchor: 'end', dx: -4, dy: 33, size: 12, weight: 800 });
+      P.crosshair([{ name: 'Actual inflation', color: c.ink, pts: y.map((v, i) => [i + 1, v]) }, { name: 'Forecast', color: c.val, pts: y.map((_, i) => { const q = done.find(z => z.tgt === i + 1); return [i + 1, q ? q.f : NaN]; }) }], v => 'Month ' + Math.round(v), v => F(v, 2) + '%');
+    });
+    figSeries.legend([
+      { label: 'Actual inflation (' + R.T + ' months)', color: c.ink, line: true, width: 1.6 },
+      { label: 'Validation forecasts (' + nV + ' of ' + cur().nv + ')', color: c.val },
+      { label: 'Test forecasts (' + nT + ' of ' + cur().nt + ')', color: c.te },
+      { label: 'Training: months ' + st.lo + '-' + st.now, color: MLS.rgba(c.val, 0.3), box: true }
+    ].concat(st.final ? [{ label: 'Test months, forecast by the final model', color: MLS.rgba(c.te, 0.15), box: true, stroke: c.te }] : split ? [{ label: 'Block forecast in this round', color: MLS.rgba(c.val, 0.15), box: true, stroke: c.val }] : [{ label: 'Current forecast', color: st.set === 'val' ? c.val : c.te, shape: 'star' }]).concat(lineItems(c)));
+    figSeries.caption(MNAME[S.meth] + '. Each dot is a forecast, placed at its target month; the thin vertical line from the dot to the black line is its error. ' +
+      (split ? 'In each round the model is trained once and forecasts the whole block.' : S.meth === 'exp' ? 'The model is re-trained every month on all months up to now.' : 'The model is re-trained every month on the last ' + R.W + ' months only.') +
+      ' The test is done once, at the last step: the final model is trained on ' + (S.meth === 'roll' ? 'the last ' + R.W + ' months of the training set' : 'the whole training set') + ' and forecasts all test months without re-training. Forecasts are static: each uses the actual inflation of its input month.');
+  }
+
+  /* --- training windows of all steps --- */
+  const GAPPX = 30;                                  /* strip above the rows for the gap label (h > 1) */
+  const figWin = MLS.figure($('figWin'), {
+    title: 'Training months and forecast months of every step', help: 'figwin', file: 'ts-windows',
+    plot: { height: () => Math.min(650, Math.max(220, (R ? cur().steps.length : 80) * (S.meth === 'split' ? 24 : 5) + 80)) + (S.h > 1 ? GAPPX : 0), margin: { l: 56, b: 44 }, x: { ticks: false, label: 'Month' }, y: { ticks: false, label: () => (S.meth === 'split' ? 'Rounds' : 'Steps') } },
+    data: () => ({ cols: ['Step', 'Training from', 'Training to', 'Gap (months)', 'Forecast months from', 'to', 'Set'], rows: cur().steps.map((s, i) => [s.final ? 'Test' : i + 1, s.lo, s.now, s.a - s.now - 1, s.a, s.b, s.set === 'val' ? 'validation' : 'test']) })
+  });
+  function drawWin() {
+    const P = figWin.plot, c = col(), L = cur().steps, N = L.length, h = R.h, split = S.meth === 'split';
+    P.setX(0.5, R.T + 0.5); P.setY(-0.5, N + 0.5);
+    const pxR = Math.abs(P.sy(0) - P.sy(1)), extra = h > 1 ? GAPPX / pxR : 0;
+    P.setY(-0.5, N + 0.5 + extra);
+    const rowPx = Math.abs(P.sy(0) - P.sy(1)), ppm = (P.W - P.m.l - P.m.r) / R.T, roomy = rowPx >= 14;
+    const tw = (str, size) => str.length * size * 0.56;                        /* rough text width in px */
+    const gapTip = o => 'Gap: month' + (o.a - o.now - 1 > 1 ? 's ' + (o.now + 1) + '-' + (o.a - 1) : ' ' + (o.now + 1)) + ' (h − 1 = ' + (h - 1) + ')<br>Not yet known when the forecast is made: training ends at month ' + o.now + ', the first forecast is for month ' + o.a + '.';
+    P.draw(P => {
+      monthAxis(P, 1, R.T, -0.5); background(P, c, -0.5, N + 0.5, false);
+      L.forEach((o, i) => {
+        const yy = N - i, curr = i === S.step, past = i <= S.step, op = curr ? 1 : past ? 0.7 : 0.3, cc = o.set === 'val' ? c.val : c.te;
+        const trainLab = o.final ? 'Train' : 'Train ' + (i + 1), fcLab = o.final ? 'Test' : 'Validation ' + (i + 1);
+        const tt = (o.final ? 'Final test (done once)' : (split ? 'Round ' : 'Step ') + (i + 1)) + '<br>Training: months ' + o.lo + '-' + o.now + (o.a - o.now > 1 ? '<br>Gap: ' + (o.a - o.now - 1) + ' month' + (o.a - o.now - 1 > 1 ? 's' : '') + ', not yet known' : '') + '<br>Forecasting: month' + (o.a === o.b ? ' ' + o.a : 's ' + o.a + '-' + o.b) + ' (' + (o.set === 'val' ? 'validation' : 'test') + ')';
+        tip(P, P.rect(o.lo - 0.5, yy - 0.42, o.now + 0.5, yy + 0.42, { fill: MLS.rgba(c.val, curr ? 0.55 : 0.35), opacity: op, stroke: curr ? c.ink : null, width: curr ? 1.2 : null }), tt);
+        tip(P, P.rect(o.a - 0.5, yy - 0.42, o.b + 0.5, yy + 0.42, { fill: cc, opacity: op }), tt);
+        const gap = o.a - o.now - 1;
+        if (gap > 0 && (roomy || curr)) tip(P, P.rect(o.now + 0.5, yy - 0.42, o.a - 0.5, yy + 0.42, { fill: MLS.rgba(c.mu, 0.06), stroke: c.mu, width: 1, opacity: past ? 1 : 0.5 }), gapTip(o));
+        /* labels on the bars: every row when there is room, otherwise the current row and the test row */
+        if (roomy || curr || o.final) {
+          const sz = roomy ? 11 : 11.5, halo = !roomy;
+          const wTr = (o.now - o.lo + 1) * ppm, wFc = (o.b - o.a + 1) * ppm;
+          if (wTr >= tw(trainLab, sz) + 8) P.text(o.lo - 0.5, yy, trainLab, { anchor: 'start', dx: 5, dy: 4, size: sz, weight: 800, color: c.ink, halo: halo ? undefined : false });
+          if (wFc >= tw(fcLab, sz) + 8) P.text((o.a + o.b) / 2, yy, fcLab, roomy ? { anchor: 'middle', dy: 4, size: sz, weight: 800, color: '#FFFFFF', halo: false } : { anchor: 'middle', dy: -6, size: sz, weight: 800, color: cc });
+          else if (R.T - o.b >= (tw(fcLab, sz) + 8) / ppm) P.text(o.b + 0.5, yy, fcLab, { anchor: 'start', dx: 4, dy: 4, size: sz, weight: 800, color: cc });
+          else P.text(o.a - 0.5 - (gap > 0 ? gap : 0), yy, fcLab, { anchor: 'end', dx: -4, dy: 4, size: sz, weight: 800, color: cc });
+        }
+      });
+      /* the gap label, in the strip above the rows, pointing at the gap of the current (or last validation) row */
+      if (h > 1) {
+        const k = L[S.step].final ? N - 2 : S.step, o = L[k];
+        if (o) {
+          const xm = (o.now + o.a) / 2, yTop = N + 0.5 + extra, yRow = N - k + 0.42, txt = 'gap: h − 1 = ' + (h - 1) + ' month' + (h > 2 ? 's' : '') + ', not yet known when the forecast is made', w = tw(txt, 12);
+          const xpx = P.sx(xm), left = xpx - w / 2 < P.m.l + 4, right = xpx + w / 2 > P.W - P.m.r - 4;
+          P.segment(xm, yRow, xm, yTop - 0.3 * extra, { color: c.mu, width: 1.2, dash: '2 3' });
+          P.text(xm, yTop, txt, { anchor: left ? 'start' : right ? 'end' : 'middle', dx: left ? -6 : right ? 6 : 0, dy: 15, size: 12, weight: 700, color: c.mu });
+        }
+      }
+    });
+    figWin.legend([{ label: 'Training months', color: MLS.rgba(c.val, 0.45), box: true }].concat(h > 1 ? [{ label: 'Gap of h − 1 = ' + (h - 1) + ' month' + (h > 2 ? 's' : '') + ' (not yet known)', color: MLS.rgba(c.mu, 0.06), box: true, stroke: c.mu }] : []).concat([{ label: 'Forecast months, validation (' + cur().nv + ')', color: c.val, box: true }, { label: 'Forecast months, test (' + cur().nt + ')', color: c.te, box: true }]).concat(lineItems(c).slice(1)));
+    figWin.caption(MNAME[S.meth] + ': one row per ' + (split ? 'round' : 'step') + ', the first at the top; the last row is the test, done once. ' + (split ? 'The training months grow by one block of ' + R.B + ' months per round.' : S.meth === 'exp' ? 'The training window starts in month 1 and grows by one month per step.' : 'The training window always has ' + R.W + ' months and slides forward.') +
+      (h > 1 ? ' With h = ' + h + ' there is a gap of h − 1 = ' + (h - 1) + ' month' + (h > 2 ? 's' : '') + ' between the training months and the first forecast month: they are not yet known when the forecast is made.' : ' With h = 1 there is no gap: the forecast month follows the last training month. Raise h to see the gap.'));
+  }
+
+  /* --- errors over time --- */
+  const figErr = MLS.figure($('figErr'), {
+    title: 'Forecast errors over time', help: 'figerr', file: 'ts-errors',
+    plot: { aspect: 0.3, margin: { l: 56, b: 44 }, x: { ticks: false, label: 'Target month' }, y: { label: 'Error (actual − forecast)' } },
+    data: () => ({ cols: ['Target month', 'Set'].concat(METHODS.map(k => 'Error, ' + MNAME[k])), rows: R.exp.steps.flatMap(s => s.fc).map(o => [o.tgt, o.set === 'val' ? 'validation' : 'test'].concat(METHODS.map(k => { const q = R[k].steps.flatMap(s => s.fc).find(z => z.tgt === o.tgt); return q ? q.e : ''; }))) })
+  });
+  function drawErr() {
+    const P = figErr.plot, c = col(), show = allDone() ? METHODS : [S.meth], all = METHODS.flatMap(k => R[k].steps.flatMap(s => s.fc.map(o => o.e)));
+    const lim = Math.max(...all.map(Math.abs)) * 1.1;
+    const pts = k => (allDone() && k !== S.meth ? R[k].steps : R[k].steps.slice(0, k === S.meth ? S.step + 1 : 0)).flatMap(s => s.fc).map(o => [o.tgt, o.e]);
+    P.setX(0.5, R.T + 0.5); P.setY(-lim, lim);
+    P.draw(P => {
+      monthAxis(P, 1, R.T, -lim); background(P, c, -lim, lim, false);
+      P.hline(0, { color: c.ink, width: 1 });
+      show.forEach(k => P.line(pts(k), { color: c[k], width: k === S.meth ? 2 : 1.4, opacity: k === S.meth ? 1 : 0.75 }));
+      P.vline(cur().steps[S.step].now + 0.5, { color: c.ink, width: 1.8 });
+      P.crosshair(show.map(k => ({ name: MNAME[k], color: c[k], pts: pts(k) })), v => 'Month ' + Math.round(v), v => F(v, 2));
+    });
+    figErr.legend(show.map(k => ({ label: MNAME[k], color: c[k], line: true })).concat(lineItems(c)));
+    figErr.caption('Error = actual − forecast, ' + (allDone() ? 'for all three methods.' : 'for the forecasts made so far with the ' + MNAME[S.meth].toLowerCase() + '. After all three methods are walked to the end, the three lines are shown together.') + (S.brk ? ' Right after the regime change every method forecasts too low for a while.' : ''));
+  }
+
+  /* --- why not shuffled k-fold: picture and bars, same model --- */
+  const figShufPic = MLS.figure($('figShufPic'), {
+    title: 'Which months train the model?', help: 'figshufpic', file: 'ts-shuffled-picture',
+    plot: { aspect: 0.62, margin: { l: 20, b: 44 }, x: { ticks: false, label: 'Month' }, y: { ticks: false } }
+  });
+  function drawShufPic() {
+    const P = figShufPic.plot, c = col(), C = R.con, m = C.pick, h = R.h, now = m - h, a = m - 6, b = m + 5;
+    P.setX(a - 0.6, b + 0.6); P.setY(0, 4.6);
+    P.draw(P => {
+      const rs = 3.0, rw = 1.0;
+      P.text(a - 0.5, rs + 0.95, 'Shuffled 4-fold CV: to validate month ' + m + ', train on the other 3 folds', { anchor: 'start', size: 12.5, weight: 800 });
+      P.text(a - 0.5, rw + 0.95, 'Walking forward: to forecast month ' + m + ', train on months up to ' + now, { anchor: 'start', size: 12.5, weight: 800 });
+      for (let q = a; q <= b; q++) {
+        const sameFold = q !== m && C.tf[q] === C.tf[m];
+        let fill = q > m ? c.bad : c.ok, t = 'Month ' + q + ': used for training' + (q > m ? ', but it is after month ' + m + ': the future' : '');
+        if (q === m) { fill = '#FFFFFF'; t = 'Month ' + m + ': the month being validated'; }
+        else if (sameFold) { fill = '#FFFFFF'; t = 'Month ' + q + ': in the same validation fold, not used'; }
+        tip(P, P.rect(q - 0.42, rs - 0.42, q + 0.42, rs + 0.42, { fill, rx: 3, stroke: q === m ? c.val : c.mu, width: q === m ? 2.5 : 0.6 }), t);
+        P.text(q, rs, String(q), { anchor: 'middle', dy: 4, size: 11, weight: 700, color: fill === '#FFFFFF' ? '#1B2340' : '#FFFFFF', halo: false });
+        const used = q <= now;
+        let f2 = used ? c.ok : '#FFFFFF', t2 = used ? 'Month ' + q + ': known, used for training' : 'Month ' + q + ': not yet known';
+        if (q === m) { f2 = '#FFFFFF'; t2 = 'Month ' + m + ': the month being forecast'; }
+        tip(P, P.rect(q - 0.42, rw - 0.42, q + 0.42, rw + 0.42, { fill: f2, rx: 3, stroke: q === m ? c.val : c.mu, width: q === m ? 2.5 : 0.6 }), t2);
+        P.text(q, rw, String(q), { anchor: 'middle', dy: 4, size: 11, weight: 700, color: f2 === '#FFFFFF' ? '#1B2340' : '#FFFFFF', halo: false });
+      }
+    });
+    figShufPic.legend([{ label: 'Used for training, known', color: c.ok, box: true }, { label: 'Used for training, but from the future', color: c.bad, box: true }, { label: 'Not used', color: '#FFFFFF', box: true, stroke: c.mu }, { label: 'Month being forecast', color: '#FFFFFF', box: true, stroke: c.val }]);
+    figShufPic.caption('Same model in both rows. With shuffled folds the training months include months after the month being validated (red). Walking forward, only months up to now are used.');
+  }
+  const figShuf = MLS.figure($('figShuf'), {
+    title: 'Average forecast error, same model, same months', help: 'figshuf', file: 'ts-shuffled-vs-walk-forward',
+    plot: { aspect: 0.62, margin: { l: 56 }, x: { ticks: false }, y: { label: 'Average forecast error (RMSE)' } },
+    data: () => ({ cols: ['Evaluation', 'Error (RMSE)'], rows: [['Shuffled 4-fold CV', R.con.shuf], ['Walking forward', R.con.wf]] })
+  });
+  function drawShuf() {
+    const P = figShuf.plot, c = col(), C = R.con, hi = Math.max(C.shuf, C.wf) * 1.3;
+    P.setX(0, 2); P.setY(0, hi);
+    P.draw(P => {
+      [[C.shuf, 'Shuffled 4-fold CV', c.bad], [C.wf, 'Walking forward', c.ok]].forEach(([v, lab, cc], i) => {
+        tip(P, P.rect(i + 0.2, 0, i + 0.8, v, { fill: cc, opacity: 0.9 }), '<b>' + lab + '</b><br>Average error (RMSE): <b>' + F(v, 2) + '</b>, ' + C.n + ' months');
+        P.text(i + 0.5, v, F(v, 2), { anchor: 'middle', dy: -6, size: 13, weight: 800 });
+        P.text(i + 0.5, 0, lab, { anchor: 'middle', dy: 17, size: 12, weight: 700, halo: false });
+      });
+    });
+    figShuf.legend([]);
+    const gap = (C.wf - C.shuf) / C.wf;
+    figShuf.caption('The same model, evaluated on the same ' + C.n + ' months in two ways. ' + (gap > 0.05 ? 'Shuffled CV looks better (' + F(C.shuf, 2) + ') only because it trains on future months, including months of the new regime; walking forward, as in real forecasting, gives ' + F(C.wf, 2) + '.' : 'Here the two are about the same (' + F(C.shuf, 2) + ' vs ' + F(C.wf, 2) + '): this simple model cannot exploit future months much.') + (S.brk ? (R.h < 3 ? ' The gap grows with the horizon: try h = 3.' : '') : ' Switch the regime change on to see the gap.'));
+  }
+
+  /* ==================================================================
+     controls
+     ================================================================== */
+  function syncUI() {
+    $('T').value = S.T; $('TVal').textContent = S.T; $('brk').checked = S.brk; $('seed').value = S.seed;
+    $('h').value = S.h; $('hVal').textContent = S.h; $('W').value = S.W; $('WVal').textContent = S.W; $('B').value = S.B; $('BVal').textContent = S.B;
+    $('W').min = S.h + 8; $('W').max = Math.round((1 - TEST) * S.T) - S.h - 6;
+    MLS.$$('[data-meth]').forEach(b => { b.setAttribute('aria-pressed', String(b.dataset.meth === S.meth)); b.innerHTML = { split: '1. Time-series split', exp: '2. Expanding window', roll: '3. Rolling window' }[b.dataset.meth] + (S.done[b.dataset.meth] ? ' &#10003;' : ''); });
+    $('WLab').textContent = S.meth === 'roll' ? 'Window length W (months)' : 'Initial window W (months)';
+    $('BRow').hidden = S.meth !== 'split';
+    $('step').max = cur().steps.length - 1; $('step').value = S.step;
+    $('dataNote').textContent = 'Training set: months 1-' + R.nTr + ' (' + R.nTr + '). Test (hold-out) set: months ' + (R.nTr + 1) + '-' + R.T + ' (' + (R.T - R.nTr) + ', the last 20%).' + (S.brk ? ' The new regime starts in month ' + (R.B0 + 1) + '.' : '');
+    $('wNote').textContent = { split: 'Round 1 trains on months 1-' + R.W + '. Each round adds one block of ' + R.B + ' months to the training months and forecasts the next block.', exp: 'First forecast at month ' + R.W + ', trained on months 1-' + R.W + '. The window then grows by one month at each step.', roll: 'Every forecast is trained on the last ' + R.W + ' months. The first forecast is at month ' + R.W + '.' }[S.meth];
+    $('play').innerHTML = timer ? '&#10074;&#10074; Pause' : '&#9654; Play';
+  }
+  function render() {
+    if (S.step >= cur().steps.length - 1 && !S.done[S.meth]) S.done[S.meth] = true;
+    syncUI(); updateText(); drawSeries(); drawWin(); drawErr(); drawShufPic(); drawShuf();
+    figSeries.refreshTable(); figWin.refreshTable(); figErr.refreshTable(); figShuf.refreshTable(); if (ch) ch.check(); MLS.state.save();
+  }
+  function rebuild(keepDone) { clampParams(); compute(); if (!keepDone) S.done = { split: false, exp: false, roll: false }; S.step = Math.max(0, Math.min(S.step, cur().steps.length - 1)); figWin.plot.redraw(); render(); }
+  function stop() { if (timer) { clearInterval(timer); timer = null; } }
+  const goStep = i => { S.step = Math.max(0, Math.min(cur().steps.length - 1, i)); render(); };
+  $('T').addEventListener('input', e => ($('TVal').textContent = e.target.value));
+  $('T').onchange = e => { stop(); S.T = +e.target.value; rebuild(); };
+  $('h').addEventListener('input', e => ($('hVal').textContent = e.target.value));
+  $('h').onchange = e => { stop(); S.h = +e.target.value; rebuild(); };
+  $('W').addEventListener('input', e => ($('WVal').textContent = e.target.value));
+  $('W').onchange = e => { stop(); S.W = +e.target.value; rebuild(); };
+  $('B').addEventListener('input', e => ($('BVal').textContent = e.target.value));
+  $('B').onchange = e => { stop(); S.B = +e.target.value; S.done.split = false; rebuild(true); };
+  $('brk').onchange = e => { stop(); S.brk = e.target.checked; rebuild(); };
+  $('seed').onchange = e => { stop(); S.seed = Math.max(1, Math.round(+e.target.value) || 1); rebuild(); };
+  $('newSeed').onclick = () => { stop(); S.seed = MLS.newSeed(); rebuild(); };
+  MLS.$$('[data-meth]').forEach(b => (b.onclick = () => { stop(); S.meth = b.dataset.meth; S.step = 0; figWin.plot.redraw(); render(); }));
+  $('step').addEventListener('input', e => { stop(); goStep(+e.target.value); });
+  $('back').onclick = () => { stop(); goStep(S.step - 1); };
+  $('next').onclick = () => { stop(); goStep(S.step + 1); };
+  $('toStart').onclick = () => { stop(); goStep(0); };
+  $('toEnd').onclick = () => { stop(); goStep(cur().steps.length - 1); };
+  $('play').onclick = () => {
+    if (timer) { stop(); syncUI(); return; }
+    if (S.step >= cur().steps.length - 1) S.step = 0;
+    timer = setInterval(() => { if (S.step >= cur().steps.length - 1) { stop(); render(); return; } goStep(S.step + 1); }, S.meth === 'split' ? 900 : 260);
+    syncUI();
+  };
+
+  /* ==================================================================
+     help
+     ================================================================== */
+  MLS.registerHelp({
+    data: { title: 'Data', html: 'A simulated monthly inflation rate, around 2%. Optionally a regime change: from one third of the months on, inflation moves around 5% instead.' },
+    T: { title: 'Number of months', html: 'Length of the series. The first 80% of the months are the training set, the last 20% the test (hold-out) set.' },
+    brk: { title: 'Regime change', html: 'From month T/3 + 1 on, average inflation is 3 points higher (for example after an energy shock or a change in monetary policy). Old months then describe a world that no longer exists.' },
+    seed: { title: 'Random seed', html: 'Fixes the simulated series. The dice gives a new series.' },
+    model: { title: 'The model', html: 'The forecast follows one rule:<br><b>inflation in the target month = f(latest inflation values)</b><br><b>π<sub>t+h</sub> = f(π<sub>t</sub>, π<sub>t−1</sub>, ..., π<sub>t−p</sub>)</b><br>t is the input month; t + h is the target month, h months later. f is learned from training examples (input month, target month) and can be any machine learning model.<br><br>In this simulation f is a simple linear one, so that the effect of the evaluation methods is easy to see. The same evaluation applies to any ML model.<br><br><i>For training we use only the examples whose target month is already known.</i> With h = 3 at month 50 the last training example is (47, 50); (48, 51) is in our data file, but a forecaster at month 50 does not know month 51 yet: using it would be leakage.<br><br><b>Static forecasts.</b> Each forecast uses the actual inflation of its input month, which is published every month. (A <i>dynamic</i> forecast would instead feed the model\'s own earlier forecasts back in as inputs, as if no new data arrived after the end of training.) This module uses static forecasts.' },
+    meth: { title: 'Evaluation method', html: '<b>1. Time-series split</b>: blocks of months; each round trains on all months before the block and forecasts the block. <b>2. Expanding window</b>: re-trained every month on all months up to now. <b>3. Rolling window</b>: re-trained every month on the last W months only. Walk each method to the end; then the comparison table appears.' },
+    h: { title: 'Horizon h', html: 'How many months ahead we forecast. h = 1: next month. With a larger h, the latest examples have target months in the future and cannot be used for training.' },
+    B: { title: 'Block length', html: 'How many months each round of the time-series split forecasts. The model is trained once per block. With blocks of 1 month the time-series split becomes the expanding window.' },
+    steps: { title: 'Move through time', html: 'Move "now" forward one month at a time (time-series split: one round at a time). The last step is the test, done once: the final model forecasts all test months. <b>End</b> jumps there. When a method reaches the end it gets a &#10003;.' },
+    st_val: { title: 'Validation RMSE', html: 'Average error (RMSE) of the forecasts made so far whose target month is in the training set. It builds up as you move forward. It is used to choose the method.' },
+    st_test: { title: 'Test RMSE', html: 'Average error (RMSE) of the forecasts of the test months (the last 20%). The test is done once, at the last step: the final model is trained on the training set (rolling window: its last W months) and forecasts all test months without re-training. Only the test RMSE of the chosen method is reported.' },
+    st_chosen: { title: 'Chosen method', html: 'The method with the smallest validation error, decided after all three methods have been walked to the end. The test set is not used for this choice.' },
+    scores: { title: 'Comparison', html: 'Validation and test error (RMSE) of the three methods, in percentage points of inflation. The method with the smallest validation error is chosen and its test error is reported. The other test errors are shown only for teaching.' },
+    figseries: { title: 'Inflation and forecasts', html: 'Black line: actual inflation. Blue band: the training months of the current step. Dots: forecasts at their target month (blue: validation, orange: test). The test forecasts appear at the last step, all at once: the final model forecasts the whole test set. Forecasts are static: each uses the actual inflation of its input month.' },
+    figwin: { title: 'Training and forecast months', html: 'Each row is one step (one round for the time-series split): the light bar is the training months (Train 1, Train 2, ...), the coloured box the forecast months (Validation 1, Validation 2, ...). The last row is the test, done once. Rows already visited are darker.<br><br><b>Gap.</b> With a horizon h > 1 there are h − 1 empty months between the training months and the first forecast month. At the moment the forecast is made these months are not yet known, so they cannot be used. (In scikit-learn: the gap of TimeSeriesSplit; also called an embargo.)' },
+    figerr: { title: 'Errors over time', html: 'Forecast errors by target month for the method shown; after all three methods are done, for all three.' },
+    figshufpic: { title: 'Which months train the model?', html: 'For one month: the training months with shuffled 4-fold CV (top) and walking forward (bottom). Red months are in the future of the month being forecast.' },
+    figshuf: { title: 'Shuffled k-fold versus walking forward', html: 'The same model evaluated on the same months. Shuffled folds can report a smaller error because the model is trained on months from the future.' }
+  });
+
+  /* ==================================================================
+     challenges
+     ================================================================== */
+  function setup(o) { stop(); Object.assign(S, o); MLS.pickTab('sim'); rebuild(true); window.scrollTo({ top: 0, behavior: 'smooth' }); }
+  const ch = MLS.challenges($('challenges'), META.id, [
+    { type: 'predict', q: 'Time-series split with an initial window of 24 months and blocks of 10. Round 2 forecasts months 35-44. Which months train the model?',
+      options: ['All months except 35-44', 'Months 1-34', 'Months 45-96'], answer: 1,
+      explain: 'The time-series split trains only on months before the block: months 1-24 plus the first block, 25-34. Months after the block are never used, unlike in ordinary k-fold cross-validation.',
+      tryIt: () => setup({ meth: 'split', W: 24, B: 10, h: 1, step: 1 }) },
+    { type: 'predict', q: 'Horizon h = 3. Now is month 50. Can the model train on the example (input month 48, target month 51)?',
+      options: ['Yes, month 48 is before month 50', 'Only with a rolling window', 'No: its target month, 51, is not known yet at month 50'], answer: 2,
+      explain: 'An example can be used only when its target month is known. At month 50 the last usable example is (47, 50). Month 51 is in our data file, but a forecaster at month 50 does not know it: using it would be leakage.',
+      tryIt: () => setup({ meth: 'exp', h: 3, step: Math.max(0, 50 - S.W) }) },
+    { type: 'predict', q: 'No regime change. Which window usually forecasts better, expanding or rolling?',
+      options: ['Expanding: when nothing changes, more data gives more precise estimates', 'Rolling: recent data are always better', 'They are always identical'], answer: 0,
+      explain: 'If the series behaves the same way all the time, old months are as useful as recent ones. The expanding window uses all of them.',
+      tryIt: () => setup({ brk: false, meth: 'exp', step: 0 }) },
+    { type: 'predict', q: 'With the regime change, which window brings its errors back to zero sooner?',
+      options: ['Expanding', 'Rolling: the old months drop out of its window after W months', 'Both at the same time'], answer: 1,
+      explain: 'The expanding window keeps all the old months, so for a long time its model mixes the two regimes. The rolling window contains only new-regime months W months after the change.',
+      tryIt: () => setup({ brk: true, meth: 'roll', step: 0 }) },
+    { type: 'predict', q: 'With the regime change, the same model is evaluated with shuffled 4-fold cross-validation. Its error will look...',
+      options: ['larger than walking forward', 'the same as walking forward', 'smaller than in real forecasting, because it is trained on months after the month it forecasts'], answer: 2,
+      explain: 'With shuffled folds the training months include months after the month being validated, so the model learns the new regime from the future. Walking forward, the months after now are unknown.',
+      tryIt: () => setup({ brk: true, h: 3 }) },
+    { type: 'task', q: 'Walk all three methods to the end and find which one is chosen.', hint: 'Use End on each method.',
+      check: () => R && allDone() }
+  ]);
+
+  /* ==================================================================
+     state
+     ================================================================== */
+  MLS.moduleBar({ id: META.id, title: META.title, section: META.sectionTitle, level: META.level },
+    { tabs: [{ id: 'sim', label: 'Simulation' }, { id: 'lesson', label: 'Lesson' }, { id: 'challenges', label: 'Challenges' }, { id: 'real', label: 'On real data' }] });
+  MLS.state.init({
+    id: META.id,
+    get: () => ({ T: S.T, brk: S.brk, seed: S.seed, h: S.h, meth: S.meth, W: S.W, B: S.B, step: S.step, done: S.done }),
+    set: o => {
+      ['T', 'seed', 'h', 'W', 'B', 'step'].forEach(k => { if (Number.isFinite(o[k])) S[k] = o[k]; });
+      if (typeof o.brk === 'boolean') S.brk = o.brk;
+      if (METHODS.includes(o.meth)) S.meth = o.meth;
+      if (o.done) METHODS.forEach(k => (S.done[k] = !!o.done[k]));
+    }
+  });
+  $('fourCast').href = MLS.APP.fourCastUrl;
+  window.__mls = { S, get R() { return R; } };
+  document.addEventListener('mls:theme', () => render());
+  rebuild(true);
+})();
+</script>
+</body>
+</html>

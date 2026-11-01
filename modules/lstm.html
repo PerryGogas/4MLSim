@@ -1,0 +1,351 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>LSTM for Time Series | 4MLSim</title>
+  <meta name="theme-color" content="#1B2340">
+  <link rel="manifest" href="../manifest.json">
+  <link rel="icon" type="image/svg+xml" href="../assets/img/icon.svg">
+  <link rel="apple-touch-icon" href="../assets/img/apple-touch-icon.png">
+  <link rel="stylesheet" href="../assets/vendor/temml.css">
+  <link rel="stylesheet" href="../assets/css/4mlsim.css">
+  <script src="../assets/vendor/temml.min.js"></script>
+  <script src="../assets/js/core.js"></script>
+  <script src="../assets/js/stats.js"></script>
+  <script src="../assets/js/plot.js"></script>
+  <script src="../assets/js/modules.js"></script>
+  <script src="../assets/js/core-ml.js"></script>
+  <script src="../assets/js/classify-ui.js"></script>
+</head>
+<body>
+<div class="page">
+  <header id="mlsHeader" data-variant="compact"></header>
+  <div class="mod-top" id="mlsTop"><div id="mlsModBar"></div><div id="mlsTabs"></div></div>
+
+  <div class="intro-box" id="mlsIntro">
+    <h3>What this module shows</h3>
+    <div class="intro-cols">
+      <div>
+        <p>To forecast next month, a <b>recurrent network</b> reads the past months one at a time and carries a memory from step to step. The <b>LSTM</b> (long short-term memory) controls that memory with three <b>gates</b>: the <b>forget</b> gate (keep or drop the old memory), the <b>input</b> gate (how much of the new month to write) and the <b>output</b> gate (how much of the memory to show).</p>
+        <p>The real test: does it forecast new months better than a simple <b>autoregression</b> or "no change"?</p>
+      </div>
+      <div>
+        <p><b>How to use it</b></p>
+        <ol>
+          <li>Press <b>Reset</b>, then <b>Play</b>: watch the forecasts fit the series and the loss fall.</li>
+          <li>Pick a forecast and read the gates month by month, and the last step in numbers.</li>
+          <li>Compare the test RMSE with the AR and no-change benchmarks; change the window and the units.</li>
+        </ol>
+      </div>
+    </div>
+  </div>
+
+  <!-- ===================== SIMULATION ===================== -->
+  <section data-panel="sim">
+    <div class="mod-grid">
+      <aside class="side" aria-label="Controls">
+        <div class="card">
+          <div class="card-head"><h3>1. Data<button type="button" class="help" data-help="data">?</button></h3></div>
+          <select id="ds" aria-label="Data set"><option value="unemp">Unemployment rate (%)</option><option value="inflation">Inflation (%, year on year)</option><option value="ipgrowth">Industrial production growth (%)</option></select>
+          <div class="field-row"><label for="n">Observations<button type="button" class="help" data-help="n">?</button></label><output id="nVal"></output></div>
+          <input type="range" id="n" min="120" max="480" step="12" value="240">
+          <div class="field-row"><label for="seed">Random seed<button type="button" class="help" data-help="seed">?</button></label></div>
+          <div class="inline-inputs"><input type="number" id="seed" min="1" max="99999" step="1" value="1" aria-label="Random seed"><button type="button" class="btn-ghost btn-icon" id="newSeed" title="New random data" style="flex:0 0 auto">&#127922;</button></div>
+        </div>
+        <div class="card">
+          <div class="card-head"><h3>2. The LSTM<button type="button" class="help" data-help="lstm">?</button></h3></div>
+          <div class="field-row"><label for="L">Window: past months read<button type="button" class="help" data-help="L">?</button></label><output id="LVal"></output></div>
+          <input type="range" id="L" min="3" max="24" step="1" value="12">
+          <div class="field-row"><label for="H">Units (memory cells)<button type="button" class="help" data-help="H">?</button></label><output id="HVal"></output></div>
+          <input type="range" id="H" min="1" max="8" step="1" value="4">
+          <div class="field-row"><label for="lr">Learning rate (Adam)<button type="button" class="help" data-help="lr">?</button></label><output id="lrVal"></output></div>
+          <input type="range" id="lr" min="0" max="4" step="1" value="3">
+        </div>
+        <div class="card">
+          <div class="card-head"><h3>3. Train it<button type="button" class="help" data-help="run">?</button></h3></div>
+          <div id="stepper"></div>
+          <p class="note" id="stepNote"></p>
+        </div>
+        <div class="card">
+          <div class="card-head"><h3>4. Look inside<button type="button" class="help" data-help="inside">?</button></h3></div>
+          <div class="field-row"><label for="pick">Forecast to inspect (test months)<button type="button" class="help" data-help="pick">?</button></label><output id="pickVal"></output></div>
+          <input type="range" id="pick" min="1" max="40" step="1" value="1">
+          <div class="field-row"><label for="unit">Unit to show<button type="button" class="help" data-help="unit">?</button></label><output id="unitVal"></output></div>
+          <input type="range" id="unit" min="1" max="4" step="1" value="1">
+        </div>
+      </aside>
+
+      <main class="main">
+        <div class="story" id="story"></div>
+        <div class="stat-grid" id="stats" style="margin-top:12px"></div>
+        <div id="statusLine" class="status-line" style="margin:10px 0"></div>
+        <div class="fig-grid">
+          <div id="figSeries" class="fig-wide"></div>
+          <div id="figGates"></div>
+          <div id="figState"></div>
+          <div class="card" id="cellCard"></div>
+          <div id="figLoss"></div>
+        </div>
+      </main>
+    </div>
+  </section>
+
+  <!-- ===================== LESSON ===================== -->
+  <section data-panel="lesson" class="card lesson" hidden>
+    <div id="mlsMathCtl"></div>
+    <p class="lvl-only-intuition note" style="margin-bottom:8px">Showing the intuition only. Choose <b>Formulas</b> or <b>Deep dive</b> above to add the mathematics.</p>
+
+    <h4>Recurrent networks</h4>
+    <p>A feed-forward network sees all its inputs at once. A <b>recurrent neural network</b> (RNN) reads a sequence one step at a time and keeps a <b>hidden state</b> h that summarizes what it has seen so far: h<sub>t</sub> = f(new input, h<sub>t−1</sub>). The same weights are used at every step. Unrolled over a 12-month window, it is a 12-layer network.</p>
+    <p>Training it means backpropagation <b>through time</b>: the gradient passes back through all the steps. In a simple RNN it is multiplied at every step and tends to vanish (or explode), so the network cannot learn long memories.</p>
+
+    <h4>The LSTM cell</h4>
+    <p>The LSTM adds a <b>cell state</b> c, a memory line that passes from step to step with only small, controlled changes. Three gates, each a sigmoid between 0 (closed) and 1 (open), decide:</p>
+    <ul>
+      <li><b>Forget gate</b> f: how much of the old memory to keep (1 = keep all).</li>
+      <li><b>Input gate</b> i: how much of the new candidate content (from this month's value) to write into memory.</li>
+      <li><b>Output gate</b> o: how much of the memory to pass on as the hidden state h, which is what the forecast is made from.</li>
+    </ul>
+    <p>Because the memory is updated by adding (not by repeated multiplication through a squashing function), gradients survive many steps.</p>
+
+    <h4>Forecasting with an LSTM</h4>
+    <ol>
+      <li>Standardize the series with the training months' mean and standard deviation.</li>
+      <li>Cut it into windows: the past L months are the input, the next month is the target.</li>
+      <li>Keep the time order: the first 80% of the windows are the training set, the last 20% the test set (no shuffling; see Time-Series Validation).</li>
+      <li>Train with backpropagation through time (here with the Adam optimizer) and compare the test RMSE with simple benchmarks.</li>
+    </ol>
+    <p>On short economic series an LSTM often does <b>not</b> beat a well-specified autoregression: it has many weights for few observations. Its strengths show with long series, many related series, and nonlinear patterns.</p>
+
+    <div class="math-block lvl-math"><div class="mb-title">The LSTM equations</div>
+      <div class="tex-block">f_t = \sigma(W_f x_t + U_f h_{t-1} + b_f), \quad i_t = \sigma(W_i x_t + U_i h_{t-1} + b_i), \quad o_t = \sigma(W_o x_t + U_o h_{t-1} + b_o)</div>
+      <div class="tex-block">\tilde c_t = \tanh(W_c x_t + U_c h_{t-1} + b_c), \qquad c_t = f_t \odot c_{t-1} + i_t \odot \tilde c_t, \qquad h_t = o_t \odot \tanh(c_t)</div>
+      <div class="tex-block">\hat y_{T+1} = v^\top h_T + c_0, \qquad \text{loss} = \frac{1}{n} \sum (\hat y - y)^2</div>
+      <p class="note">These are the equations of PyTorch's and Keras' LSTM. The gradients in this module were checked against numerical derivatives.</p>
+    </div>
+    <div class="math-block deep lvl-deep"><div class="mb-title">Deep dive</div>
+      <p><b>Why the cell state helps.</b> ∂c<sub>t</sub>/∂c<sub>t−1</sub> = f<sub>t</sub>: when the forget gate is near 1, the gradient passes back almost unchanged. The forget-gate bias is often started at 1 (as here) so the cell remembers by default.</p>
+      <p><b>Variants.</b> The GRU merges the forget and input gates; stacked LSTMs use several layers; sequence-to-sequence models forecast many months at once. Transformers (see the LLM module) replace recurrence with attention.</p>
+      <p><b>Evaluation.</b> Compare out-of-sample with benchmarks, and test whether the gain is significant (Diebold-Mariano test; see the Data Snooping module for the risk of trying many models).</p>
+      <p class="note">References: Hochreiter and Schmidhuber (1997), "Long short-term memory", <i>Neural Computation</i>; Gers, Schmidhuber and Cummins (2000), "Learning to forget"; Goodfellow, Bengio and Courville (2016), <i>Deep Learning</i>, ch. 10.</p>
+    </div>
+  </section>
+
+  <!-- ===================== CHALLENGES ===================== -->
+  <section data-panel="challenges" class="card" hidden>
+    <div class="card-head"><h3>Challenges</h3><span class="card-sub">Answer the "predict first" questions before testing them in the Simulation tab.</span></div>
+    <div id="challenges"></div>
+  </section>
+
+  <!-- ===================== REAL DATA ===================== -->
+  <section data-panel="real" class="card lesson" hidden>
+    <h4>From the simulation to real data</h4>
+    <ul>
+      <li>Forecasting macro and financial series (inflation, unemployment, electricity demand, volatility), often with many related series as inputs.</li>
+      <li>Always report the benchmarks (no change, AR, a tree ensemble) on the same test months, use a time-ordered split, and standardize with the training months only. In Python: Keras <code>LSTM</code> or PyTorch <code>nn.LSTM</code>.</li>
+    </ul>
+    <div class="crosslink"><span>&#10140;</span><span><a id="fourCast" target="_blank" rel="noopener"><b>4Cast Lab</b></a> forecasts your own time series with machine learning models and benchmarks.</span></div>
+  </section>
+
+  <footer id="mlsFooter"></footer>
+</div>
+
+<script>
+(function () {
+  'use strict';
+  const MLS = window.MLS, ML = MLS.ml, CL = MLS.cls;
+  const META = MLS.moduleMeta('lstm');
+  const $ = id => document.getElementById(id);
+  const F = MLS.fmt, pct = CL.pct;
+
+  const LRS = [0.001, 0.003, 0.01, 0.03, 0.1], EMAX = 1000, ESTEP = 5;
+  const DEFN = { unemp: 240, inflation: 240, ipgrowth: 240 };
+  const S = { ds: 'unemp', n: {}, seed: 1, L: 12, H: 4, lr: 0.01, ep: 200, pick: 1, unit: 1 };
+  let D = null, R = null;
+  const nObs = () => S.n[S.ds] || DEFN[S.ds];
+  function makeData() {
+    const g = ML.DATA[S.ds].gen(ML.rng(S.seed), nObs()), y = g.y, L = S.L, T = y.length, nW = T - L, ntr = Math.round(nW * 0.8);
+    const tv = y.slice(0, ntr + L), mu = tv.reduce((s, v) => s + v, 0) / tv.length, sd = Math.sqrt(tv.reduce((s, v) => s + (v - mu) ** 2, 0) / tv.length) || 1;
+    const z = y.map(v => (v - mu) / sd), W = [], Y = [];
+    for (let t = L; t < T; t++) { W.push(z.slice(t - L, t)); Y.push(z[t]); }
+    D = { y, name: g.name, mu, sd, W, Y, ntr, L, T };
+    /* AR(L) by least squares on the training windows */
+    const p = L + 1, A = Array.from({ length: p }, () => new Array(p).fill(0)), b = new Array(p).fill(0);
+    for (let i = 0; i < ntr; i++) { const x = [1].concat(W[i]); for (let a = 0; a < p; a++) { b[a] += x[a] * Y[i]; for (let c = 0; c < p; c++) A[a][c] += x[a] * x[c]; } }
+    for (let a = 1; a < p; a++) A[a][a] += 1e-8;
+    const beta = ML.solve(A, b); D.ar = W.map(w => beta[0] + w.reduce((s, v, j) => s + v * beta[j + 1], 0)); D.naive = W.map(w => w[L - 1]);
+  }
+  const rmse = (pred, lo, hi) => { let s = 0; for (let i = lo; i < hi; i++) s += (pred[i] - D.Y[i]) ** 2; return Math.sqrt(s / (hi - lo)) * D.sd; };
+  function build() { R = { net: ML.LSTM(S.H, S.seed), hist: [] }; record(); }
+  function record() { const pr = D.W.map(R.net.predict); R.pred = pr; R.hist.push({ ep: R.net.epoch, tr: rmse(pr, 0, D.ntr), te: rmse(pr, D.ntr, D.W.length) }); }
+  function trainTo(ep) {
+    const Str = D.W.slice(0, D.ntr), Ytr = D.Y.slice(0, D.ntr);
+    while (R.net.epoch < ep) { R.net.step(Str, Ytr, S.lr); if (R.net.epoch % ESTEP === 0 || R.net.epoch === ep) record(); }
+    R.rm = { tr: rmse(R.pred, 0, D.ntr), te: rmse(R.pred, D.ntr, D.W.length), ar: rmse(D.ar, D.ntr, D.W.length), arTr: rmse(D.ar, 0, D.ntr), naive: rmse(D.naive, D.ntr, D.W.length) };
+  }
+  const nTest = () => D.W.length - D.ntr;
+  const pickIdx = () => D.ntr + Math.min(S.pick, nTest()) - 1;
+  const back = v => D.mu + D.sd * v;
+
+  function updateText() {
+    const card = MLS.statCard, r = R.rm, nW = 4 * S.H * (S.H + 2) + S.H + 1;
+    $('story').innerHTML = '<h3>Data: ' + ML.DATA[S.ds].label + '</h3><p>' + ML.DATA[S.ds].note + ' <b>' + D.T + ' months.</b> Each forecast reads the past ' + S.L + ' months. ' + D.ntr + ' windows in the training set (the first 80%), ' + nTest() + ' in the test set (the last 20%, in time order). LSTM with ' + S.H + ' unit' + (S.H > 1 ? 's' : '') + ': <b>' + nW + ' weights</b>; the AR(' + S.L + ') benchmark has ' + (S.L + 1) + '.</p>';
+    $('stats').innerHTML =
+      card('Epoch', String(R.net.epoch), 'passes over the training windows', '', 'st_ep') +
+      card('RMSE, test set: LSTM', F(r.te, 3), 'training set: ' + F(r.tr, 3), '', 'st_rmse') +
+      card('RMSE, test set: AR(' + S.L + ')', F(r.ar, 3), 'linear autoregression', '', 'st_ar') +
+      card('RMSE, test set: no change', F(r.naive, 3), 'forecast = last month', '', 'st_naive');
+    $('stepNote').innerHTML = 'Each <b>Step</b> trains ' + ESTEP + ' epochs.' + (R.net.epoch >= EMAX ? ' Maximum of ' + EMAX + ' epochs reached.' : '');
+    let msg, cls = 'status-line';
+    const best = Math.min(r.ar, r.naive);
+    if (R.net.epoch < 20) msg = 'The network has hardly trained yet: press Play.';
+    else if (r.te > 1.3 * r.tr && r.tr < r.arTr) { msg = 'Overfitting: the LSTM fits the training months (RMSE ' + F(r.tr, 3) + ') much better than the test months (' + F(r.te, 3) + ').'; cls += ' bad'; }
+    else if (r.te < best) { msg = 'The LSTM beats both benchmarks on the test set: RMSE ' + F(r.te, 3) + ' against ' + F(r.ar, 3) + ' (AR) and ' + F(r.naive, 3) + ' (no change). Is the gain large enough to matter?'; cls += ' ok'; }
+    else { msg = 'The LSTM (test RMSE ' + F(r.te, 3) + ') does not beat the ' + (r.ar <= r.naive ? 'AR(' + S.L + ')' : 'no-change') + ' benchmark (' + F(best, 3) + '). With ' + D.T + ' months, a simple model is hard to beat.'; }
+    $('statusLine').textContent = msg; $('statusLine').className = cls;
+  }
+  const figSeries = MLS.figure($('figSeries'), { title: 'The series and the one-month-ahead forecasts', help: 'figseries', file: 'lstm-forecasts',
+    plot: { aspect: 0.36, margin: { l: 60, b: 48 }, x: { label: 'Month' }, y: { label: () => D.name } },
+    data: () => ({ cols: ['Month', 'Actual', 'LSTM', 'AR', 'Set'], rows: D.W.map((w, i) => [i + D.L + 1, D.y[i + D.L], +back(R.pred[i]).toFixed(4), +back(D.ar[i]).toFixed(4), i < D.ntr ? 'training' : 'test']) }) });
+  function drawSeries() {
+    const P = figSeries.plot, y = D.y, L = D.L, ink = MLS.color('chart-ink'), c2 = MLS.color('series-2'), c3 = MLS.color('series-3'), k = pickIdx();
+    P.setX(1, D.T); P.setY(...MLS.niceDomain(Math.min(...y), Math.max(...y), 0.08));
+    P.draw(P => {
+      P.rect(D.ntr + L + 0.5, P.yd[0], D.T + 0.5, P.yd[1], { fill: MLS.rgba(MLS.color('series-4'), 0.1) });
+      P.text(D.ntr + L + 1, P.yd[1], 'test set', { dy: 14, dx: 4, size: 12, weight: 700 });
+      P.rect(k + 1, P.yd[0], k + L + 0.5, P.yd[1], { fill: MLS.rgba(MLS.color('series-1'), 0.12) });
+      const act = y.map((v, t) => [t + 1, v]), lstm = R.pred.map((v, i) => [i + L + 1, back(v)]), ar = D.ar.map((v, i) => [i + L + 1, back(v)]);
+      P.line(act, { color: ink, width: 1.6 }); P.line(ar, { color: c3, width: 1.4, dash: '5 4' }); P.line(lstm, { color: c2, width: 2 });
+      P.points([{ x: k + L + 1, y: back(R.pred[k]) }], { color: c2, r: 6 });
+      P.crosshair([{ name: 'Actual', color: ink, pts: act }, { name: 'LSTM', color: c2, pts: lstm }, { name: 'AR(' + L + ')', color: c3, pts: ar }], v => 'Month ' + Math.round(v), v => F(v, 3));
+    });
+    figSeries.legend([{ label: 'Actual', color: ink, line: true }, { label: 'LSTM forecast', color: c2, line: true }, { label: 'AR(' + L + ') forecast', color: c3, line: true, dash: '5 4' }, { label: 'Window read for the inspected forecast', color: MLS.rgba(MLS.color('series-1'), 0.35) }]);
+    figSeries.caption('Each forecast uses only the ' + L + ' months before it. Shaded blue: the window behind the forecast inspected below (orange dot).');
+  }
+  const figGates = MLS.figure($('figGates'), { title: 'The gates, month by month', help: 'figgates', file: 'lstm-gates', plot: { aspect: 0.7, margin: { l: 56, b: 48 }, x: { label: 'Step in the window (month)' }, y: { label: 'Gate value (0 closed, 1 open)' } } });
+  const figState = MLS.figure($('figState'), { title: 'Input, memory and output, month by month', help: 'figstate', file: 'lstm-state', plot: { aspect: 0.7, margin: { l: 56, b: 48 }, x: { label: 'Step in the window (month)' }, y: { label: 'Value (standardized)' } } });
+  function drawInside() {
+    const tr = R.net.trace(D.W[pickIdx()]), u = Math.min(S.unit, S.H) - 1, st = tr.steps, L = st.length, c1 = MLS.color('series-1'), c2 = MLS.color('series-2'), c3 = MLS.color('series-3'), c4 = MLS.color('series-7');
+    let P = figGates.plot; P.setX(0.5, L + 0.5); P.setY(0, 1);
+    const ser = [['Forget f', 'f', c1], ['Input i', 'i', c3], ['Output o', 'o', c2]];
+    P.draw(P => { ser.forEach(([nm, k, col]) => { P.line(st.map((s, t) => [t + 1, s[k][u]]), { color: col, width: 2.2 }); P.points(st.map((s, t) => ({ x: t + 1, y: s[k][u] })), { color: col, r: 3.4, tip: d => nm + ' gate, step ' + d.x + ': ' + F(d.y, 3) }); }); });
+    figGates.legend(ser.map(([nm, , col]) => ({ label: nm, color: col, line: true })));
+    figGates.caption('Unit ' + (u + 1) + '. Forget near 1: the memory is kept. Input near 1: this month is written into memory. Output: how much of the memory is passed on.');
+    P = figState.plot; const all = st.flatMap(s => [s.x, s.c[u], s.h[u]]); P.setX(0.5, L + 0.5); P.setY(...MLS.niceDomain(Math.min(...all), Math.max(...all), 0.1));
+    const s2 = [['Input x (this month)', s => s.x, MLS.color('chart-ink')], ['Cell state c (memory)', s => s.c[u], c4], ['Hidden state h (output)', s => s.h[u], c2]];
+    P.draw(P => { P.hline(0, { color: MLS.color('chart-axis'), width: 1 }); s2.forEach(([nm, fn, col]) => { P.line(st.map((s, t) => [t + 1, fn(s)]), { color: col, width: 2.2 }); P.points(st.map((s, t) => ({ x: t + 1, y: fn(s) })), { color: col, r: 3.4, tip: d => nm + ', step ' + d.x + ': ' + F(d.y, 3) }); }); });
+    figState.legend(s2.map(([nm, , col]) => ({ label: nm, color: col, line: true })));
+    figState.caption('The standardized monthly values going in, the memory of unit ' + (u + 1) + ' and its output. The forecast is a weighted sum of the last step\'s outputs.');
+    /* the last step in numbers */
+    const last = st[L - 1], prev = L > 1 ? st[L - 2] : null, w = R.net.w, V = 4 * S.H * (S.H + 2);
+    $('cellCard').innerHTML = '<div class="card-head"><h3>The last step in numbers' + MLS.helpBtn('cell') + '</h3></div><div style="overflow-x:auto"><table class="tbl"><thead><tr><th>Unit</th><th>f</th><th>i</th><th>candidate</th><th>old c</th><th>new c = f·old c + i·cand.</th><th>o</th><th>h = o·tanh(c)</th><th>weight v</th></tr></thead><tbody>' +
+      last.f.map((_, k) => '<tr' + (k === u ? ' style="font-weight:800;background:var(--tint)"' : '') + '><td>' + (k + 1) + '</td><td>' + F(last.f[k], 3) + '</td><td>' + F(last.i[k], 3) + '</td><td>' + F(last.cc[k], 3) + '</td><td>' + F(prev ? prev.c[k] : 0, 3) + '</td><td>' + F(last.c[k], 3) + '</td><td>' + F(last.o[k], 3) + '</td><td>' + F(last.h[k], 3) + '</td><td>' + F(w[V + k], 3) + '</td></tr>').join('') +
+      '</tbody></table></div><p class="note">Forecast (standardized) = Σ v·h + ' + F(w[R.net.NP - 1], 3) + ' = <b>' + F(tr.yhat, 3) + '</b>; in the original units ' + F(D.mu, 3) + ' + ' + F(D.sd, 3) + ' × ' + F(tr.yhat, 3) + ' = <b>' + F(back(tr.yhat), 3) + '</b>. Actual: ' + F(D.y[pickIdx() + D.L], 3) + '.</p>';
+  }
+  const figLoss = MLS.figure($('figLoss'), { title: 'RMSE by epoch', help: 'figloss', file: 'lstm-loss', plot: { aspect: 0.7, margin: { l: 56, b: 48 }, x: { label: 'Epoch' }, y: { label: 'RMSE (original units)' } } });
+  function drawLoss() {
+    const P = figLoss.plot, h = R.hist, c1 = MLS.color('series-1'), c2 = MLS.color('series-2'), c3 = MLS.color('series-3'), top = Math.max(R.rm.naive, ...h.slice(Math.min(2, h.length - 1)).map(q => Math.max(q.tr, q.te))) * 1.1;
+    P.setX(0, Math.max(20, R.net.epoch)); P.setY(0, top);
+    P.draw(P => {
+      P.hline(R.rm.ar, { color: c3, width: 1.4, dash: '5 4' }); P.text(P.xd[1], R.rm.ar, 'AR, test', { anchor: 'end', dy: -5, size: 11, color: c3 });
+      P.line(h.map(q => [q.ep, Math.min(top, q.tr)]), { color: c1, width: 2.2 }); P.line(h.map(q => [q.ep, Math.min(top, q.te)]), { color: c2, width: 2.2 });
+    });
+    figLoss.legend([{ label: 'LSTM, training set', color: c1, line: true }, { label: 'LSTM, test set', color: c2, line: true }, { label: 'AR, test set', color: c3, line: true, dash: '5 4' }]);
+    figLoss.caption('The test curve is shown for teaching; in practice a validation period inside the training months would decide when to stop.');
+  }
+  function syncUI() {
+    $('ds').value = S.ds; $('n').value = nObs(); $('nVal').textContent = nObs(); $('seed').value = S.seed;
+    $('L').value = S.L; $('LVal').textContent = S.L; $('H').value = S.H; $('HVal').textContent = S.H; $('lr').value = LRS.indexOf(S.lr); $('lrVal').textContent = S.lr;
+    $('pick').max = nTest(); S.pick = Math.min(S.pick, nTest()); $('pick').value = S.pick; $('pickVal').textContent = 'month ' + (pickIdx() + D.L + 1);
+    $('unit').max = S.H; S.unit = Math.min(S.unit, S.H); $('unit').value = S.unit; $('unitVal').textContent = S.unit;
+  }
+  function render() { syncUI(); updateText(); drawSeries(); drawInside(); drawLoss(); figSeries.refreshTable(); if (ch) ch.check(); MLS.state.save(); }
+  function refresh() { build(); trainTo(S.ep); render(); }
+  const full = () => { makeData(); refresh(); };
+  MLS.stepper($('stepper'), { speed: 8, runMax: EMAX / ESTEP,
+    step: () => { if (R.net.epoch >= EMAX) return false; S.ep = Math.min(EMAX, R.net.epoch + ESTEP); trainTo(S.ep); return true; },
+    reset: () => { S.ep = 0; build(); trainTo(0); }, after: () => render() });
+  $('ds').onchange = e => { S.ds = e.target.value; full(); };
+  $('n').addEventListener('input', e => ($('nVal').textContent = e.target.value));
+  $('n').onchange = e => { S.n[S.ds] = +e.target.value; full(); };
+  $('seed').onchange = e => { S.seed = Math.max(1, Math.round(+e.target.value) || 1); full(); };
+  $('newSeed').onclick = () => { S.seed = MLS.newSeed(); full(); };
+  $('L').addEventListener('input', e => ($('LVal').textContent = e.target.value)); $('L').onchange = e => { S.L = +e.target.value; full(); };
+  $('H').addEventListener('input', e => ($('HVal').textContent = e.target.value)); $('H').onchange = e => { S.H = +e.target.value; refresh(); };
+  $('lr').addEventListener('input', e => ($('lrVal').textContent = LRS[+e.target.value])); $('lr').onchange = e => { S.lr = LRS[+e.target.value]; refresh(); };
+  $('pick').addEventListener('input', e => { S.pick = +e.target.value; render(); });
+  $('unit').addEventListener('input', e => { S.unit = +e.target.value; render(); });
+
+  MLS.registerHelp({
+    data: { title: 'Data', html: '<b>Unemployment</b>: jumps up in recessions, drifts down slowly. <b>Inflation</b>: persistent, mean-reverting. <b>Industrial production growth</b>: seasonal. Simulated monthly series.' },
+    n: { title: 'Months', html: 'Length of the series.' },
+    seed: { title: 'Random seed', html: 'Fixes the series and the starting weights of the network.' },
+    lstm: { title: 'The LSTM', html: 'One layer of LSTM units reads the window month by month; a linear output turns the last hidden state into the forecast.' },
+    L: { title: 'Window', html: 'How many past months each forecast reads. Also the order of the AR benchmark.' },
+    H: { title: 'Units', html: 'The number of memory cells. Each has its own gates; more units mean more weights.' },
+    lr: { title: 'Learning rate', html: 'Step size of the Adam optimizer.' },
+    run: { title: 'Train it', html: '<b>Step</b>: 5 more epochs. <b>Play</b>: keep training. <b>End</b>: up to 1000 epochs. <b>Reset</b>: back to the random start.' },
+    inside: { title: 'Look inside', html: 'Choose one test-set forecast and one unit to see the gates, the memory and the output over the window.' },
+    pick: { title: 'Forecast to inspect', html: 'Which test month\'s forecast is shown in the charts below.' },
+    unit: { title: 'Unit', html: 'Which memory cell is shown in the gate and state charts.' },
+    st_ep: { title: 'Epoch', html: 'Passes over the training windows.' },
+    st_rmse: { title: 'RMSE of the LSTM', html: 'Root mean squared error of the one-month-ahead forecasts, in the units of the series.' },
+    st_ar: { title: 'AR benchmark', html: 'A linear autoregression on the same past months, fitted by least squares on the training windows.' },
+    st_naive: { title: 'No-change benchmark', html: 'Next month = this month. Any model should beat it to be useful.' },
+    figseries: { title: 'Forecasts', html: 'The actual series with the LSTM and AR one-month-ahead forecasts; the test months are shaded.' },
+    figgates: { title: 'Gates', html: 'Forget, input and output gate of one unit at every step of the inspected window.' },
+    figstate: { title: 'Memory', html: 'The input, the cell state (memory) and the hidden state (output) of one unit through the window.' },
+    cell: { title: 'The last step', html: 'The LSTM equations with the numbers of the last month of the inspected window, for every unit, and the resulting forecast.' },
+    figloss: { title: 'RMSE by epoch', html: 'Training and test RMSE of the LSTM during training, with the AR test RMSE for reference.' }
+  });
+
+  function setup(o) { Object.assign(S, o); MLS.pickTab('sim'); full(); window.scrollTo({ top: 0, behavior: 'smooth' }); }
+  const ch = MLS.challenges($('challenges'), META.id, [
+    { type: 'predict', q: 'A forget gate close to 1 means...',
+      options: ['the cell keeps its memory from the previous month', 'the cell erases its memory', 'the forecast is zero'], answer: 0,
+      explain: 'The new memory is f × old memory + i × new content. With f near 1 the old memory passes on almost unchanged.',
+      tryIt: () => setup({ ds: 'unemp' }) },
+    { type: 'predict', q: 'To judge an LSTM forecast, compare its test-set error with...',
+      options: ['its own training error only', 'simple benchmarks (no change, AR) on the same test months', 'nothing: deep learning is always better'], answer: 1,
+      explain: 'A model is useful only if it beats simple alternatives on new data. On short economic series a well-chosen AR is often hard to beat.',
+      tryIt: () => setup({ ds: 'inflation' }) },
+    { type: 'task', q: 'Industrial production growth: make the LSTM beat the AR benchmark on the test set.', hint: 'Window 12, 4 units, seed 1: press Reset, then Play, and watch the RMSE chart. The test RMSE dips below the AR line for a while (around epoch 200).',
+      check: () => R && S.ds === 'ipgrowth' && R.net.epoch >= 20 && R.rm.te < R.rm.ar },
+    { type: 'predict', q: 'The window length L is...',
+      options: ['the forecast horizon', 'the number of memory units', 'the number of past months read before each forecast'], answer: 2,
+      explain: 'Each training example is L consecutive months (input) and the next month (target). Longer windows give the network more history and more steps to backpropagate through.',
+      tryIt: () => setup({ ds: 'ipgrowth', L: 24 }) },
+    { type: 'task', q: 'Make the LSTM overfit: with 6 or more units, a test RMSE at least 50% above its training RMSE.', hint: 'Industrial production growth, 8 units, a window of 24 months, a short series (120 months) and many epochs (End).',
+      check: () => R && S.H >= 6 && R.rm.te > 1.5 * R.rm.tr },
+    { type: 'predict', q: 'Why does a simple recurrent network (without gates) struggle with long windows?',
+      options: ['The gradient shrinks or explodes as it passes back through many steps', 'It cannot read numbers', 'It has no weights to train'], answer: 0,
+      explain: 'Backpropagation through time multiplies the gradient at every step. The LSTM cell state is updated by addition, controlled by the forget gate, so the gradient survives.',
+      tryIt: () => setup({ L: 24 }) }
+  ]);
+  const STATE = {
+    get: () => ({ ds: S.ds, n: S.n, seed: S.seed, L: S.L, H: S.H, lr: S.lr, ep: S.ep, pick: S.pick, unit: S.unit }),
+    set: o => {
+      if (DEFN[o.ds]) S.ds = o.ds;
+      if (o.n) Object.keys(o.n).forEach(q => { if (DEFN[q] && Number.isFinite(o.n[q])) S.n[q] = Math.max(120, Math.min(480, o.n[q])); });
+      if (Number.isFinite(o.seed)) S.seed = o.seed;
+      if (Number.isFinite(o.L)) S.L = Math.max(3, Math.min(24, o.L));
+      if (Number.isFinite(o.H)) S.H = Math.max(1, Math.min(8, o.H));
+      if (LRS.includes(o.lr)) S.lr = o.lr;
+      if (Number.isFinite(o.ep)) S.ep = Math.max(0, Math.min(EMAX, o.ep));
+      if (Number.isFinite(o.pick)) S.pick = Math.max(1, o.pick);
+      if (Number.isFinite(o.unit)) S.unit = Math.max(1, o.unit);
+    }
+  };
+  const start = full;
+  MLS.moduleBar({ id: META.id, title: META.title, section: META.sectionTitle, level: META.level },
+    { tabs: [{ id: 'sim', label: 'Simulation' }, { id: 'lesson', label: 'Lesson' }, { id: 'challenges', label: 'Challenges' }, { id: 'real', label: 'On real data' }] });
+  MLS.state.init({ id: META.id, get: STATE.get, set: STATE.set });
+  const fc = $('fourCast'); if (fc) fc.href = MLS.APP.fourCastUrl;
+  window.__mls = { S, get R() { return R; }, get D() { return D; } };
+  document.addEventListener('mls:theme', () => refresh());
+  start();
+})();
+</script>
+</body>
+</html>

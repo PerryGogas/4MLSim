@@ -1,0 +1,362 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Principal Component Analysis | 4MLSim</title>
+  <meta name="theme-color" content="#1B2340">
+  <link rel="manifest" href="../manifest.json">
+  <link rel="icon" type="image/svg+xml" href="../assets/img/icon.svg">
+  <link rel="apple-touch-icon" href="../assets/img/apple-touch-icon.png">
+  <link rel="stylesheet" href="../assets/vendor/temml.css">
+  <link rel="stylesheet" href="../assets/css/4mlsim.css">
+  <script src="../assets/vendor/temml.min.js"></script>
+  <script src="../assets/js/core.js"></script>
+  <script src="../assets/js/stats.js"></script>
+  <script src="../assets/js/plot.js"></script>
+  <script src="../assets/js/modules.js"></script>
+  <script src="../assets/js/core-ml.js"></script>
+  <script src="../assets/js/classify-ui.js"></script>
+</head>
+<body>
+<div class="page">
+  <header id="mlsHeader" data-variant="compact"></header>
+  <div class="mod-top" id="mlsTop"><div id="mlsModBar"></div><div id="mlsTabs"></div></div>
+
+  <div class="intro-box" id="mlsIntro">
+    <h3>What this module shows</h3>
+    <div class="intro-cols">
+      <div>
+        <p>Many economic variables move together: the interest rates at 8 maturities, dozens of business-cycle indicators. <b>Principal component analysis</b> (PCA) finds a few new variables, the <b>principal components</b>, that capture most of their variation.</p>
+        <p>The first component is the direction along which the data vary the most; the second, at a right angle to it, the next most; and so on. Keep the first few, and you have summarized many variables with little loss.</p>
+      </div>
+      <div>
+        <p><b>How to use it</b></p>
+        <ol>
+          <li>Two indicators: turn your own direction and find the one with the largest variance. That is the first component.</li>
+          <li>Yield curve: read the scree plot and the loadings (level, slope, curvature).</li>
+          <li>Rebuild a month's yield curve from 1, 2 or 3 components.</li>
+        </ol>
+      </div>
+    </div>
+  </div>
+
+  <!-- ===================== SIMULATION ===================== -->
+  <section data-panel="sim">
+    <div class="mod-grid">
+      <aside class="side" aria-label="Controls">
+        <div class="card">
+          <div class="card-head"><h3>1. Data<button type="button" class="help" data-help="data">?</button></h3></div>
+          <select id="ds" aria-label="Data set"><option value="gdpjobs">Two indicators: GDP growth and job growth</option><option value="yields">Yield curve: interest rates at 8 maturities</option></select>
+          <div class="field-row"><label for="n">Observations<button type="button" class="help" data-help="n">?</button></label><output id="nVal"></output></div>
+          <input type="range" id="n" min="30" max="300" step="10" value="80">
+          <div class="field-row"><label for="seed">Random seed<button type="button" class="help" data-help="seed">?</button></label></div>
+          <div class="inline-inputs"><input type="number" id="seed" min="1" max="99999" step="1" value="1" aria-label="Random seed"><button type="button" class="btn-ghost btn-icon" id="newSeed" title="New random data" style="flex:0 0 auto">&#127922;</button></div>
+        </div>
+        <div class="card">
+          <div class="card-head"><h3>2. PCA<button type="button" class="help" data-help="pca">?</button></h3></div>
+          <label class="check"><input type="checkbox" id="std"> Standardize the inputs<button type="button" class="help" data-help="std">?</button></label>
+          <div class="field-row"><label for="m">Components kept<button type="button" class="help" data-help="m">?</button></label><output id="mVal"></output></div>
+          <input type="range" id="m" min="1" max="2" step="1" value="1">
+          <div id="angRow">
+          <div class="field-row"><label for="ang">Your direction (degrees)<button type="button" class="help" data-help="ang">?</button></label><output id="angVal"></output></div>
+          <input type="range" id="ang" min="0" max="179" step="1" value="0">
+          </div>
+          <div id="monRow">
+          <div class="field-row"><label for="mon">Month to rebuild<button type="button" class="help" data-help="mon">?</button></label><output id="monVal"></output></div>
+          <input type="range" id="mon" min="1" max="120" step="1" value="1">
+          </div>
+        </div>
+      </aside>
+
+      <main class="main">
+        <div class="story" id="story"></div>
+        <div class="stat-grid" id="stats" style="margin-top:12px"></div>
+        <div id="statusLine" class="status-line" style="margin:10px 0"></div>
+        <div class="fig-grid">
+          <div id="figMap" class="fig-wide"></div>
+          <div id="figAng"></div>
+          <div id="figScree"></div>
+          <div id="figLoad"></div>
+          <div id="figRec"></div>
+          <div class="card" id="tblCard"></div>
+          <div id="figScores" class="fig-wide"></div>
+        </div>
+      </main>
+    </div>
+  </section>
+
+  <!-- ===================== LESSON ===================== -->
+  <section data-panel="lesson" class="card lesson" hidden>
+    <div id="mlsMathCtl"></div>
+    <p class="lvl-only-intuition note" style="margin-bottom:8px">Showing the intuition only. Choose <b>Formulas</b> or <b>Deep dive</b> above to add the mathematics.</p>
+
+    <h4>Many variables, a few factors</h4>
+    <p>When variables are strongly correlated, much of their information is shared. PCA rotates the data to new axes, the <b>principal components</b>:</p>
+    <ul>
+      <li>Component 1 is the direction (a weighted combination of the inputs) along which the data have the <b>largest variance</b>.</li>
+      <li>Component 2 is at a right angle to component 1 and has the largest remaining variance; and so on. The components are <b>uncorrelated</b>.</li>
+      <li>There are as many components as inputs, but usually the first few carry most of the variance: keep those, drop the rest. This is <b>dimension reduction</b>.</li>
+    </ul>
+
+    <h4>Reading the results</h4>
+    <ul>
+      <li><b>Explained variance</b> (the scree plot): the share of the total variance each component captures. Keep enough components for, say, 90% or 95%, or stop where the bars flatten.</li>
+      <li><b>Loadings</b>: the weights of each input in a component. They tell what the component means.</li>
+      <li><b>Scores</b>: the values of the components for each observation: the new, fewer variables.</li>
+    </ul>
+
+    <h4>The yield curve: level, slope, curvature</h4>
+    <p>For interest rates at many maturities, three components explain almost all the movements, and their loadings have a clear meaning: <b>level</b> (all rates move together), <b>slope</b> (short and long rates move in opposite directions) and <b>curvature</b> (medium maturities move against both ends). Bond portfolio managers measure and hedge their risk with these three factors.</p>
+
+    <h4>Standardize?</h4>
+    <p>PCA looks for variance, so an input measured in large units dominates. When the inputs have different units (GDP in billions, unemployment in %), standardize first: this is PCA on the correlation matrix. When they share the same unit and scale (interest rates in %), PCA on the covariance matrix is common.</p>
+
+    <div class="math-block lvl-math"><div class="mb-title">Eigenvectors of the covariance matrix</div>
+      <div class="tex-block">\Sigma = \frac{1}{n-1} \sum_i (x_i - \bar x)(x_i - \bar x)^\top, \qquad \Sigma\, v_k = \lambda_k\, v_k, \quad \lambda_1 \ge \lambda_2 \ge \dots</div>
+      <div class="tex-block">\text{scores: } z_{ik} = v_k^\top (x_i - \bar x), \qquad \text{explained share: } \frac{\lambda_k}{\sum_j \lambda_j}, \qquad \text{rebuilt: } \hat x_i = \bar x + \sum_{k=1}^{m} z_{ik}\, v_k</div>
+      <p class="note">The variance of the data along any unit direction u is u<sup>T</sup>Σu; it is largest, equal to λ<sub>1</sub>, at u = v<sub>1</sub>. That is what the "variance by direction" chart shows.</p>
+    </div>
+    <div class="math-block deep lvl-deep"><div class="mb-title">Deep dive</div>
+      <p><b>Best low-dimensional approximation.</b> Among all m-dimensional subspaces, the span of the first m components gives the smallest sum of squared reconstruction errors (Eckart-Young). In practice PCA is computed with the singular value decomposition of the centered data.</p>
+      <p><b>Unsupervised.</b> PCA ignores any target variable: a direction with small variance can still be the one that predicts. Principal component regression and diffusion-index forecasting (factor models with many predictors) use the first components as regressors.</p>
+      <p><b>Signs.</b> An eigenvector and its negative are equally valid; software fixes the sign by a convention (here, as scikit-learn, the largest loading is positive).</p>
+      <p class="note">References: Pearson (1901), "On lines and planes of closest fit", <i>Philosophical Magazine</i>; Hotelling (1933), <i>J. Educational Psychology</i>; Litterman and Scheinkman (1991), "Common factors affecting bond returns", <i>J. Fixed Income</i>; Stock and Watson (2002), "Forecasting using principal components from a large number of predictors", <i>JASA</i>; Jolliffe (2002), <i>Principal Component Analysis</i>.</p>
+    </div>
+  </section>
+
+  <!-- ===================== CHALLENGES ===================== -->
+  <section data-panel="challenges" class="card" hidden>
+    <div class="card-head"><h3>Challenges</h3><span class="card-sub">Answer the "predict first" questions before testing them in the Simulation tab.</span></div>
+    <div id="challenges"></div>
+  </section>
+
+  <!-- ===================== REAL DATA ===================== -->
+  <section data-panel="real" class="card lesson" hidden>
+    <h4>From the simulation to real data</h4>
+    <ul>
+      <li>Yield curve factors, composite indicators (financial conditions, economic sentiment), many predictors summarized into a few factors before a regression or a neural network, risk factors of a stock portfolio.</li>
+      <li>Standardize when units differ; read the scree plot and the loadings; fit PCA on the training set only and apply it to the test set (see the Data Leakage module). In Python: <code>sklearn.decomposition.PCA(n_components=3)</code>.</li>
+    </ul>
+    <div class="crosslink"><span>&#10140;</span><span><a id="fourCast" target="_blank" rel="noopener"><b>4Cast Lab</b></a> works with your own data for forecasting and classification.</span></div>
+  </section>
+
+  <footer id="mlsFooter"></footer>
+</div>
+
+<script>
+(function () {
+  'use strict';
+  const MLS = window.MLS, ML = MLS.ml, CL = MLS.cls;
+  const META = MLS.moduleMeta('pca');
+  const $ = id => document.getElementById(id);
+  const F = MLS.fmt, pct = CL.pct;
+
+  const DEFN = { gdpjobs: 80, yields: 120 }, LBL = ['Level', 'Slope', 'Curvature'];
+  const S = { ds: 'gdpjobs', n: {}, seed: 1, std: false, m: { gdpjobs: 1, yields: 2 }, ang: 0, mon: 1 };
+  let D = null, R = null;
+  const nObs = () => S.n[S.ds] || DEFN[S.ds], two = () => S.ds === 'gdpjobs', mK = () => S.m[S.ds];
+  function makeData() { const g = ML.DATA[S.ds].gen(ML.rng(S.seed), nObs()); D = { X: g.X, names: g.names, p: g.X[0].length, label: ML.DATA[S.ds].label, note: ML.DATA[S.ds].note }; }
+  function compute() {
+    const pc = ML.pca(D.X, S.std); R = { pc };
+    R.cum = []; pc.ratio.reduce((s, v, i) => (R.cum[i] = s + v), 0);
+    R.k90 = R.cum.findIndex(v => v >= 0.9) + 1;
+    const err = m => Math.sqrt(D.X.reduce((s, x, i) => { const xb = pc.back(pc.scores[i], m); return s + x.reduce((t, v, j) => t + (v - xb[j]) ** 2, 0); }, 0) / (D.X.length * D.p));
+    R.rmse = Array.from({ length: D.p }, (_, k) => err(k + 1)); R.rmse0 = err(0);
+    if (two()) {
+      R.Y = D.X.map(x => x.map((v, j) => (S.std ? (v - pc.mu[j]) / pc.sd[j] : v)));
+      R.c = S.std ? [0, 0] : pc.mu; const C = pc.cov, v1 = pc.vectors[0];
+      R.varAt = a => { const u = [Math.cos(a * Math.PI / 180), Math.sin(a * Math.PI / 180)]; return u[0] * u[0] * C[0][0] + 2 * u[0] * u[1] * C[0][1] + u[1] * u[1] * C[1][1]; };
+      R.pc1ang = ((Math.atan2(v1[1], v1[0]) * 180 / Math.PI) + 180) % 180;
+    }
+  }
+  function updateText() {
+    const card = MLS.statCard, pc = R.pc, m = mK();
+    $('story').innerHTML = '<h3>Data: ' + D.label + '</h3><p>' + D.note + ' <b>' + D.X.length + ' observations, ' + D.p + ' inputs' + (S.std ? ', standardized' : ', as measured') + '.</b></p>';
+    $('stats').innerHTML =
+      card('Variance explained by component 1', pct(pc.ratio[0]), 'of the total variance', '', 'st_pc1') +
+      card('With ' + m + ' component' + (m > 1 ? 's' : '') + ' kept', pct(R.cum[m - 1]), 'of the variance explained', '', 'st_cum') +
+      card('Components for 90%', String(R.k90), 'of ' + D.p, '', 'st_k90') +
+      card('Rebuilding error (RMSE)', F(R.rmse[m - 1], 3), 'with ' + m + ' kept, in the units of the data' + (two() ? '' : ' (% points)'), '', 'st_rmse');
+    let msg, cls = 'status-line ok';
+    if (two()) { const d = Math.min(Math.abs(S.ang - R.pc1ang), 180 - Math.abs(S.ang - R.pc1ang)); msg = d <= 3 ? 'Your direction is the first principal component: the largest variance, ' + F(pc.values[0], 3) + '.' : 'Variance along your direction: ' + F(R.varAt(S.ang), 3) + '. The first component, at ' + F(R.pc1ang, 0) + '°, has ' + F(pc.values[0], 3) + '. Turn your direction to find it.'; if (d > 3) cls = 'status-line'; }
+    else msg = 'Component 1 explains ' + pct(pc.ratio[0]) + ', components 1 to 3 together ' + pct(R.cum[2]) + ' of the movements of the 8 rates. Keeping ' + m + ', the rebuilt curves miss the actual rates by ' + F(R.rmse[m - 1], 3) + ' percentage points on average (RMSE).';
+    $('statusLine').textContent = msg; $('statusLine').className = cls;
+  }
+  const figMap = MLS.figure($('figMap'), { title: 'The data and the principal components', help: 'figmap', file: 'pca',
+    plot: { aspect: 0.6, margin: { l: 66, b: 50 }, x: { label: () => D.names[0] + (S.std ? ', standardized' : '') }, y: { label: () => D.names[1] + (S.std ? ', standardized' : '') } },
+    data: () => ({ cols: D.names.concat(D.names.map((_, k) => 'PC' + (k + 1) + ' score')), rows: D.X.map((x, i) => x.concat(R.pc.scores[i].map(v => +v.toFixed(4)))) }) });
+  function drawMap() {
+    const host = $('figMap'); host.hidden = !two(); if (!two()) return;
+    const P = figMap.plot, pc = R.pc, Y = R.Y, c = R.c, ink = MLS.color('chart-ink'), c2 = MLS.color('series-2'), mu = MLS.color('chart-muted');
+    const xs = Y.map(y => y[0]), ys = Y.map(y => y[1]), half = Math.max(Math.max(...xs) - Math.min(...xs), Math.max(...ys) - Math.min(...ys)) * 0.6;
+    P.setX(c[0] - half * 1.25, c[0] + half * 1.25); P.setY(c[1] - half * 0.85, c[1] + half * 0.85);
+    const u = [Math.cos(S.ang * Math.PI / 180), Math.sin(S.ang * Math.PI / 180)];
+    P.draw(P => {
+      P.segment(c[0] - u[0] * half * 2, c[1] - u[1] * half * 2, c[0] + u[0] * half * 2, c[1] + u[1] * half * 2, { color: c2, width: 2.2 });
+      Y.forEach(y => { const t = (y[0] - c[0]) * u[0] + (y[1] - c[1]) * u[1]; P.segment(y[0], y[1], c[0] + t * u[0], c[1] + t * u[1], { color: c2, width: 0.8, opacity: 0.5 }); });
+      P.points(Y.map(y => { const t = (y[0] - c[0]) * u[0] + (y[1] - c[1]) * u[1]; return { x: c[0] + t * u[0], y: c[1] + t * u[1] }; }), { color: c2, r: 2.4, ring: false });
+      P.points(Y.map((y, i) => ({ x: y[0], y: y[1], i })), { color: MLS.color('series-1'), r: 4.2, tip: d => '<b>Region ' + (d.i + 1) + '</b><br>' + D.names[0] + ': ' + F(D.X[d.i][0], 2) + '<br>' + D.names[1] + ': ' + F(D.X[d.i][1], 2) + '<br>PC1 score: ' + F(pc.scores[d.i][0], 3) + '<br>PC2 score: ' + F(pc.scores[d.i][1], 3) });
+      pc.vectors.forEach((v, k) => { const L = 2 * Math.sqrt(pc.values[k]); P.arrow(c[0], c[1], c[0] + v[0] * L, c[1] + v[1] * L, { color: ink, width: 2.6 }); P.text(c[0] + v[0] * L, c[1] + v[1] * L, 'PC' + (k + 1), { dx: 6, dy: -4, size: 13, weight: 800 }); });
+    });
+    figMap.legend([{ label: 'Regions', color: MLS.color('series-1') }, { label: 'Your direction and the projections on it', color: c2, line: true }, { label: 'Principal components (length: 2 standard deviations)', color: ink, line: true }]);
+    figMap.caption('Each point is projected onto your direction (orange dots). PCA picks the direction where the projections are most spread out: PC1. PC2 is at a right angle to it.' + (S.std ? '' : ' The axes have different scales, so the right angle may not look square.'));
+  }
+  const figAng = MLS.figure($('figAng'), { title: 'Variance along each direction', help: 'figang', file: 'pca-variance-by-angle', plot: { aspect: 0.65, margin: { l: 66, b: 48 }, x: { label: 'Direction (degrees)' }, y: { label: 'Variance of the projections' } } });
+  function drawAng() {
+    $('figAng').hidden = !two(); if (!two()) return;
+    const P = figAng.plot, pc = R.pc, c1 = MLS.color('series-1'), c2 = MLS.color('series-2'), pts = []; for (let a = 0; a <= 180; a += 1) pts.push([a, R.varAt(a)]);
+    P.setX(0, 180); P.setY(0, pc.values[0] * 1.12);
+    P.draw(P => {
+      P.line(pts, { color: c1, width: 2.2 });
+      P.vline(R.pc1ang, { color: MLS.color('chart-ink'), width: 1.4, dash: '5 4' }); P.text(R.pc1ang, pc.values[0] * 1.12, 'PC1', { anchor: 'middle', dy: 13, size: 12, weight: 800 });
+      P.points([{ x: S.ang, y: R.varAt(S.ang) }], { color: c2, r: 7, tip: d => 'Your direction ' + d.x + '°<br>variance ' + F(d.y, 3) });
+    });
+    figAng.caption('The variance of the projections for every direction. Its maximum is the first eigenvalue, ' + F(pc.values[0], 3) + ', at PC1; its minimum is the second, ' + F(pc.values[1], 3) + ', at PC2.');
+  }
+  const figScree = MLS.figure($('figScree'), { title: 'Scree plot: variance explained', help: 'figscree', file: 'pca-scree', plot: { aspect: 0.65, margin: { l: 60, b: 48 }, x: { label: 'Component' }, y: { label: 'Share of the variance (%)' } } });
+  function drawScree() {
+    const P = figScree.plot, pc = R.pc, p = D.p, c1 = MLS.color('series-1'), c2 = MLS.color('series-2'), m = mK();
+    P.setX(0.4, p + 0.6); P.setY(0, 105);
+    P.draw(P => {
+      pc.ratio.forEach((r, k) => P.rect(k + 1 - 0.32, 0, k + 1 + 0.32, 100 * r, { fill: MLS.rgba(c1, k < m ? 0.9 : 0.35) }));
+      P.line(R.cum.map((v, k) => [k + 1, 100 * v]), { color: c2, width: 2 });
+      P.points(R.cum.map((v, k) => ({ x: k + 1, y: 100 * v })), { color: c2, r: 4, tip: d => 'Components 1 to ' + d.x + ': ' + F(d.y, 1) + '%<br>Component ' + d.x + ' alone: ' + F(100 * pc.ratio[d.x - 1], 2) + '%' });
+      P.hline(90, { color: MLS.color('chart-muted'), width: 1, dash: '4 4' });
+    });
+    figScree.legend([{ label: 'Each component', color: c1 }, { label: 'Cumulative', color: c2, line: true }, { label: '90%', color: MLS.color('chart-muted'), line: true, dash: '4 4' }]);
+    figScree.caption('Dark bars: the ' + m + ' component' + (m > 1 ? 's' : '') + ' kept.');
+  }
+  const figLoad = MLS.figure($('figLoad'), { title: 'Loadings: what each component means', help: 'figload', file: 'pca-loadings', plot: { aspect: 0.65, margin: { l: 60, b: 48 }, x: { label: () => (two() ? 'Input' : 'Maturity'), ticks: () => D.names.map((_, j) => j + 1), fmt: v => (Number.isInteger(v) && D.names[v - 1] ? D.names[v - 1].replace(/ \(.*\)/, '') : '') }, y: { label: 'Loading' } } });
+  function drawLoad() {
+    const P = figLoad.plot, pc = R.pc, p = D.p, K = Math.min(3, p), all = pc.vectors.slice(0, K).flat();
+    P.setX(0.6, p + 0.4); P.setY(Math.min(-0.2, Math.min(...all) - 0.1), Math.max(...all) + 0.12);
+    P.draw(P => {
+      P.hline(0, { color: MLS.color('chart-axis'), width: 1 });
+      pc.vectors.slice(0, K).forEach((v, k) => { P.line(v.map((w, j) => [j + 1, w]), { color: MLS.seriesColor(k), width: 2.4 }); P.points(v.map((w, j) => ({ x: j + 1, y: w })), { color: MLS.seriesColor(k), r: 4, tip: d => 'PC' + (k + 1) + ', ' + D.names[d.x - 1] + ': ' + F(d.y, 3) }); });
+    });
+    figLoad.legend(pc.vectors.slice(0, K).map((v, k) => ({ label: 'PC' + (k + 1) + (two() ? '' : ' (' + LBL[k].toLowerCase() + ')') + ', ' + pct(pc.ratio[k]), color: MLS.seriesColor(k), line: true })));
+    figLoad.caption(two() ? 'PC1 gives both inputs the same sign: it measures overall growth. PC2 contrasts them.' : 'PC1: all maturities with similar weights (the level). PC2: short and long maturities with opposite signs (the slope). PC3: the middle against both ends (the curvature).');
+  }
+  const figRec = MLS.figure($('figRec'), { title: 'Rebuilding one month\'s yield curve', help: 'figrec', file: 'pca-rebuild', plot: { aspect: 0.65, margin: { l: 60, b: 48 }, x: { label: 'Maturity', ticks: () => D.names.map((_, j) => j + 1), fmt: v => (Number.isInteger(v) && D.names[v - 1] ? D.names[v - 1] : '') }, y: { label: 'Interest rate (%)' } } });
+  function drawRec() {
+    $('figRec').hidden = two(); $('figScores').hidden = two(); if (two()) return;
+    const P = figRec.plot, pc = R.pc, i = Math.min(S.mon, D.X.length) - 1, x = D.X[i], m = mK(), ink = MLS.color('chart-ink'), c2 = MLS.color('series-2'), mu = MLS.color('chart-muted');
+    const recs = [1, 2, 3].map(q => pc.back(pc.scores[i], q)), all = x.concat(recs.flat(), pc.mu);
+    P.setX(0.6, D.p + 0.4); P.setY(...MLS.niceDomain(Math.min(...all), Math.max(...all), 0.12));
+    P.draw(P => {
+      P.line(pc.mu.map((v, j) => [j + 1, v]), { color: mu, width: 1.4, dash: '3 3' });
+      P.line(pc.back(pc.scores[i], m).map((v, j) => [j + 1, v]), { color: c2, width: 2.6 });
+      P.points(x.map((v, j) => ({ x: j + 1, y: v })), { color: ink, r: 5, tip: d => D.names[d.x - 1] + ': actual ' + F(d.y, 3) + '%<br>rebuilt with ' + m + ': ' + F(pc.back(pc.scores[i], m)[d.x - 1], 3) + '%' });
+    });
+    figRec.legend([{ label: 'Actual rates, month ' + (i + 1), color: ink }, { label: 'Rebuilt from ' + m + ' component' + (m > 1 ? 's' : ''), color: c2, line: true }, { label: 'Average curve', color: mu, line: true, dash: '3 3' }]);
+    figRec.caption('The average curve plus ' + m + ' component' + (m > 1 ? 's' : '') + ' times this month\'s scores. Change the month or the number of components.');
+  }
+  const figScores = MLS.figure($('figScores'), { title: 'Scores over time: the hidden factors', help: 'figscores', file: 'pca-scores', plot: { aspect: 0.35, margin: { l: 60, b: 48 }, x: { label: 'Month' }, y: { label: 'Score' } } });
+  function drawScores() {
+    if (two()) return;
+    const P = figScores.plot, sc = R.pc.scores, n = sc.length, all = sc.map(s => s.slice(0, 3)).flat();
+    P.setX(1, n); P.setY(...MLS.niceDomain(Math.min(...all), Math.max(...all), 0.08));
+    P.draw(P => {
+      P.hline(0, { color: MLS.color('chart-axis'), width: 1 });
+      [0, 1, 2].forEach(k => P.line(sc.map((s, i) => [i + 1, s[k]]), { color: MLS.seriesColor(k), width: k === 0 ? 2.4 : 1.8 }));
+      P.vline(S.mon, { color: MLS.color('chart-ink'), width: 1.2, dash: '4 4' });
+      P.crosshair([0, 1, 2].map(k => ({ name: 'PC' + (k + 1) + ' (' + LBL[k].toLowerCase() + ')', color: MLS.seriesColor(k), pts: sc.map((s, i) => [i + 1, s[k]]) })), v => 'Month ' + Math.round(v), v => F(v, 3));
+    });
+    figScores.legend([0, 1, 2].map(k => ({ label: 'PC' + (k + 1) + ': ' + LBL[k].toLowerCase(), color: MLS.seriesColor(k), line: true })).concat([{ label: 'Month rebuilt', color: MLS.color('chart-ink'), line: true, dash: '4 4' }]));
+    figScores.caption('Three numbers per month instead of eight rates. The level moves slowly; the slope and curvature change more often.');
+  }
+  function drawTbl() {
+    const pc = R.pc, K = Math.min(D.p, 8);
+    $('tblCard').innerHTML = '<div class="card-head"><h3>The components in numbers' + MLS.helpBtn('tbl') + '</h3></div><div style="overflow-x:auto"><table class="tbl"><thead><tr><th>Component</th><th>Variance (eigenvalue)</th><th>Share</th><th>Cumulative</th></tr></thead><tbody>' +
+      pc.values.slice(0, K).map((v, k) => '<tr' + (k < mK() ? ' style="font-weight:800;background:var(--tint)"' : '') + '><td>PC' + (k + 1) + (!two() && k < 3 ? ' (' + LBL[k].toLowerCase() + ')' : '') + '</td><td>' + F(v, 4) + '</td><td>' + pct(pc.ratio[k]) + '</td><td>' + pct(R.cum[k]) + '</td></tr>').join('') +
+      '</tbody></table></div><p class="note">Bold: the components kept. The variances add up to the total variance of the ' + (S.std ? 'standardized ' : '') + 'inputs' + (S.std ? ' (= ' + D.p + ')' : ', ' + F(pc.values.reduce((a, b) => a + b, 0), 3)) + '.</p>';
+  }
+  function syncUI() {
+    $('ds').value = S.ds; $('n').value = nObs(); $('nVal').textContent = nObs(); $('seed').value = S.seed; $('std').checked = S.std;
+    $('m').max = D.p; $('m').value = mK(); $('mVal').textContent = mK();
+    $('angRow').hidden = !two(); $('monRow').hidden = two(); $('ang').value = S.ang; $('angVal').textContent = S.ang + '°';
+    $('mon').max = D.X.length; S.mon = Math.min(S.mon, D.X.length); $('mon').value = S.mon; $('monVal').textContent = S.mon;
+  }
+  function render() { syncUI(); updateText(); drawMap(); drawAng(); drawScree(); drawLoad(); drawRec(); drawTbl(); drawScores(); if (two()) figMap.refreshTable(); if (ch) ch.check(); MLS.state.save(); }
+  function refresh() { compute(); render(); }
+  const full = () => { makeData(); refresh(); };
+  $('ds').onchange = e => { S.ds = e.target.value; full(); };
+  $('n').addEventListener('input', e => ($('nVal').textContent = e.target.value));
+  $('n').onchange = e => { S.n[S.ds] = +e.target.value; full(); };
+  $('seed').onchange = e => { S.seed = Math.max(1, Math.round(+e.target.value) || 1); full(); };
+  $('newSeed').onclick = () => { S.seed = MLS.newSeed(); full(); };
+  $('std').onchange = e => { S.std = e.target.checked; refresh(); };
+  $('m').addEventListener('input', e => ($('mVal').textContent = e.target.value)); $('m').onchange = e => { S.m[S.ds] = +e.target.value; render(); };
+  $('ang').addEventListener('input', e => { S.ang = +e.target.value; render(); });
+  $('mon').addEventListener('input', e => { S.mon = +e.target.value; render(); });
+
+  MLS.registerHelp({
+    data: { title: 'Data', html: '<b>Two indicators</b>: GDP growth and employment growth of 80 regions; they move together. <b>Yield curve</b>: monthly government bond yields at 8 maturities (3 months to 30 years), driven by hidden level, slope and curvature factors. Simulated.' },
+    n: { title: 'Observations', html: 'Regions (two indicators) or months (yield curve).' },
+    seed: { title: 'Random seed', html: 'Fixes the random numbers: the same seed gives the same data.' },
+    pca: { title: 'PCA', html: 'Rotate the data to new, uncorrelated axes ordered by variance, and keep the first few.' },
+    std: { title: 'Standardize', html: 'Divide every input by its standard deviation first (PCA on the correlation matrix). Needed when the inputs have different units.' },
+    m: { title: 'Components kept', html: 'How many components are used to summarize and to rebuild the data.' },
+    ang: { title: 'Your direction', html: 'A line through the center of the data, at this angle. The data are projected onto it; turn it to make the projections as spread out as possible.' },
+    mon: { title: 'Month to rebuild', html: 'Which month\'s yield curve to rebuild from the kept components.' },
+    st_pc1: { title: 'Variance of component 1', html: 'The share of the total variance (the sum of the variances of all inputs) captured by the first component.' },
+    st_cum: { title: 'Variance kept', html: 'The share captured by the components kept together.' },
+    st_k90: { title: 'Components for 90%', html: 'The smallest number of components that together explain at least 90% of the variance.' },
+    st_rmse: { title: 'Rebuilding error', html: 'The root mean squared difference between the data and the data rebuilt from the kept components (0 when all are kept).' },
+    figmap: { title: 'Data and components', html: 'The data, your direction with the projections, and the two principal components drawn from the center with length 2 standard deviations.' },
+    figang: { title: 'Variance by direction', html: 'For every angle, the variance of the data projected onto that direction. PCA chooses the maximum.' },
+    figscree: { title: 'Scree plot', html: 'The share of variance of each component (bars) and the cumulative share (line).' },
+    figload: { title: 'Loadings', html: 'The weight of each input in the first components. Their pattern tells what each component measures.' },
+    figrec: { title: 'Rebuilding a curve', html: 'One month\'s actual rates and the curve rebuilt from the average curve plus the kept components.' },
+    tbl: { title: 'The components in numbers', html: 'The variance (eigenvalue) of each component, its share of the total variance and the cumulative share.' },
+    figscores: { title: 'Scores', html: 'The values of the first three components month by month: the hidden factors behind the 8 rates.' }
+  });
+
+  function setup(o) { Object.assign(S, o); MLS.pickTab('sim'); full(); window.scrollTo({ top: 0, behavior: 'smooth' }); }
+  const ch = MLS.challenges($('challenges'), META.id, [
+    { type: 'predict', q: 'The first principal component is the direction along which...',
+      options: ['the first input lies', 'the data vary the most', 'the data vary the least'], answer: 1,
+      explain: 'PC1 maximizes the variance of the projections. The direction of least variance is the last component.',
+      tryIt: () => setup({ ds: 'gdpjobs', ang: 0 }) },
+    { type: 'task', q: 'Two indicators: turn your direction to within 3 degrees of the first principal component.', hint: 'Watch the orange dot in the "Variance along each direction" chart and move it to the top of the curve.',
+      check: () => R && two() && Math.min(Math.abs(S.ang - R.pc1ang), 180 - Math.abs(S.ang - R.pc1ang)) <= 3 },
+    { type: 'predict', q: 'Yield curve: how many components are needed to explain more than 95% of the movements of the 8 rates?',
+      options: ['All 8', 'About 2 or 3', 'One is always enough'], answer: 1,
+      explain: 'The rates are driven by a few common factors. Level and slope already explain about 98% here; curvature adds most of the rest.',
+      tryIt: () => setup({ ds: 'yields' }) },
+    { type: 'predict', q: 'Yield curve: the loadings of the second component...',
+      options: ['are all about equal', 'are all zero', 'go from one sign at short maturities to the other at long ones: the slope'], answer: 2,
+      explain: 'PC2 moves short and long rates in opposite directions: a steeper or flatter curve. PC1 (all loadings alike) is the level.',
+      tryIt: () => setup({ ds: 'yields' }) },
+    { type: 'task', q: 'Yield curve: keep the fewest components that rebuild the rates with an RMSE below 0.05 percentage points.', hint: 'Watch the "Rebuilding error" tile while you change the number of components kept.',
+      check: () => R && S.ds === 'yields' && R.rmse[mK() - 1] < 0.05 && (mK() === 1 || R.rmse[mK() - 2] >= 0.05) },
+    { type: 'predict', q: 'Without standardizing, an input measured in much larger units...',
+      options: ['dominates the first component', 'is ignored by PCA', 'makes no difference'], answer: 0,
+      explain: 'PCA looks for variance, and an input in large units has a large variance. Standardize when the units differ.',
+      tryIt: () => setup({ ds: 'gdpjobs', std: false }) }
+  ]);
+  const STATE = {
+    get: () => ({ ds: S.ds, n: S.n, seed: S.seed, std: S.std, m: S.m, ang: S.ang, mon: S.mon }),
+    set: o => {
+      if (DEFN[o.ds]) S.ds = o.ds;
+      if (o.n) Object.keys(o.n).forEach(q => { if (DEFN[q] && Number.isFinite(o.n[q])) S.n[q] = Math.max(30, Math.min(300, o.n[q])); });
+      if (Number.isFinite(o.seed)) S.seed = o.seed;
+      if (typeof o.std === 'boolean') S.std = o.std;
+      if (o.m) Object.keys(o.m).forEach(q => { if (DEFN[q] && Number.isFinite(o.m[q])) S.m[q] = Math.max(1, Math.min(q === 'yields' ? 8 : 2, o.m[q])); });
+      if (Number.isFinite(o.ang)) S.ang = Math.max(0, Math.min(179, Math.round(o.ang)));
+      if (Number.isFinite(o.mon)) S.mon = Math.max(1, o.mon);
+    }
+  };
+  const start = full;
+  MLS.moduleBar({ id: META.id, title: META.title, section: META.sectionTitle, level: META.level },
+    { tabs: [{ id: 'sim', label: 'Simulation' }, { id: 'lesson', label: 'Lesson' }, { id: 'challenges', label: 'Challenges' }, { id: 'real', label: 'On real data' }] });
+  MLS.state.init({ id: META.id, get: STATE.get, set: STATE.set });
+  const fc = $('fourCast'); if (fc) fc.href = MLS.APP.fourCastUrl;
+  window.__mls = { S, get R() { return R; }, get D() { return D; } };
+  document.addEventListener('mls:theme', () => refresh());
+  start();
+})();
+</script>
+</body>
+</html>

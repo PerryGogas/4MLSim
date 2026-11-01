@@ -1,0 +1,323 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>DBSCAN | 4MLSim</title>
+  <meta name="theme-color" content="#1B2340">
+  <link rel="manifest" href="../manifest.json">
+  <link rel="icon" type="image/svg+xml" href="../assets/img/icon.svg">
+  <link rel="apple-touch-icon" href="../assets/img/apple-touch-icon.png">
+  <link rel="stylesheet" href="../assets/vendor/temml.css">
+  <link rel="stylesheet" href="../assets/css/4mlsim.css">
+  <script src="../assets/vendor/temml.min.js"></script>
+  <script src="../assets/js/core.js"></script>
+  <script src="../assets/js/stats.js"></script>
+  <script src="../assets/js/plot.js"></script>
+  <script src="../assets/js/modules.js"></script>
+  <script src="../assets/js/core-ml.js"></script>
+  <script src="../assets/js/classify-ui.js"></script>
+  <script src="../assets/js/clust-ui.js"></script>
+</head>
+<body>
+<div class="page">
+  <header id="mlsHeader" data-variant="compact"></header>
+  <div class="mod-top" id="mlsTop"><div id="mlsModBar"></div><div id="mlsTabs"></div></div>
+
+  <div class="intro-box" id="mlsIntro">
+    <h3>What this module shows</h3>
+    <div class="intro-cols">
+      <div>
+        <p>Clusters are not always round. <b>DBSCAN</b> (density-based clustering) defines a cluster as a <b>dense region</b>: points with many neighbours close by. It grows clusters from these dense points and follows any shape.</p>
+        <p>Points in no dense region are labelled <b>noise</b>. For a bank, a card payment at an unusual hour and for an unusual amount is exactly such a point: worth a check for fraud.</p>
+      </div>
+      <div>
+        <p><b>How to use it</b></p>
+        <ol>
+          <li>Start with the card payments: find the noise points.</li>
+          <li>Change the radius ε and the minimum number of neighbours; click a point to see its ε-neighbourhood.</li>
+          <li>Try the moons and circles, and compare with k-means below.</li>
+        </ol>
+      </div>
+    </div>
+  </div>
+
+  <!-- ===================== SIMULATION ===================== -->
+  <section data-panel="sim">
+    <div class="mod-grid">
+      <aside class="side" aria-label="Controls">
+        <div class="card">
+          <div class="card-head"><h3>1. Data<button type="button" class="help" data-help="data">?</button></h3></div>
+          <select id="ds" aria-label="Data set"><option value="payments">Card payments (hour, amount)</option><option value="moonsU">Generic: moons</option><option value="circlesU">Generic: circles</option><option value="blobs3">Generic: three round groups</option></select>
+          <div class="field-row"><label for="n">Observations<button type="button" class="help" data-help="n">?</button></label><output id="nVal"></output></div>
+          <input type="range" id="n" min="60" max="400" step="10" value="250">
+          <div class="field-row"><label for="seed">Random seed<button type="button" class="help" data-help="seed">?</button></label></div>
+          <div class="inline-inputs"><input type="number" id="seed" min="1" max="99999" step="1" value="1" aria-label="Random seed"><button type="button" class="btn-ghost btn-icon" id="newSeed" title="New random data" style="flex:0 0 auto">&#127922;</button></div>
+        </div>
+        <div class="card">
+          <div class="card-head"><h3>2. DBSCAN<button type="button" class="help" data-help="db">?</button></h3></div>
+          <div class="field-row"><label for="eps">Radius ε (standardized units)<button type="button" class="help" data-help="eps">?</button></label><output id="epsVal"></output></div>
+          <input type="range" id="eps" min="0.05" max="1" step="0.01" value="0.3">
+          <div class="field-row"><label for="minPts">Minimum neighbours (minPts)<button type="button" class="help" data-help="minpts">?</button></label><output id="minPtsVal"></output></div>
+          <input type="range" id="minPts" min="2" max="15" step="1" value="5">
+          <p class="note">Inputs are standardized before distances are computed.</p>
+        </div>
+        <div class="card">
+          <div class="card-head"><h3>3. Grow the clusters<button type="button" class="help" data-help="run">?</button></h3></div>
+          <div id="stepper"></div>
+          <p class="note" id="stepNote"></p>
+        </div>
+      </aside>
+
+      <main class="main">
+        <div class="story" id="story"></div>
+        <div class="stat-grid" id="stats" style="margin-top:12px"></div>
+        <div id="statusLine" class="status-line" style="margin:10px 0"></div>
+        <div class="fig-grid">
+          <div id="figMap" class="fig-wide"></div>
+          <div id="figK"></div>
+          <div id="figKM"></div>
+        </div>
+      </main>
+    </div>
+  </section>
+
+  <!-- ===================== LESSON ===================== -->
+  <section data-panel="lesson" class="card lesson" hidden>
+    <div id="mlsMathCtl"></div>
+    <p class="lvl-only-intuition note" style="margin-bottom:8px">Showing the intuition only. Choose <b>Formulas</b> or <b>Deep dive</b> above to add the mathematics.</p>
+
+    <h4>Clusters as dense regions</h4>
+    <p>DBSCAN has two settings: a radius <b>ε</b> and a minimum number of points <b>minPts</b>. Around every point draw a circle of radius ε and count the points inside (the point itself included).</p>
+    <ul>
+      <li><b>Core point</b>: at least minPts points in its circle. It lies inside a dense region.</li>
+      <li><b>Border point</b>: fewer than minPts in its circle, but inside the circle of a core point. It is on the edge of a cluster.</li>
+      <li><b>Noise point</b>: neither. It belongs to no cluster: an outlier.</li>
+    </ul>
+
+    <h4>The algorithm</h4>
+    <ol>
+      <li>Take a core point not yet in a cluster and start a new cluster with it.</li>
+      <li>Add every point in its ε-circle. For each new core point, add the points in its circle too, and so on, until the cluster stops growing.</li>
+      <li>Repeat with the next unassigned core point. What is left at the end is noise.</li>
+    </ol>
+    <p>The number of clusters is <b>not</b> chosen in advance: it follows from ε and minPts. A cluster can have any shape, because it grows through chains of dense neighbourhoods.</p>
+
+    <h4>Choosing ε and minPts</h4>
+    <ul>
+      <li><b>minPts</b>: a rule of thumb is about twice the number of inputs (here 4 or 5). Larger values ignore small groups and give more noise.</li>
+      <li><b>ε</b>: draw the <b>k-distance plot</b>: for every point, the distance to its minPts-th nearest neighbour, sorted. Dense points have small values; the curve bends upward where the noise begins. Choose ε near that knee.</li>
+      <li>Too small ε: many tiny clusters and most points become noise. Too large ε: separate groups merge into one.</li>
+    </ul>
+
+    <h4>Strengths and limits</h4>
+    <p>Finds clusters of any shape and flags outliers. But one ε must fit all clusters, so groups with very different densities are hard; distances must be meaningful, so <b>standardize</b> the inputs; and in many dimensions all distances become similar (see the Curse of Dimensionality module).</p>
+
+    <div class="math-block lvl-math"><div class="mb-title">Definitions</div>
+      <div class="tex-block">N_\varepsilon(x) = \{\, y : \lVert x - y \rVert \le \varepsilon \,\}, \qquad x \text{ is a core point} \iff |N_\varepsilon(x)| \ge \text{minPts}</div>
+      <p class="note">y is directly density-reachable from x if x is a core point and y is in N<sub>ε</sub>(x). A cluster is a maximal set of points connected through chains of such steps.</p>
+    </div>
+    <div class="math-block deep lvl-deep"><div class="mb-title">Deep dive</div>
+      <p><b>Border points</b> that lie in the ε-circles of core points of two clusters are given to the cluster that reaches them first, so their label can depend on the order of the data. Core points and noise do not.</p>
+      <p><b>Cost.</b> With a spatial index the neighbour searches take about n log n time in few dimensions; without one, n².</p>
+      <p><b>Extensions.</b> OPTICS orders the points by density so all values of ε can be read at once; HDBSCAN builds a hierarchy of density levels and handles clusters of different densities.</p>
+      <p class="note">References: Ester, Kriegel, Sander and Xu (1996), "A density-based algorithm for discovering clusters in large spatial databases with noise", <i>KDD</i>; Schubert, Sander, Ester, Kriegel and Xu (2017), "DBSCAN revisited", <i>ACM Trans. Database Systems</i>.</p>
+    </div>
+  </section>
+
+  <!-- ===================== CHALLENGES ===================== -->
+  <section data-panel="challenges" class="card" hidden>
+    <div class="card-head"><h3>Challenges</h3><span class="card-sub">Answer the "predict first" questions before testing them in the Simulation tab.</span></div>
+    <div id="challenges"></div>
+  </section>
+
+  <!-- ===================== REAL DATA ===================== -->
+  <section data-panel="real" class="card lesson" hidden>
+    <h4>From the simulation to real data</h4>
+    <ul>
+      <li>Fraud and anomaly screening (unusual payments, trades or claims are noise points), geographic clusters (shops, customers, accidents), market regimes in a few indicators.</li>
+      <li>Standardize the inputs, set minPts, read ε from the k-distance plot. In Python: <code>sklearn.cluster.DBSCAN(eps=0.3, min_samples=5)</code>; noise points get the label −1.</li>
+    </ul>
+    <div class="crosslink"><span>&#10140;</span><span><a id="fourCast" target="_blank" rel="noopener"><b>4Cast Lab</b></a> works with your own data for forecasting and classification.</span></div>
+  </section>
+
+  <footer id="mlsFooter"></footer>
+</div>
+
+<script>
+(function () {
+  'use strict';
+  const MLS = window.MLS, ML = MLS.ml, CL = MLS.cls;
+  const META = MLS.moduleMeta('dbscan');
+  const $ = id => document.getElementById(id);
+  const F = MLS.fmt, pct = CL.pct;
+
+  const U = MLS.clust;
+  const DEFN = { payments: 250, moonsU: 300, circlesU: 300, blobs3: 150 };
+  const S = { ds: 'payments', n: {}, seed: 1, eps: 0.3, minPts: 5, step: -1, sel: null };
+  let D = null, R = null;
+  const nObs = () => S.n[S.ds] || DEFN[S.ds];
+  function makeData() { D = U.make(S.ds, S.seed, nObs()); }
+  function compute() {
+    const db = ML.dbscan(D.Z, S.eps, S.minPts);
+    R = { db, kd: ML.kDistance(D.Z, S.minPts) };
+    R.noise = db.labels.filter(l => l < 0).length; R.core = db.core.filter(Boolean).length; R.border = D.pts.length - R.noise - R.core;
+    R.km = ML.kmeansBest(D.Z, Math.max(2, Math.min(8, db.k)), S.seed, 5);
+  }
+  const atEnd = () => S.step < 0 || S.step >= R.db.order.length;
+  const shown = () => (atEnd() ? R.db.order.length : S.step);
+  function labelsNow() {
+    if (atEnd()) return R.db.labels;
+    const L = new Array(D.pts.length).fill(null); R.db.order.slice(0, S.step).forEach(([i, c]) => (L[i] = c)); return L;
+  }
+  function updateText() {
+    const card = MLS.statCard, db = R.db, n = D.pts.length;
+    let selTxt = '';
+    if (S.sel !== null && S.sel < n) { const m = db.nb[S.sel].length; selTxt = ' <b>Selected point ' + (S.sel + 1) + '</b>: ' + m + ' point' + (m === 1 ? '' : 's') + ' within ε (itself included), minPts = ' + S.minPts + ': a <b>' + db.kind[S.sel] + ' point</b>.'; }
+    $('story').innerHTML = '<h3>Data: ' + D.label + '</h3><p>' + D.note + ' <b>' + n + ' observations, no labels.</b> ε = ' + S.eps + ', minPts = ' + S.minPts + '.' + selTxt + '</p>';
+    $('stats').innerHTML =
+      card('Clusters found', String(db.k), 'chosen by the data, not in advance', '', 'st_k') +
+      card('Core points', String(R.core), 'at least ' + S.minPts + ' neighbours within ε', '', 'st_core') +
+      card('Border points', String(R.border), 'near a core point', '', 'st_border') +
+      card('Noise points', String(R.noise), (100 * R.noise / n).toFixed(1) + '% of the observations', '', 'st_noise');
+    const s = shown();
+    $('stepNote').innerHTML = atEnd() ? 'All clusters grown. Grey crosses: noise. Click a point to see its ε-circle.' : s === 0 ? 'Nothing assigned yet. Press <b>Step</b>: DBSCAN takes the first core point and grows its cluster.' :
+      'Point ' + (R.db.order[s - 1][0] + 1) + ' joined cluster ' + (R.db.order[s - 1][1] + 1) + ' (' + s + ' of ' + R.db.order.length + ' points assigned).';
+    let msg, cls = 'status-line';
+    if (!atEnd()) msg = 'Press Step, Play or End to grow the clusters.';
+    else if (db.k === 0) { msg = 'No core points: every point is noise. Increase ε or lower minPts.'; cls += ' bad'; }
+    else if (db.k > 6 || R.noise > 0.3 * n) { msg = 'ε is too small for minPts = ' + S.minPts + ': ' + db.k + ' small clusters and ' + R.noise + ' noise points. Increase ε (look for the knee of the k-distance plot).'; cls += ' bad'; }
+    else if (db.k === 1 && S.ds !== 'payments') { msg = 'ε is too large: separate groups merge into one cluster. Decrease ε.'; cls += ' bad'; }
+    else if (S.ds === 'payments') { msg = R.noise + ' payment' + (R.noise === 1 ? ' is' : 's are') + ' noise: they fit none of the ' + db.k + ' dense groups (an unusual hour, amount or both). A bank would check these first.'; cls += ' ok'; }
+    else { msg = 'DBSCAN finds ' + db.k + ' clusters of any shape' + (R.noise ? ' and ' + R.noise + ' noise points' : '') + '. K-means with k = ' + Math.max(2, db.k) + ' (right) splits the plane with straight borders.'; cls += ' ok'; }
+    $('statusLine').textContent = msg; $('statusLine').className = cls;
+  }
+  const figMap = MLS.figure($('figMap'), { title: 'Core, border and noise points', help: 'figmap', file: 'dbscan',
+    plot: { aspect: 0.55, margin: { l: 66, b: 50 }, x: { label: () => D.names[0] }, y: { label: () => D.names[1] }, onClick: (x, y, e, p) => clickAt(p) },
+    data: () => ({ cols: D.names.concat(['Cluster', 'Type']), rows: D.pts.map((p, i) => p.x.concat([R.db.labels[i] >= 0 ? R.db.labels[i] + 1 : 'noise', R.db.kind[i]])) }) });
+  function clickAt(p) {
+    const P = figMap.plot; let best = null;
+    D.pts.forEach((q, i) => { const d = Math.hypot(P.sx(q.x[0]) - p.px, P.sy(q.x[1]) - p.py); if (d < 12 && (!best || d < best[0])) best = [d, i]; });
+    S.sel = best ? best[1] : null; render();
+  }
+  function drawMap() {
+    const P = figMap.plot, L = labelsNow(), db = R.db, ink = MLS.color('chart-ink'), mu = MLS.color('chart-muted'), end = atEnd();
+    P.setX(D.dom.x[0], D.dom.x[1]); P.setY(D.dom.y[0], D.dom.y[1]);
+    P.draw(P => {
+      if (S.sel !== null && S.sel < D.pts.length) {
+        const c = D.pts[S.sel].x, sd = D.sc.sd, el = ML.ellipse(c, [[sd[0] * sd[0], 0], [0, sd[1] * sd[1]]], S.eps, 90);
+        P.line(el, { color: ink, width: 2, dash: '5 4' });
+        db.nb[S.sel].forEach(j => P.segment(c[0], c[1], D.pts[j].x[0], D.pts[j].x[1], { color: mu, width: 1 }));
+      }
+      const tip = (p, i) => '<b>Point ' + (i + 1) + '</b><br>' + D.names[0] + ': ' + F(p.x[0], 2) + '<br>' + D.names[1] + ': ' + F(p.x[1], 2) + '<br>' + db.nb[i].length + ' points within ε: <b>' + db.kind[i] + '</b>' + (db.labels[i] >= 0 ? ', cluster ' + (db.labels[i] + 1) : '') + '<br><i>Click to show its ε-circle</i>';
+      const noise = D.pts.filter((p, i) => end && L[i] < 0), rest = D.pts.filter((p, i) => !(end && L[i] < 0));
+      P.points(rest.filter(p => !(end && db.kind[p.id] === 'border')), { x: p => p.x[0], y: p => p.x[1], color: p => (L[p.id] === null ? MLS.rgba(mu, 0.55) : U.color(L[p.id])), r: 4.4, tip: p => tip(p, p.id), highlight: p => p.id === S.sel });
+      P.points(rest.filter(p => end && db.kind[p.id] === 'border'), { x: p => p.x[0], y: p => p.x[1], color: p => U.color(L[p.id]), r: 4.6, hollow: true, tip: p => tip(p, p.id), highlight: p => p.id === S.sel });
+      P.points(noise, { x: p => p.x[0], y: p => p.x[1], color: mu, shape: 'cross', r: 8, tip: p => tip(p, p.id), highlight: p => p.id === S.sel });
+    });
+    const sizes = U.sizes(db.labels, db.k);
+    figMap.legend(U.legend(Math.min(db.k, 12), sizes).concat([{ label: 'Border point: ring', color: 'transparent', stroke: ink }, { label: 'Noise (' + R.noise + ')', color: mu, shape: 'cross' }]).concat(S.sel !== null ? [{ label: 'ε-circle of the selected point', color: ink, line: true, dash: '5 4' }] : []));
+    figMap.caption('Filled: core points; rings: border points; grey crosses: noise. The ε-circle looks like an ellipse because ε is measured on standardized inputs while the chart shows the original units.');
+  }
+  const figK = MLS.figure($('figK'), { title: 'k-distance plot: choosing ε', help: 'figk', file: 'dbscan-kdistance', plot: { aspect: 0.7, margin: { l: 66, b: 48 }, x: { label: 'Points, sorted' }, y: { label: () => 'Distance to the ' + S.minPts + 'th neighbour' } } });
+  function drawK() {
+    const P = figK.plot, kd = R.kd, c1 = MLS.color('series-1'), c2 = MLS.color('series-2');
+    P.setX(0, kd.length); P.setY(0, Math.min(kd[kd.length - 1] * 1.05, Math.max(S.eps * 2, kd[Math.floor(kd.length * 0.95)] * 2.2)));
+    P.draw(P => {
+      P.line(kd.map((v, i) => [i, v]), { color: c1, width: 2.2 });
+      P.hline(S.eps, { color: c2, width: 2, dash: '6 4' }); P.text(2, S.eps, 'ε = ' + S.eps, { dy: -6, size: 12, weight: 800, color: c2 });
+    });
+    figK.caption('For every point, the distance (standardized) to its ' + S.minPts + 'th nearest neighbour, counting itself. Points above the dashed line are not core points. Choose ε near the knee, where the curve turns sharply upward.');
+  }
+  const figKM = MLS.figure($('figKM'), { title: 'For comparison: k-means', help: 'figkm', file: 'dbscan-vs-kmeans', plot: { aspect: 0.7, margin: { l: 60, b: 48 }, x: { label: () => D.names[0] }, y: { label: () => D.names[1] } } });
+  function drawKM() {
+    const P = figKM.plot, km = R.km, K = km.centers.length;
+    P.setX(D.dom.x[0], D.dom.x[1]); P.setY(D.dom.y[0], D.dom.y[1]);
+    P.draw(P => {
+      U.regions(P, D.dom, x => { const z = D.sc.t(x); let b = 0, bd = Infinity; km.centers.forEach((c, k) => { const d = ML.dist2(z, c); if (d < bd) { bd = d; b = k; } }); return b; }, K);
+      P.points(D.pts, { x: p => p.x[0], y: p => p.x[1], color: (p, i) => U.color(km.labels[i]), r: 3.4 });
+    });
+    figKM.caption('K-means on the same standardized data with k = ' + K + ' (the number of DBSCAN clusters, at least 2). Every point is forced into a cluster and the borders are straight.');
+  }
+  function syncUI() {
+    $('ds').value = S.ds; $('n').value = nObs(); $('nVal').textContent = nObs(); $('seed').value = S.seed;
+    $('eps').value = S.eps; $('epsVal').textContent = S.eps; $('minPts').value = S.minPts; $('minPtsVal').textContent = S.minPts;
+  }
+  function render() { syncUI(); updateText(); drawMap(); drawK(); drawKM(); figMap.refreshTable(); if (ch) ch.check(); MLS.state.save(); }
+  function refresh() { compute(); render(); }
+  const full = () => { S.sel = null; makeData(); refresh(); };
+  MLS.stepper($('stepper'), { speed: 30, runMax: 2000,
+    step: () => { if (atEnd()) return false; S.step++; return true; },
+    reset: () => { S.step = 0; }, after: () => render() });
+  $('ds').onchange = e => { S.ds = e.target.value; S.step = -1; full(); };
+  $('n').addEventListener('input', e => ($('nVal').textContent = e.target.value));
+  $('n').onchange = e => { S.n[S.ds] = +e.target.value; S.step = -1; full(); };
+  $('seed').onchange = e => { S.seed = Math.max(1, Math.round(+e.target.value) || 1); S.step = -1; full(); };
+  $('newSeed').onclick = () => { S.seed = MLS.newSeed(); S.step = -1; full(); };
+  $('eps').addEventListener('input', e => ($('epsVal').textContent = e.target.value));
+  $('eps').onchange = e => { S.eps = +(+e.target.value).toFixed(2); S.step = -1; refresh(); };
+  $('minPts').addEventListener('input', e => ($('minPtsVal').textContent = e.target.value));
+  $('minPts').onchange = e => { S.minPts = +e.target.value; S.step = -1; refresh(); };
+
+  MLS.registerHelp({
+    data: { title: 'Data', html: '<b>Card payments</b>: hour of the day and amount; three dense groups (morning, lunch, evening) and a few scattered payments. <b>Generic</b>: moons, circles and round groups. Simulated, without labels.' },
+    n: { title: 'Observations', html: 'How many observations are simulated.' },
+    seed: { title: 'Random seed', html: 'Fixes the random numbers: the same seed gives the same data.' },
+    db: { title: 'DBSCAN', html: 'Clusters are dense regions: chains of points that each have at least minPts points within distance ε.' },
+    eps: { title: 'Radius ε', html: 'The radius of the neighbourhood, measured on the standardized inputs (1 = one standard deviation). Use the k-distance plot to choose it.' },
+    minpts: { title: 'minPts', html: 'How many points (the point itself included) must lie within ε for a point to be a core point. Rule of thumb: about twice the number of inputs.' },
+    run: { title: 'Grow the clusters', html: '<b>Step</b>: one more point joins a cluster, in the order DBSCAN finds them. <b>End</b>: the final result. <b>Reset</b>: nothing assigned.' },
+    st_k: { title: 'Clusters found', html: 'DBSCAN does not take the number of clusters as an input: it is the number of separate dense regions for this ε and minPts.' },
+    st_core: { title: 'Core points', html: 'Points with at least minPts points within ε: the inside of a cluster.' },
+    st_border: { title: 'Border points', html: 'Not core points themselves, but within ε of a core point: the edge of a cluster.' },
+    st_noise: { title: 'Noise points', html: 'Points in no cluster: outliers, candidates for a closer look (for example, possible fraud).' },
+    figmap: { title: 'Core, border and noise', html: 'Each point coloured by its cluster. Click a point to draw its ε-circle and the lines to its neighbours.' },
+    figk: { title: 'k-distance plot', html: 'The distance from each point to its minPts-th nearest neighbour, sorted from small to large. The knee of the curve is a good value for ε.' },
+    figkm: { title: 'K-means for comparison', html: 'K-means on the same data with as many clusters as DBSCAN found. It assigns every point and cannot follow curved shapes.' }
+  });
+
+  function setup(o) { Object.assign(S, { step: -1 }, o); MLS.pickTab('sim'); full(); window.scrollTo({ top: 0, behavior: 'smooth' }); }
+  const ch = MLS.challenges($('challenges'), META.id, [
+    { type: 'predict', q: 'A point with at least minPts points within distance ε is...',
+      options: ['a noise point', 'a border point', 'a core point'], answer: 2,
+      explain: 'Core points lie inside dense regions and grow the clusters. Border points are near a core point; noise points are near none.',
+      tryIt: () => setup({ ds: 'payments' }) },
+    { type: 'task', q: 'Moons: find ε and minPts that give exactly 2 clusters and no noise.', hint: 'Start from ε = 0.3 and minPts = 5, then adjust.',
+      check: () => R && S.ds === 'moonsU' && R.db.k === 2 && R.noise === 0 },
+    { type: 'predict', q: 'You make ε very small (0.08). What happens?',
+      options: ['One big cluster', 'Many tiny clusters, and most points become noise', 'Nothing changes'], answer: 1,
+      explain: 'With a tiny radius few points have minPts neighbours, so there are few core points: small scattered clusters and a lot of noise.',
+      tryIt: () => setup({ ds: 'moonsU', eps: 0.08 }) },
+    { type: 'predict', q: 'Compared with k-means, DBSCAN...',
+      options: ['does not need the number of clusters and can leave points unassigned as noise', 'needs the number of clusters in advance', 'can only find round clusters'], answer: 0,
+      explain: 'The number of clusters follows from ε and minPts, clusters can take any shape, and outliers are not forced into a cluster.',
+      tryIt: () => setup({ ds: 'circlesU', eps: 0.3 }) },
+    { type: 'task', q: 'Card payments: keep 3 clusters but flag at most 5 payments as noise (at least 1).', hint: 'Increase ε a little or lower minPts.',
+      check: () => R && S.ds === 'payments' && R.db.k === 3 && R.noise >= 1 && R.noise <= 5 },
+    { type: 'predict', q: 'In the k-distance plot, a good value for ε is...',
+      options: ['the largest distance on the curve', 'always 1', 'near the knee, where the curve turns sharply upward'], answer: 2,
+      explain: 'Below the knee are the points in dense regions; above it, the isolated points. An ε at the knee makes the dense points core points and leaves the isolated ones as noise.',
+      tryIt: () => setup({ ds: 'payments', eps: 0.3 }) }
+  ]);
+  const STATE = {
+    get: () => ({ ds: S.ds, n: S.n, seed: S.seed, eps: S.eps, minPts: S.minPts }),
+    set: o => {
+      if (DEFN[o.ds]) S.ds = o.ds;
+      if (o.n) Object.keys(o.n).forEach(q => { if (DEFN[q] && Number.isFinite(o.n[q])) S.n[q] = Math.max(60, Math.min(400, o.n[q])); });
+      if (Number.isFinite(o.seed)) S.seed = o.seed;
+      if (Number.isFinite(o.eps)) S.eps = Math.max(0.05, Math.min(1, o.eps));
+      if (Number.isFinite(o.minPts)) S.minPts = Math.max(2, Math.min(15, o.minPts));
+    }
+  };
+  const start = full;
+  MLS.moduleBar({ id: META.id, title: META.title, section: META.sectionTitle, level: META.level },
+    { tabs: [{ id: 'sim', label: 'Simulation' }, { id: 'lesson', label: 'Lesson' }, { id: 'challenges', label: 'Challenges' }, { id: 'real', label: 'On real data' }] });
+  MLS.state.init({ id: META.id, get: STATE.get, set: STATE.set });
+  const fc = $('fourCast'); if (fc) fc.href = MLS.APP.fourCastUrl;
+  window.__mls = { S, get R() { return R; }, get D() { return D; } };
+  document.addEventListener('mls:theme', () => refresh());
+  start();
+})();
+</script>
+</body>
+</html>
